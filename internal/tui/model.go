@@ -43,6 +43,7 @@ type model struct {
 	runtime      *app.Runtime
 	candidates   []miniprogram.Candidate
 	selected     int
+	category     category
 	logs         []string
 	showLogs     bool
 	width        int
@@ -61,6 +62,17 @@ type model struct {
 	inputFocus   int
 	inputErr     string
 }
+
+type category string
+
+const (
+	categoryAll   category = "all"
+	categoryImage category = "image"
+	categoryVideo category = "video"
+	categoryM3U8  category = "m3u8"
+)
+
+var categories = []category{categoryAll, categoryImage, categoryVideo, categoryM3U8}
 
 type ffmpegProgressState struct {
 	mu    sync.Mutex
@@ -93,6 +105,7 @@ func Run(runtime *app.Runtime) error {
 		runtime:     runtime,
 		showLogs:    true,
 		ffmpegSetup: ffmpegSetup,
+		category:    categoryVideo,
 		appIDInput:  runtime.Settings.Target.AppID,
 		nameInput:   runtime.Settings.Target.Name,
 	}
@@ -123,12 +136,24 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch v.String() {
 		case "q", "ctrl+c":
 			return m, tea.Sequence(m.stopProxy, tea.Quit)
+		case "tab":
+			m.nextCategory(1)
+		case "shift+tab":
+			m.nextCategory(-1)
+		case "1":
+			m.setCategory(categoryAll)
+		case "2":
+			m.setCategory(categoryImage)
+		case "3":
+			m.setCategory(categoryVideo)
+		case "4":
+			m.setCategory(categoryM3U8)
 		case "up", "k":
 			if m.selected > 0 {
 				m.selected--
 			}
 		case "down", "j":
-			if m.selected < len(m.candidates)-1 {
+			if m.selected < len(m.filteredCandidates())-1 {
 				m.selected++
 			}
 		case "r":
@@ -159,8 +184,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.addLog("已打开下载目录")
 			}
 		case "d", "enter":
-			if !m.downloading && len(m.candidates) > 0 {
-				candidate := m.candidates[m.selected]
+			visible := m.filteredCandidates()
+			if !m.downloading && len(visible) > 0 {
+				candidate := visible[m.selected]
 				if candidate.Kind == "m3u8" && candidate.CachedPath == "" && candidate.Source == "json" {
 					m.addLog("该 m3u8 尚未缓存，不能直接下载。请按 c 清空候选后重新播放目标视频，等待 cache 标记出现。")
 					return m, nil
@@ -214,7 +240,7 @@ func (m model) View() string {
 	}
 
 	ffmpegSetupLine := m.renderFFmpegSetupProgress()
-	headerLines := 4
+	headerLines := 5
 	if ffmpegSetupLine != "" {
 		headerLines++
 	}
@@ -251,8 +277,10 @@ func (m model) View() string {
 		b.WriteString("\n")
 	}
 
-	shortcuts := "快捷键: ↑/↓ 选择  d/Enter 下载  r 刷新  c 清空  o 打开目录  l 日志  PgUp/PgDn 翻日志  q 退出"
+	shortcuts := "快捷键: Tab 分类  1/2/3/4 全部/图片/视频/m3u8  ↑/↓ 选择  d/Enter 下载  c 清空  l 日志  q 退出"
 	b.WriteString(mutedStyle.Render(shortURL(shortcuts, m.width-1)))
+	b.WriteString("\n")
+	b.WriteString(m.renderCategoryTabs())
 	b.WriteString("\n")
 	if ffmpegSetupLine != "" {
 		b.WriteString(okStyle.Render(shortURL(ffmpegSetupLine, m.width-1)))
@@ -374,8 +402,12 @@ func trimLastRune(value string) string {
 }
 
 func (m model) renderCandidates(maxLines int) string {
+	visibleCandidates := m.filteredCandidates()
 	if len(m.candidates) == 0 {
 		return mutedStyle.Render("暂无候选资源。打开图片或播放视频后，图片、mp4 或 m3u8 会出现在这里。") + "\n"
+	}
+	if len(visibleCandidates) == 0 {
+		return mutedStyle.Render(fmt.Sprintf("当前分类暂无资源。已嗅探 %d 个资源，可按 Tab 或 1/2/3/4 切换分类。", len(m.candidates))) + "\n"
 	}
 
 	if maxLines <= 0 {
@@ -399,9 +431,9 @@ func (m model) renderCandidates(maxLines int) string {
 		end -= start
 		start = 0
 	}
-	if end > len(m.candidates) {
-		start -= end - len(m.candidates)
-		end = len(m.candidates)
+	if end > len(visibleCandidates) {
+		start -= end - len(visibleCandidates)
+		end = len(visibleCandidates)
 		if start < 0 {
 			start = 0
 		}
@@ -423,7 +455,7 @@ func (m model) renderCandidates(maxLines int) string {
 	urlW := max(20, lineW-76)
 
 	for i := start; i < end; i++ {
-		item := m.candidates[i]
+		item := visibleCandidates[i]
 		cache := "-"
 		if item.CachedPath != "" {
 			cache = "cache"
@@ -434,12 +466,12 @@ func (m model) renderCandidates(maxLines int) string {
 		}
 		line := fmt.Sprintf("  %s %-5s %-9s %-5s %-8s %-28s %s",
 			item.CreatedAt.Format("15:04:05"),
-			item.Kind,
+			kindDisplay(item.Kind),
 			formatBytes(item.ContentLength),
 			cache,
-			source,
+			sourceDisplay(source),
 			shortURL(candidateLabel(item), labelW),
-			shortURL(item.URL, urlW),
+			shortURL(candidateReadableInfo(item), urlW),
 		)
 		if i == m.selected {
 			line = selectedStyle.Render("> " + strings.TrimSpace(line))
@@ -448,8 +480,8 @@ func (m model) renderCandidates(maxLines int) string {
 		b.WriteString("\n")
 	}
 
-	if end < len(m.candidates) {
-		more := len(m.candidates) - end
+	if end < len(visibleCandidates) {
+		more := len(visibleCandidates) - end
 		b.WriteString(mutedStyle.Render(fmt.Sprintf("  ↓ %d more...", more)))
 		b.WriteString("\n")
 	}
@@ -491,19 +523,108 @@ func (m model) renderLogs(maxLines int) string {
 }
 
 func (m *model) refresh() {
-	prevLen := len(m.candidates)
+	prevLen := len(m.filteredCandidates())
 	prevSelected := m.selected
 	m.candidates = m.runtime.Candidates()
-	if len(m.candidates) > prevLen && (prevLen == 0 || prevSelected == prevLen-1) {
-		m.selected = len(m.candidates) - 1
+	visible := m.filteredCandidates()
+	if len(visible) > prevLen && (prevLen == 0 || prevSelected == prevLen-1) {
+		m.selected = len(visible) - 1
 		return
 	}
-	if m.selected >= len(m.candidates) {
-		m.selected = len(m.candidates) - 1
+	if m.selected >= len(visible) {
+		m.selected = len(visible) - 1
 	}
 	if m.selected < 0 {
 		m.selected = 0
 	}
+}
+
+func (m model) activeCategory() category {
+	if m.category == "" {
+		return categoryVideo
+	}
+	return m.category
+}
+
+func (m model) filteredCandidates() []miniprogram.Candidate {
+	active := m.activeCategory()
+	if active == categoryAll {
+		return m.candidates
+	}
+	out := make([]miniprogram.Candidate, 0, len(m.candidates))
+	for _, candidate := range m.candidates {
+		if active == categoryImage && candidate.Kind == "image" {
+			out = append(out, candidate)
+		}
+		if active == categoryVideo && candidate.Kind == "video" {
+			out = append(out, candidate)
+		}
+		if active == categoryM3U8 && candidate.Kind == "m3u8" {
+			out = append(out, candidate)
+		}
+	}
+	return out
+}
+
+func (m *model) setCategory(next category) {
+	m.category = next
+	m.selected = 0
+}
+
+func (m *model) nextCategory(step int) {
+	active := m.activeCategory()
+	idx := 0
+	for i, item := range categories {
+		if item == active {
+			idx = i
+			break
+		}
+	}
+	idx = (idx + step) % len(categories)
+	if idx < 0 {
+		idx += len(categories)
+	}
+	m.setCategory(categories[idx])
+}
+
+func (m model) renderCategoryTabs() string {
+	var parts []string
+	for i, item := range categories {
+		label := fmt.Sprintf("%d %s", i+1, categoryDisplay(item))
+		count := m.categoryCount(item)
+		if item != categoryAll {
+			label = fmt.Sprintf("%s(%d)", label, count)
+		} else {
+			label = fmt.Sprintf("%s(%d)", label, len(m.candidates))
+		}
+		if item == m.activeCategory() {
+			parts = append(parts, selectedStyle.Render(" "+label+" "))
+			continue
+		}
+		parts = append(parts, mutedStyle.Render(" "+label+" "))
+	}
+	return strings.Join(parts, " ")
+}
+
+func (m model) categoryCount(item category) int {
+	count := 0
+	for _, candidate := range m.candidates {
+		switch item {
+		case categoryImage:
+			if candidate.Kind == "image" {
+				count++
+			}
+		case categoryVideo:
+			if candidate.Kind == "video" {
+				count++
+			}
+		case categoryM3U8:
+			if candidate.Kind == "m3u8" {
+				count++
+			}
+		}
+	}
+	return count
 }
 
 func (m *model) addLog(line string) {
@@ -585,6 +706,47 @@ func candidateSummary(candidate miniprogram.Candidate) string {
 	return fmt.Sprintf("%s %s %s", candidate.Kind, cache, shortURL(candidate.URL, 80))
 }
 
+func categoryDisplay(value category) string {
+	switch value {
+	case categoryAll:
+		return "全部"
+	case categoryImage:
+		return "图片"
+	case categoryVideo:
+		return "视频"
+	case categoryM3U8:
+		return "m3u8"
+	default:
+		return string(value)
+	}
+}
+
+func kindDisplay(kind string) string {
+	switch kind {
+	case "image":
+		return "图片"
+	case "video":
+		return "视频"
+	case "m3u8":
+		return "m3u8"
+	default:
+		return kind
+	}
+}
+
+func sourceDisplay(source string) string {
+	switch source {
+	case "response":
+		return "响应"
+	case "json":
+		return "JSON"
+	case "-":
+		return "-"
+	default:
+		return source
+	}
+}
+
 func targetDisplay(target miniprogram.Target) string {
 	if strings.TrimSpace(target.Name) == "" {
 		return strings.TrimSpace(target.AppID)
@@ -620,6 +782,52 @@ func candidateLabel(candidate miniprogram.Candidate) string {
 		return u.Host
 	}
 	return candidate.Kind
+}
+
+func candidateReadableInfo(candidate miniprogram.Candidate) string {
+	u, err := url.Parse(candidate.URL)
+	if err != nil {
+		return candidate.URL
+	}
+	var parts []string
+	if field := fieldDisplay(candidate.FieldPath); field != "" {
+		parts = append(parts, field)
+	}
+	if u.Host != "" {
+		parts = append(parts, u.Host)
+	}
+	base := path.Base(u.Path)
+	if base != "" && base != "." && base != "/" {
+		parts = append(parts, base)
+	}
+	if len(parts) == 0 {
+		return candidate.URL
+	}
+	return strings.Join(parts, " · ")
+}
+
+func fieldDisplay(fieldPath string) string {
+	key := strings.ToLower(fieldPath)
+	switch {
+	case strings.Contains(key, "cover"):
+		return "封面"
+	case strings.Contains(key, "poster"):
+		return "海报"
+	case strings.Contains(key, "avatar"):
+		return "头像"
+	case strings.Contains(key, "thumb"):
+		return "缩略图"
+	case strings.Contains(key, "banner"):
+		return "横幅"
+	case strings.Contains(key, "logo"):
+		return "标志"
+	case strings.Contains(key, "video"):
+		return "视频"
+	case strings.Contains(key, "image"), strings.Contains(key, "img"), strings.Contains(key, "pic"), strings.Contains(key, "photo"):
+		return "图片"
+	default:
+		return ""
+	}
 }
 
 func streamName(rawPath string) string {
