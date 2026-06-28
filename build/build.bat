@@ -1,43 +1,36 @@
 @echo off
 setlocal enabledelayedexpansion
 
-set OUTPUT_DIR=%~dp0
-if "%OUTPUT_DIR%" neq "" set OUTPUT_DIR=%OUTPUT_DIR:~0,-1%
+set ROOT_DIR=%~dp0..
+for %%I in ("%ROOT_DIR%") do set ROOT_DIR=%%~fI
+set DIST_DIR=%ROOT_DIR%\dist\wx-mini-video-windows-amd64
+set ZIP_PATH=%ROOT_DIR%\dist\wx-mini-video-windows-amd64.zip
 
 if "%1" equ "" goto usage
-
 goto %1
 
 :windows
-echo Building Windows x86_64...
+call :prepare
+echo Building wx-mini-video Windows amd64...
 set CGO_ENABLED=0
 set GOOS=windows
 set GOARCH=amd64
-go build -trimpath -ldflags="-s -w" -o "%OUTPUT_DIR%\wx_video_download_windows_x86_64.exe"
-if exist wx_channel.exe (
-    del wx_channel.exe
-)
-move /Y wx_video_download_windows_x86_64.exe wx_channel.exe >nul 2>&1
-echo Done: %OUTPUT_DIR%\wx_channel.exe
+go build -trimpath -ldflags="-s -w -X main.Mode=release" -o "%DIST_DIR%\wx-mini-video.exe" "%ROOT_DIR%"
+if errorlevel 1 exit /b 1
+copy /Y "%ROOT_DIR%\internal\config\config.template.yaml" "%DIST_DIR%\wx-mini-video.yaml" >nul
+copy /Y "%ROOT_DIR%\README.md" "%DIST_DIR%\README.md" >nul
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop'; Compress-Archive -Path '%DIST_DIR%\*' -DestinationPath '%ZIP_PATH%' -Force"
+if errorlevel 1 exit /b 1
+echo Done: %ZIP_PATH%
 exit /b 0
 
-:windows-sunnynet
-echo Building Windows SunnyNet version...
-echo This requires Docker on Windows:
-echo   docker run --rm -v "%%cd%%:/workspace" -w /workspace golang:1.20 bash -c "...
-echo Please run the Docker command manually from README.md
-exit /b 1
+:prepare
+if exist "%DIST_DIR%" rmdir /S /Q "%DIST_DIR%"
+mkdir "%DIST_DIR%"
+if exist "%ZIP_PATH%" del /Q "%ZIP_PATH%"
+exit /b 0
 
 :usage
 echo Usage: build.bat [target]
-echo   windows         - Windows x86_64
-echo   windows-sunnynet - Windows SunnyNet ^(requires Docker^)
-echo   all             - Build all targets
+echo   windows      - portable Windows amd64 zip without ffmpeg
 exit /b 1
-
-:all
-echo Building Windows...
-call :windows
-echo.
-echo All done!
-exit /b 0

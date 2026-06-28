@@ -6,6 +6,12 @@ type ProxySettings struct {
 	Port     string
 }
 
+type ProxySnapshot struct {
+	Enabled   bool
+	HasServer bool
+	Server    string
+}
+
 type HardwarePort struct {
 	Device    string
 	Port      string
@@ -40,4 +46,12 @@ func DisableProxy(arg ProxySettings) error {
 
 func FetchCurProxy(arg ProxySettings) (*ProxySettings, error) {
 	return fetch_cur_proxy(arg)
+}
+
+func CaptureProxySnapshot() (*ProxySnapshot, error) {
+	return capture_proxy_snapshot()
+}
+
+func RestoreProxySnapshot(snapshot *ProxySnapshot) error {
+	return restore_proxy_snapshot(snapshot)
 }

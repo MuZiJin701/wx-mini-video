@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+	"syscall"
 )
 
 func enable_proxy(args ProxySettings) error {
@@ -31,6 +32,7 @@ func enable_proxy(args ProxySettings) error {
 	if err != nil {
 		return fmt.Errorf("设置 HTTP 代理失败，%v", string(output))
 	}
+	notify_proxy_changed()
 	return nil
 }
 
@@ -45,7 +47,73 @@ func disable_proxy(args ProxySettings) error {
 	if err != nil {
 		return fmt.Errorf("设置 HTTP 代理失败，%v", string(output))
 	}
+	notify_proxy_changed()
 	return nil
+}
+
+func capture_proxy_snapshot() (*ProxySnapshot, error) {
+	path := `HKCU\Software\Microsoft\Windows\CurrentVersion\Internet Settings`
+	enableValue, err := read_reg_value(path, "ProxyEnable")
+	if err != nil {
+		return nil, err
+	}
+	enabled := false
+	if enableValue != "" {
+		parsed, err := parse_reg_dword(enableValue)
+		if err != nil {
+			return nil, err
+		}
+		enabled = parsed != 0
+	}
+	serverValue, err := read_reg_value(path, "ProxyServer")
+	if err != nil {
+		return nil, err
+	}
+	return &ProxySnapshot{
+		Enabled:   enabled,
+		HasServer: serverValue != "",
+		Server:    serverValue,
+	}, nil
+}
+
+func restore_proxy_snapshot(snapshot *ProxySnapshot) error {
+	if snapshot == nil {
+		return disable_proxy(ProxySettings{})
+	}
+	path := `HKCU\Software\Microsoft\Windows\CurrentVersion\Internet Settings`
+	enableValue := "0"
+	if snapshot.Enabled {
+		enableValue = "1"
+	}
+	cmd := exec.Command("reg", "add", path, "/v", "ProxyEnable", "/t", "REG_DWORD", "/d", enableValue, "/f")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("恢复系统代理开关失败，%v", string(output))
+	}
+	if snapshot.HasServer {
+		cmd = exec.Command("reg", "add", path, "/v", "ProxyServer", "/t", "REG_SZ", "/d", snapshot.Server, "/f")
+		output, err = cmd.CombinedOutput()
+		if err != nil {
+			return fmt.Errorf("恢复系统代理地址失败，%v", string(output))
+		}
+		notify_proxy_changed()
+		return nil
+	}
+	cmd = exec.Command("reg", "delete", path, "/v", "ProxyServer", "/f")
+	_, _ = cmd.CombinedOutput()
+	notify_proxy_changed()
+	return nil
+}
+
+func notify_proxy_changed() {
+	wininet := syscall.NewLazyDLL("wininet.dll")
+	internetSetOption := wininet.NewProc("InternetSetOptionW")
+	const (
+		internetOptionRefresh         = 37
+		internetOptionSettingsChanged = 39
+	)
+	_, _, _ = internetSetOption.Call(0, internetOptionSettingsChanged, 0, 0)
+	_, _, _ = internetSetOption.Call(0, internetOptionRefresh, 0, 0)
 }
 
 func fetch_cur_proxy(args ProxySettings) (*ProxySettings, error) {

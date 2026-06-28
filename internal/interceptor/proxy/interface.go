@@ -12,12 +12,6 @@ type InnerProxy interface {
 	ServeHTTP(w http.ResponseWriter, r *http.Request)
 }
 
-type TCPRelayConfig struct {
-	Enabled  bool
-	Hostname string
-	Port     int
-}
-
 type Plugin struct {
 	Match      string
 	Target     *TargetConfig
@@ -54,9 +48,12 @@ type ContextReq struct {
 	Cookies []*http.Cookie
 }
 type ContextURL struct {
+	Scheme   string
+	Host     string
 	Path     string
 	Hostname func() string
 	RawQuery string
+	String   string
 }
 type ContextRes struct {
 	Body       io.ReadCloser

@@ -18,9 +18,11 @@ temp_sunnynet
 node_modules
 docs/.vitepress/cache
 docs/.vitepress/dist
+docs/qiming-miniprogram-tui-*.md
 gopeed.db
 /*.json
 *.log
+基本原理.txt
 
 .env
 deploy.sh

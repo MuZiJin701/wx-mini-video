@@ -6,87 +6,43 @@ import (
 	"net"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/ltaoo/echo"
 	"github.com/rs/zerolog"
 
-	"wx_channel/internal/buildtags"
 	"wx_channel/internal/interceptor/proxy"
 	"wx_channel/pkg/certificate"
 	"wx_channel/pkg/system"
 )
 
 type Interceptor struct {
-	Version           string
-	Debug             bool
-	Settings          *InterceptorConfig
-	Headers           map[string]string
-	Cert              *certificate.CertFileAndKeyFile
-	proxy             proxy.InnerProxy
-	PostPlugins       []interface{}  // echo 的插件，将在 echo 初始化后传给 echo
-	FrontendVariables map[string]any // 前端额外的全局变量
-	log               *zerolog.Logger
-	OnCookies         func(url string, cookies []*http.Cookie) // 捕获到 cookie 时的回调
+	Version     string
+	Settings    *InterceptorConfig
+	Cert        *certificate.CertFileAndKeyFile
+	proxy       proxy.InnerProxy
+	PostPlugins []interface{}
+	log         *zerolog.Logger
+	proxyState  *system.ProxySnapshot
 }
 
 func NewInterceptor(cfg *InterceptorConfig, cert *certificate.CertFileAndKeyFile) *Interceptor {
 	log := zerolog.New(io.Discard).With().Timestamp().Str("component", "interceptor").Str("version", cfg.Version).Logger()
 	return &Interceptor{
-		Version:           cfg.Version,
-		Debug:             cfg.DebugShowError,
-		Settings:          cfg,
-		FrontendVariables: make(map[string]any),
-		Cert:              cert,
-		log:               &log,
-		proxy:             nil,
+		Version:  cfg.Version,
+		Settings: cfg,
+		Cert:     cert,
+		log:      &log,
 	}
 }
 
 func (c *Interceptor) Start() error {
-	echo.SetLogEnabled(c.Debug)
-	client, err := proxy.NewProxy(c.Cert.Cert, c.Cert.PrivateKey, c.Settings.ProxyUpstreamProxy, c.Settings.ProxyTun, c.Settings.ProxyServerHostname, c.Settings.ProxyServerPort, c.Settings.ProxyDefaultInterface, &proxy.TCPRelayConfig{
-		Enabled:  c.Settings.ProxyTCPRelayEnabled,
-		Hostname: c.Settings.ProxyTCPRelayHostname,
-		Port:     c.Settings.ProxyTCPRelayPort,
-	})
+	echo.SetLogEnabled(false)
+	client, err := proxy.NewProxy(c.Cert.Cert, c.Cert.PrivateKey, c.Settings.ProxyUpstreamProxy)
 	if err != nil {
 		return err
 	}
-	if len(c.PostPlugins) != 0 {
-		for _, plugin := range c.PostPlugins {
-			client.AddPlugin(plugin)
-		}
-	}
-	if c.Debug {
-		client.AddPlugin(&proxy.Plugin{
-			Match: "debug.weixin.qq.com",
-			Target: &proxy.TargetConfig{
-				Protocol: "http",
-				Host:     "127.0.0.1",
-				Port:     6752,
-			},
-		})
-	}
-	if c.Settings.RemoteServerEnabled {
-		client.AddPlugin(&proxy.Plugin{
-			Match: "weixin110.qq.com",
-			Target: &proxy.TargetConfig{
-				Protocol: c.Settings.RemoteServerProtocol,
-				Host:     c.Settings.RemoteServerHostname,
-				Port:     c.Settings.RemoteServerPort,
-			},
-		})
-	}
-	client.AddPlugin(&proxy.Plugin{
-		Match: "kf.qq.com",
-		Target: &proxy.TargetConfig{
-			Protocol: c.Settings.APIServerProtocol,
-			Host:     c.Settings.APIServerHostname,
-			Port:     c.Settings.APIServerPort,
-		},
-	})
-	plugins := CreateChannelInterceptorPlugins(c, Assets)
-	for _, plugin := range plugins {
+	for _, plugin := range c.PostPlugins {
 		client.AddPlugin(plugin)
 	}
 	c.proxy = client
@@ -96,38 +52,36 @@ func (c *Interceptor) Start() error {
 			return fmt.Errorf("检查证书失败: %v", err)
 		}
 		if !existing {
-			fmt.Printf("正在安装证书...\n")
 			if err := certificate.InstallCertificate(c.Cert.Cert); err != nil {
 				return fmt.Errorf("安装证书失败: %v", err)
 			}
 		}
 	}
-	if !buildtags.UsingSunnyNet && c.Settings.ProxySetSystem && !c.Settings.ProxyTun {
+	if c.Settings.ProxySetSystem {
+		snapshot, err := system.CaptureProxySnapshot()
+		if err != nil {
+			return fmt.Errorf("读取原系统代理失败: %v", err)
+		}
+		if isOwnProxySnapshot(snapshot, c.Settings.ProxyServerHostname, strconv.Itoa(c.Settings.ProxyServerPort)) {
+			snapshot = &system.ProxySnapshot{Enabled: false}
+		}
+		c.proxyState = snapshot
 		if err := system.EnableProxy(system.ProxySettings{
-			Device:   c.Settings.ProxyDevice,
 			Hostname: c.Settings.ProxyServerHostname,
 			Port:     strconv.Itoa(c.Settings.ProxyServerPort),
 		}); err != nil {
 			return fmt.Errorf("设置代理失败: %v", err)
 		}
 	}
-	if err := client.Start(c.Settings.ProxyServerPort); err != nil {
-		return err
-	}
-	return nil
+	return client.Start(c.Settings.ProxyServerPort)
 }
 
 func (c *Interceptor) Stop() error {
-	if !buildtags.UsingSunnyNet && c.Settings.ProxySetSystem && !c.Settings.ProxyTun {
-		arg := system.ProxySettings{
-			Device:   c.Settings.ProxyDevice,
-			Hostname: c.Settings.ProxyServerHostname,
-			Port:     strconv.Itoa(c.Settings.ProxyServerPort),
+	if c.Settings.ProxySetSystem {
+		if err := system.RestoreProxySnapshot(c.proxyState); err != nil {
+			return fmt.Errorf("恢复系统代理失败: %v", err)
 		}
-		err := system.DisableProxy(arg)
-		if err != nil {
-			return fmt.Errorf("关闭系统代理失败: %v", err)
-		}
+		c.proxyState = nil
 	}
 	if c.proxy != nil {
 		if err := c.proxy.Close(); err != nil {
@@ -137,25 +91,33 @@ func (c *Interceptor) Stop() error {
 	return nil
 }
 
-func (c *Interceptor) SetVersion(v string) {
-	c.Version = v
+func isOwnProxySnapshot(snapshot *system.ProxySnapshot, hostname string, port string) bool {
+	if snapshot == nil || !snapshot.Enabled || !snapshot.HasServer {
+		return false
+	}
+	server := strings.ToLower(strings.TrimSpace(snapshot.Server))
+	targets := []string{
+		strings.ToLower(hostname + ":" + port),
+		"localhost:" + port,
+		"127.0.0.1:" + port,
+	}
+	for _, target := range targets {
+		if server == target || strings.Contains(server, "="+target) || strings.Contains(server, ";"+target) {
+			return true
+		}
+	}
+	return false
 }
+
 func (c *Interceptor) AddPostPlugin(plugin interface{}) {
 	c.PostPlugins = append(c.PostPlugins, plugin)
-}
-func (c *Interceptor) AddPlugin(plugin interface{}) {
-	if c.proxy != nil {
-		c.proxy.AddPlugin(plugin)
-	}
-}
-func (c *Interceptor) AddVariable(key string, value any) {
-	c.FrontendVariables[key] = value
 }
 
 func (c *Interceptor) SetLog(writer io.Writer) {
 	l := zerolog.New(writer).With().Timestamp().Str("component", "interceptor").Str("version", c.Version).Logger()
 	c.log = &l
 }
+
 func (c *Interceptor) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	host := r.Host
 	if h, _, err := net.SplitHostPort(r.Host); err == nil {
@@ -170,13 +132,13 @@ func (c *Interceptor) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if isLocal && r.URL.Path == "/cert" {
 		w.Header().Set("Content-Type", "application/x-x509-ca-cert")
-		w.Header().Set("Content-Disposition", "attachment; filename=\"SunnyNet.cer\"")
-		w.Write(c.Cert.Cert)
+		w.Header().Set("Content-Disposition", "attachment; filename=\"QimingRoot.cer\"")
+		_, _ = w.Write(c.Cert.Cert)
 		return
 	}
 	if isLocal && (r.URL.Path == "/" || r.URL.Path == "") {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		fmt.Fprintf(w, `<html><head><title>wx_channels_download</title></head><body><h1>代理服务运行中</h1><p><a href="/cert">点击下载证书</a></p></body></html>`)
+		fmt.Fprint(w, `<html><head><title>wx-mini-video</title></head><body><h1>微信小程序视频代理运行中</h1><p><a href="/cert">下载根证书</a></p></body></html>`)
 		return
 	}
 	c.proxy.ServeHTTP(w, r)

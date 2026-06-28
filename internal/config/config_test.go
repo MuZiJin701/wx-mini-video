@@ -4,31 +4,46 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
-
-	"github.com/spf13/viper"
 )
 
-func TestNewUsesConfigPathFromEnv(t *testing.T) {
-	t.Cleanup(viper.Reset)
-
-	configPath := filepath.Join(t.TempDir(), "config.yaml")
-	if err := os.WriteFile(configPath, []byte("proxy:\n  hostname: 0.0.0.0\n"), 0644); err != nil {
+func TestSettingsReadsTargetFromConfig(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "wx-mini-video.yaml")
+	if err := os.WriteFile(configPath, []byte("target:\n  appID: \"wx123\"\n  name: \"测试小程序\"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv(EnvConfigPath, configPath)
 
-	cfg := New("test", "")
+	cfg := New("test", "debug")
+	if err := cfg.LoadConfig(); err != nil {
+		t.Fatal(err)
+	}
+	settings := cfg.Settings()
+	if settings.Target.AppID != "wx123" {
+		t.Fatalf("AppID = %q", settings.Target.AppID)
+	}
+	if settings.Target.Name != "测试小程序" {
+		t.Fatalf("Name = %q", settings.Target.Name)
+	}
+}
 
-	if cfg.FullPath != configPath {
-		t.Fatalf("FullPath = %q, want %q", cfg.FullPath, configPath)
+func TestSettingsAllowsEmptyTargetName(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "wx-mini-video.yaml")
+	if err := os.WriteFile(configPath, []byte("target:\n  appID: \"wx123\"\n"), 0o644); err != nil {
+		t.Fatal(err)
 	}
-	if cfg.RootDir != filepath.Dir(configPath) {
-		t.Fatalf("RootDir = %q, want %q", cfg.RootDir, filepath.Dir(configPath))
+	t.Setenv(EnvConfigPath, configPath)
+
+	cfg := New("test", "debug")
+	if err := cfg.LoadConfig(); err != nil {
+		t.Fatal(err)
 	}
-	if cfg.Filename != filepath.Base(configPath) {
-		t.Fatalf("Filename = %q, want %q", cfg.Filename, filepath.Base(configPath))
+	settings := cfg.Settings()
+	if settings.Target.AppID != "wx123" {
+		t.Fatalf("AppID = %q", settings.Target.AppID)
 	}
-	if !cfg.Existing {
-		t.Fatal("Existing = false, want true")
+	if settings.Target.Name != "" {
+		t.Fatalf("Name = %q", settings.Target.Name)
 	}
 }
