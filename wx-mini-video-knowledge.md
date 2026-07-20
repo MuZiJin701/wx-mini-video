@@ -9,8 +9,9 @@
 1. PC 微信请求经过本地代理 `127.0.0.1:2023`。
 2. `internal/interceptor/miniprogram.go` 按响应 URL、Content-Type 和 JSON 响应体提取媒体候选。
 3. `internal/miniprogram.Store` 按 AppID 和 URL 去重，保留缓存路径、请求头、大小和来源。
-4. TUI 默认显示“视频”分类，可切换全部、图片、视频、m3u8。
-5. 下载器保存图片/直链视频；m3u8 先并发缓存分片，再调用 ffmpeg 合并为 mp4。
+4. TUI 默认显示“视频”分类，可切换全部、图片、视频、m3u8；候选详情可用 `i` 查看。
+5. JSON 响应中媒体 URL 所在对象的 `title`、`videoTitle`、`mediaTitle`、`caption`、`subject` 或 `name` 字段会作为候选标题。
+6. 下载器保存图片/直链视频；直链先写入 `.part`，可在失败后复用；m3u8 先并发缓存分片，再调用 ffmpeg 合并为 mp4。
 
 ## 配置
 
@@ -41,6 +42,9 @@ dist\wx-mini-video-windows-amd64.zip
 ```
 
 zip 用于 GitHub Releases，不提交到源码仓库。
+构建脚本随后校验 zip 内容必须精确为 `README.md`、`wx-mini-video.exe` 和 `wx-mini-video.yaml`。
+
+下载成功记录追加到 `downloads/history.jsonl`，字段包括完成路径、来源域名、文件大小和 UTC 时间。
 
 ## 排障
 

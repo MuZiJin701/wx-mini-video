@@ -63,11 +63,11 @@
 **产出：**
 - 更容易判断资源来源，并让下载流程更可恢复。
 
-- [ ] 增加选中资源详情视图，显示完整 URL、来源 URL、请求头摘要和本地缓存路径；主列表继续保持简洁。
-- [ ] 从媒体 URL 附近的 JSON 字段中提取标题，写入 `Candidate` 的展示字段，帮助用户判断哪个资源是目标。
-- [ ] 直链下载改为 `.part` 临时文件，下载完成后原子重命名，支持失败后复用已有部分文件。
-- [ ] 增加 `downloads/history.jsonl` 下载历史，记录完成路径、来源域名、大小和时间。
-- [ ] 增加构建校验脚本，检查 zip 内容必须精确等于 `README.md`、`wx-mini-video.exe`、`wx-mini-video.yaml`。
+- [x] 增加选中资源详情视图，显示完整 URL、来源 URL、请求头摘要和本地缓存路径；主列表继续保持简洁。
+- [x] 从媒体 URL 附近的 JSON 字段中提取标题，写入 `Candidate` 的展示字段，帮助用户判断哪个资源是目标。
+- [x] 直链下载改为 `.part` 临时文件，下载完成后原子重命名，支持失败后复用已有部分文件。
+- [x] 增加 `downloads/history.jsonl` 下载历史，记录完成路径、来源域名、大小和时间。
+- [x] 增加构建校验脚本，检查 zip 内容必须精确等于 `README.md`、`wx-mini-video.exe`、`wx-mini-video.yaml`。
 
 ### 任务 4：发布流程
 
@@ -78,8 +78,8 @@
 **产出：**
 - 可重复执行的 Windows 发布流程。
 
-- [ ] 运行 `go test -count=1 ./...`。
-- [ ] 运行 `go vet ./...`。
-- [ ] 运行 `cmd /c build\build.bat windows`。
-- [ ] 使用 `tar -tf dist\wx-mini-video-windows-amd64.zip` 检查 zip 内容。
+- [x] 运行 `go test -count=1 ./...`。
+- [x] 运行 `go vet ./...`。
+- [x] 运行 `cmd /c build\build.bat windows`。
+- [x] 使用 `tar -tf dist\wx-mini-video-windows-amd64.zip` 检查 zip 内容。
 - [ ] 将 zip 上传到 GitHub Releases，并附简短变更说明。

@@ -21,6 +21,8 @@ copy /Y "%ROOT_DIR%\internal\config\config.template.yaml" "%DIST_DIR%\wx-mini-vi
 copy /Y "%ROOT_DIR%\README.md" "%DIST_DIR%\README.md" >nul
 powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop'; Compress-Archive -Path '%DIST_DIR%\*' -DestinationPath '%ZIP_PATH%' -Force"
 if errorlevel 1 exit /b 1
+powershell -NoProfile -ExecutionPolicy Bypass -File "%ROOT_DIR%\build\verify-package.ps1" -ZipPath "%ZIP_PATH%"
+if errorlevel 1 exit /b 1
 echo Done: %ZIP_PATH%
 exit /b 0
 

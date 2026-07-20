@@ -27,11 +27,14 @@
 4. 在 PC 微信中打开对应小程序。
 5. 建议先按 `c` 清空列表，再打开目标图片或播放目标视频。
 6. 选中资源后按 `d` 或 `Enter` 下载。
-7. 按 `q` 退出，程序会恢复启动前的系统代理。
+7. 需要核对资源时按 `i` 查看完整 URL、来源 URL、请求头摘要和本地缓存路径。
+8. 按 `q` 退出，程序会恢复启动前的系统代理。
 
 资源列表默认显示“视频”分类，可用 `Tab` 或数字键切换到“全部 / 图片 / 视频 / m3u8”。
 
 下载文件默认保存在程序旁边的 `downloads` 目录。
+
+直链下载会先写入同名 `.part` 文件，网络中断后再次下载会尝试从已有部分继续。成功完成的下载会追加记录到 `downloads/history.jsonl`。
 
 ## 快捷键
 
@@ -41,6 +44,7 @@
 | `Tab`、`Shift+Tab` | 切换分类 |
 | `1/2/3/4` | 切换到全部、图片、视频、m3u8 |
 | `d`、`Enter` | 下载选中资源 |
+| `i` | 显示或隐藏选中资源详情 |
 | `c` | 清空资源列表 |
 | `r` | 刷新列表 |
 | `o` | 打开下载目录 |
@@ -120,6 +124,7 @@ build\build.bat windows
 - `dist\wx-mini-video-windows-amd64.zip`
 
 `dist\` 是本机构建目录，不提交到 Git。对外分发时，把 zip 上传到 GitHub Releases。
+构建脚本会自动运行 `build\verify-package.ps1`，确保 zip 只包含 `README.md`、`wx-mini-video.exe` 和 `wx-mini-video.yaml`。
 
 项目维护文档：
 
