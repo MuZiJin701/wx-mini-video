@@ -8,6 +8,7 @@ import (
 	"path"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -46,6 +47,7 @@ type model struct {
 	category     category
 	logs         []string
 	showLogs     bool
+	showDetails  bool
 	width        int
 	height       int
 	started      bool
@@ -168,6 +170,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.addLog("已清空候选资源")
 		case "l":
 			m.showLogs = !m.showLogs
+		case "i":
+			m.showDetails = !m.showDetails
 		case "pgup":
 			m.logOffset += 8
 		case "pgdown":
@@ -251,7 +255,8 @@ func (m model) View() string {
 	if m.showLogs {
 		logPanelLines = min(7, max(len(m.logs), 1)+1)
 	}
-	listAvailable := h - headerLines - progressLines - logPanelLines - 1
+	detailLines := m.selectedCandidateDetails()
+	listAvailable := h - headerLines - progressLines - logPanelLines - len(detailLines) - 1
 	if listAvailable < 0 {
 		listAvailable = 0
 	}
@@ -280,7 +285,7 @@ func (m model) View() string {
 		b.WriteString("\n")
 	}
 
-	shortcuts := "快捷键: Tab 分类  1/2/3/4 全部/图片/视频/m3u8  ↑/↓ 选择  d/Enter 下载  c 清空  l 日志  q 退出"
+	shortcuts := "快捷键: Tab 分类  1/2/3/4 全部/图片/视频/m3u8  ↑/↓ 选择  i 详情  d/Enter 下载  c 清空  l 日志  q 退出"
 	b.WriteString(mutedStyle.Render(fitLine(shortcuts, m.width-1)))
 	b.WriteString("\n")
 	b.WriteString(m.renderCategoryTabs())
@@ -291,6 +296,10 @@ func (m model) View() string {
 	}
 
 	b.WriteString(m.renderCandidates(listAvailable))
+	if len(detailLines) > 0 {
+		b.WriteString(strings.Join(detailLines, "\n"))
+		b.WriteString("\n")
+	}
 	if progressLines > 0 {
 		b.WriteString(m.renderDownloadProgress())
 	}
@@ -558,6 +567,103 @@ func candidateListLine(candidate miniprogram.Candidate, width int) string {
 	return fitLine(prefix+fitLine(label, labelWidth)+" · "+fitLine(info, infoWidth), width)
 }
 
+func (m model) selectedCandidateDetails() []string {
+	if !m.showDetails {
+		return nil
+	}
+	visible := m.filteredCandidates()
+	if m.selected < 0 || m.selected >= len(visible) {
+		return nil
+	}
+	width := m.width
+	if width <= 0 {
+		width = 80
+	}
+	return renderCandidateDetails(visible[m.selected], width-1)
+}
+
+func renderCandidateDetails(candidate miniprogram.Candidate, width int) []string {
+	lines := []string{mutedStyle.Render("选中资源详情")}
+	lines = appendDetailLines(lines, "标题", candidate.Title, width)
+	lines = appendDetailLines(lines, "类型/来源", kindDisplay(candidate.Kind)+" / "+sourceDisplay(candidate.Source), width)
+	lines = appendDetailLines(lines, "URL", candidate.URL, width)
+	lines = appendDetailLines(lines, "来源 URL", candidate.SourceURL, width)
+	lines = appendDetailLines(lines, "请求头", headerSummary(candidate.Headers), width)
+	cachePath := candidate.CachedPath
+	if cachePath == "" {
+		cachePath = "未缓存"
+	}
+	return appendDetailLines(lines, "本地缓存", cachePath, width)
+}
+
+func appendDetailLines(lines []string, label, value string, width int) []string {
+	if strings.TrimSpace(value) == "" {
+		value = "-"
+	}
+	return append(lines, detailLines(label, value, width)...)
+}
+
+func detailLines(label, value string, width int) []string {
+	prefix := label + ": "
+	if width <= lipgloss.Width(prefix) {
+		width = lipgloss.Width(prefix) + 1
+	}
+	chunks := splitDisplayText(value, max(1, width-lipgloss.Width(prefix)))
+	lines := make([]string, 0, len(chunks))
+	for i, chunk := range chunks {
+		if i == 0 {
+			lines = append(lines, prefix+chunk)
+			continue
+		}
+		lines = append(lines, strings.Repeat(" ", lipgloss.Width(prefix))+chunk)
+	}
+	return lines
+}
+
+func splitDisplayText(value string, width int) []string {
+	if value == "" {
+		return []string{""}
+	}
+	var chunks []string
+	var current strings.Builder
+	for _, r := range value {
+		candidate := current.String() + string(r)
+		if current.Len() > 0 && lipgloss.Width(candidate) > width {
+			chunks = append(chunks, current.String())
+			current.Reset()
+		}
+		current.WriteRune(r)
+	}
+	if current.Len() > 0 {
+		chunks = append(chunks, current.String())
+	}
+	return chunks
+}
+
+func headerSummary(headers map[string]string) string {
+	if len(headers) == 0 {
+		return "-"
+	}
+	keys := make([]string, 0, len(headers))
+	for key := range headers {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	parts := make([]string, 0, len(keys))
+	for _, key := range keys {
+		value := strings.TrimSpace(headers[key])
+		switch strings.ToLower(key) {
+		case "authorization", "cookie", "proxy-authorization":
+			value = "已捕获"
+		}
+		if value == "" {
+			value = "-"
+		}
+		parts = append(parts, key+"="+value)
+	}
+	return strings.Join(parts, "; ")
+}
+
 func (m *model) refresh() {
 	prevLen := len(m.filteredCandidates())
 	prevSelected := m.selected
@@ -814,6 +920,9 @@ func targetDisplay(target miniprogram.Target) string {
 var recordTimeRegexp = regexp.MustCompile(`(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2}):\d{2}Z-(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2}):\d{2}Z`)
 
 func candidateLabel(candidate miniprogram.Candidate) string {
+	if title := strings.TrimSpace(candidate.Title); title != "" {
+		return title
+	}
 	u, err := url.Parse(candidate.URL)
 	if err != nil {
 		return candidate.Kind

@@ -26,6 +26,7 @@ type Candidate struct {
 	ID            string            `json:"id"`
 	AppID         string            `json:"app_id"`
 	AppName       string            `json:"app_name"`
+	Title         string            `json:"title,omitempty"`
 	URL           string            `json:"url"`
 	SourceURL     string            `json:"source_url"`
 	Source        string            `json:"source"`
@@ -75,6 +76,10 @@ func (s *Store) Add(candidate Candidate) (Candidate, bool) {
 		}
 		if candidate.ContentType != "" && existing.ContentType == "" {
 			existing.ContentType = candidate.ContentType
+			changed = true
+		}
+		if candidate.Title != "" && existing.Title == "" {
+			existing.Title = candidate.Title
 			changed = true
 		}
 		if len(candidate.Headers) > 0 && len(existing.Headers) == 0 {
@@ -266,7 +271,7 @@ func ExtractMediaURLsFromJSON(body []byte) []Candidate {
 		return nil
 	}
 	seen := make(map[string]Candidate)
-	walkJSON("", v, seen)
+	walkJSON("", v, "", seen)
 	out := make([]Candidate, 0, len(seen))
 	for _, candidate := range seen {
 		out = append(out, candidate)
@@ -280,15 +285,18 @@ func ExtractMediaURLsFromJSON(body []byte) []Candidate {
 	return out
 }
 
-func walkJSON(fieldPath string, v any, seen map[string]Candidate) {
+func walkJSON(fieldPath string, v any, nearbyTitle string, seen map[string]Candidate) {
 	switch value := v.(type) {
 	case map[string]any:
+		if title := jsonObjectTitle(value); title != "" {
+			nearbyTitle = title
+		}
 		for k, child := range value {
 			nextPath := k
 			if fieldPath != "" {
 				nextPath = fieldPath + "." + k
 			}
-			walkJSON(nextPath, child, seen)
+			walkJSON(nextPath, child, nearbyTitle, seen)
 		}
 	case []any:
 		for i, child := range value {
@@ -297,7 +305,7 @@ func walkJSON(fieldPath string, v any, seen map[string]Candidate) {
 				nextPath = "[]"
 			}
 			_ = i
-			walkJSON(nextPath, child, seen)
+			walkJSON(nextPath, child, nearbyTitle, seen)
 		}
 	case string:
 		key := strings.ToLower(fieldPath)
@@ -310,6 +318,7 @@ func walkJSON(fieldPath string, v any, seen map[string]Candidate) {
 			urlValue := strings.TrimRight(match, ".,);]")
 			seen[urlValue+"|"+fieldPath] = Candidate{
 				URL:       urlValue,
+				Title:     nearbyTitle,
 				Source:    "json",
 				FieldPath: fieldPath,
 				Kind:      kind,
@@ -317,6 +326,36 @@ func walkJSON(fieldPath string, v any, seen map[string]Candidate) {
 			}
 		}
 	}
+}
+
+func jsonObjectTitle(value map[string]any) string {
+	bestRank := 100
+	best := ""
+	for key, raw := range value {
+		text, ok := raw.(string)
+		if !ok {
+			continue
+		}
+		text = strings.TrimSpace(text)
+		if text == "" || mediaURLRegexp.MatchString(text) {
+			continue
+		}
+		compact := strings.NewReplacer("_", "", "-", "").Replace(strings.ToLower(key))
+		rank := 100
+		switch compact {
+		case "title", "videotitle", "mediatitle":
+			rank = 1
+		case "caption", "subject":
+			rank = 2
+		case "name":
+			rank = 3
+		}
+		if rank < bestRank {
+			bestRank = rank
+			best = text
+		}
+	}
+	return best
 }
 
 func looksLikeMediaField(key string) bool {

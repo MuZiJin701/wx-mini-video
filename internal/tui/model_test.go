@@ -104,6 +104,57 @@ func TestCandidateSummaryDoesNotExposeQueryString(t *testing.T) {
 	}
 }
 
+func TestCandidateLabelPrefersExtractedTitle(t *testing.T) {
+	got := candidateLabel(miniprogram.Candidate{
+		Title: "春日活动",
+		Kind:  "video",
+		URL:   "https://cdn.example.com/videos/spring.mp4",
+	})
+	if got != "春日活动" {
+		t.Fatalf("candidateLabel() = %q, want extracted title", got)
+	}
+}
+
+func TestCandidateDetailsShowFullMetadata(t *testing.T) {
+	candidate := miniprogram.Candidate{
+		Title:     "春日活动",
+		Kind:      "video",
+		Source:    "json",
+		URL:       "https://cdn.example.com/videos/spring.mp4?token=secret",
+		SourceURL: "https://mini.example.com/api/feed?id=7",
+		Headers: map[string]string{
+			"Referer":    "https://mini.example.com/",
+			"User-Agent": "wx-test",
+			"Cookie":     "session=secret",
+		},
+		CachedPath: "downloads/cache.m3u8",
+	}
+
+	got := renderCandidateDetails(candidate, 200)
+	joined := strings.Join(got, "\n")
+	for _, want := range []string{
+		"春日活动",
+		candidate.URL,
+		candidate.SourceURL,
+		"Referer",
+		"User-Agent",
+		"Cookie=已捕获",
+		candidate.CachedPath,
+	} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("renderCandidateDetails() = %q, want %q", joined, want)
+		}
+	}
+}
+
+func TestDetailsShortcutTogglesSelectedCandidate(t *testing.T) {
+	m := model{targetReady: true}
+	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("i")})
+	if !next.(model).showDetails {
+		t.Fatal("i should show candidate details")
+	}
+}
+
 func TestViewKeepsProgressWhenCategoryChanges(t *testing.T) {
 	m := model{
 		runtime: &app.Runtime{

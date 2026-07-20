@@ -68,6 +68,23 @@ func TestExtractMediaURLsFromJSONFindsImageFields(t *testing.T) {
 	}
 }
 
+func TestExtractMediaURLsFromJSONUsesNearbyTitle(t *testing.T) {
+	body := []byte(`{
+		"data": {
+			"title": "春日活动",
+			"videoUrl": "https://cdn.example.com/videos/spring.mp4"
+		}
+	}`)
+
+	got := ExtractMediaURLsFromJSON(body)
+	if len(got) != 1 {
+		t.Fatalf("len(ExtractMediaURLsFromJSON()) = %d, want 1: %#v", len(got), got)
+	}
+	if got[0].Title != "春日活动" {
+		t.Fatalf("Title = %q, want nearby JSON title", got[0].Title)
+	}
+}
+
 func TestCleanHeadersRemovesUnsafeReplayHeaders(t *testing.T) {
 	h := http.Header{}
 	h.Set("User-Agent", "ua")
