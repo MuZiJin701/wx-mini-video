@@ -161,8 +161,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.addLog("已刷新候选资源")
 		case "c":
 			m.runtime.ClearCandidates()
+			m.runtime.ClearProgress()
 			m.candidates = nil
 			m.selected = 0
+			m.progress = minidownload.Progress{}
 			m.addLog("已清空候选资源")
 		case "l":
 			m.showLogs = !m.showLogs
@@ -244,11 +246,12 @@ func (m model) View() string {
 	if ffmpegSetupLine != "" {
 		headerLines++
 	}
+	progressLines := m.downloadProgressLines()
 	logPanelLines := 0
 	if m.showLogs {
-		logPanelLines = min(9, max(len(m.logs), 1)+1)
+		logPanelLines = min(7, max(len(m.logs), 1)+1)
 	}
-	listAvailable := h - headerLines - logPanelLines - 1
+	listAvailable := h - headerLines - progressLines - logPanelLines - 1
 	if listAvailable < 0 {
 		listAvailable = 0
 	}
@@ -263,22 +266,22 @@ func (m model) View() string {
 		m.runtime.ProxyAddr(),
 		ffmpegState,
 	)
-	b.WriteString(shortURL(infoLine, m.width-1))
+	b.WriteString(fitLine(infoLine, m.width-1))
 	b.WriteString("\n")
 
 	if m.startErr != nil {
-		b.WriteString(errorStyle.Render(shortURL("代理未启动: "+m.startErr.Error(), m.width-1)))
+		b.WriteString(errorStyle.Render(fitLine("代理未启动: "+m.startErr.Error(), m.width-1)))
 		b.WriteString("\n")
 	} else if m.started {
-		b.WriteString(okStyle.Render(shortURL("代理运行中。建议先按 c 清空，再打开目标图片或播放目标视频，以便识别最新候选。", m.width-1)))
+		b.WriteString(okStyle.Render(fitLine("代理运行中。建议先按 c 清空，再打开目标图片或播放目标视频，以便识别最新候选。", m.width-1)))
 		b.WriteString("\n")
 	} else {
-		b.WriteString(mutedStyle.Render(shortURL("代理启动中...", m.width-1)))
+		b.WriteString(mutedStyle.Render(fitLine("代理启动中...", m.width-1)))
 		b.WriteString("\n")
 	}
 
 	shortcuts := "快捷键: Tab 分类  1/2/3/4 全部/图片/视频/m3u8  ↑/↓ 选择  d/Enter 下载  c 清空  l 日志  q 退出"
-	b.WriteString(mutedStyle.Render(shortURL(shortcuts, m.width-1)))
+	b.WriteString(mutedStyle.Render(fitLine(shortcuts, m.width-1)))
 	b.WriteString("\n")
 	b.WriteString(m.renderCategoryTabs())
 	b.WriteString("\n")
@@ -288,9 +291,12 @@ func (m model) View() string {
 	}
 
 	b.WriteString(m.renderCandidates(listAvailable))
+	if progressLines > 0 {
+		b.WriteString(m.renderDownloadProgress())
+	}
 
 	if m.showLogs {
-		logMax := min(8, logPanelLines-1)
+		logMax := min(6, logPanelLines-1)
 		if logMax > 0 {
 			b.WriteString(m.renderLogs(logMax))
 		}
@@ -403,27 +409,17 @@ func trimLastRune(value string) string {
 
 func (m model) renderCandidates(maxLines int) string {
 	visibleCandidates := m.filteredCandidates()
-	if len(m.candidates) == 0 {
-		return mutedStyle.Render("暂无候选资源。打开图片或播放视频后，图片、mp4 或 m3u8 会出现在这里。") + "\n"
-	}
-	if len(visibleCandidates) == 0 {
-		return mutedStyle.Render(fmt.Sprintf("当前分类暂无资源。已嗅探 %d 个资源，可按 Tab 或 1/2/3/4 切换分类。", len(m.candidates))) + "\n"
-	}
-
 	if maxLines <= 0 {
 		return ""
 	}
-
-	downloadExtra := 0
-	if m.downloading {
-		downloadExtra = 2
+	if len(m.candidates) == 0 {
+		return mutedStyle.Render(fitLine("暂无候选资源。打开图片或播放视频后，图片、mp4 或 m3u8 会出现在这里。", m.width-1)) + "\n"
+	}
+	if len(visibleCandidates) == 0 {
+		return mutedStyle.Render(fitLine(fmt.Sprintf("当前分类暂无资源。已嗅探 %d 个资源，可按 Tab 或 1/2/3/4 切换分类。", len(m.candidates)), m.width-1)) + "\n"
 	}
 
-	visible := maxLines - downloadExtra
-	if visible <= 0 {
-		visible = 0
-	}
-
+	visible := maxLines
 	half := visible / 2
 	start := m.selected - half
 	end := m.selected + visible - half
@@ -451,30 +447,12 @@ func (m model) renderCandidates(maxLines int) string {
 	if lineW <= 0 {
 		lineW = 80
 	}
-	labelW := 28
-	urlW := max(20, lineW-76)
 
 	for i := start; i < end; i++ {
 		item := visibleCandidates[i]
-		cache := "-"
-		if item.CachedPath != "" {
-			cache = "cache"
-		}
-		source := item.Source
-		if source == "" {
-			source = "-"
-		}
-		line := fmt.Sprintf("  %s %-5s %-9s %-5s %-8s %-28s %s",
-			item.CreatedAt.Format("15:04:05"),
-			kindDisplay(item.Kind),
-			formatBytes(item.ContentLength),
-			cache,
-			sourceDisplay(source),
-			shortURL(candidateLabel(item), labelW),
-			shortURL(candidateReadableInfo(item), urlW),
-		)
+		line := candidateListLine(item, lineW-1)
 		if i == m.selected {
-			line = selectedStyle.Render("> " + strings.TrimSpace(line))
+			line = selectedStyle.Render(fitLine("> "+strings.TrimSpace(line), lineW-1))
 		}
 		b.WriteString(line)
 		b.WriteString("\n")
@@ -486,19 +464,44 @@ func (m model) renderCandidates(maxLines int) string {
 		b.WriteString("\n")
 	}
 
-	if m.downloading {
-		b.WriteString(okStyle.Render(progressText(m.progress)))
-		b.WriteString("\n")
-		b.WriteString(okStyle.Render(progressBar(m.progress, max(10, lineW-2))))
-		b.WriteString("\n")
-	}
+	return b.String()
+}
 
+func (m model) downloadProgressLines() int {
+	if !m.shouldShowProgress() {
+		return 0
+	}
+	return 2
+}
+
+func (m model) shouldShowProgress() bool {
+	if m.downloading {
+		return true
+	}
+	switch m.progress.Status {
+	case "done", "error":
+		return true
+	default:
+		return false
+	}
+}
+
+func (m model) renderDownloadProgress() string {
+	lineW := m.width
+	if lineW <= 0 {
+		lineW = 80
+	}
+	var b strings.Builder
+	b.WriteString(okStyle.Render(fitLine(progressText(m.progress), lineW-1)))
+	b.WriteString("\n")
+	b.WriteString(okStyle.Render(fitLine(progressBar(m.progress, max(10, lineW-2)), lineW-1)))
+	b.WriteString("\n")
 	return b.String()
 }
 
 func (m model) renderLogs(maxLines int) string {
 	var b strings.Builder
-	b.WriteString(mutedStyle.Render("日志: " + filepath.Join(m.runtime.Settings.DownloadDir, "wx-mini-video.log")))
+	b.WriteString(mutedStyle.Render(fitLine("日志: "+filepath.Join(m.runtime.Settings.DownloadDir, "wx-mini-video.log"), m.width-1)))
 	b.WriteString("\n")
 	start := 0
 	if len(m.logs) > maxLines {
@@ -515,11 +518,44 @@ func (m model) renderLogs(maxLines int) string {
 		end = len(m.logs)
 	}
 	for _, line := range m.logs[start:end] {
-		rendered := shortURL(line, m.width-2)
+		rendered := fitLine(line, m.width-4)
 		b.WriteString(mutedStyle.Render("• " + rendered))
 		b.WriteString("\n")
 	}
 	return b.String()
+}
+
+func candidateListLine(candidate miniprogram.Candidate, width int) string {
+	if width <= 0 {
+		width = 80
+	}
+	cache := "-"
+	if candidate.CachedPath != "" {
+		cache = "cache"
+	}
+	source := candidate.Source
+	if source == "" {
+		source = "-"
+	}
+	prefix := fmt.Sprintf("  %s %-4s %-8s %-5s %-4s ",
+		candidate.CreatedAt.Format("15:04:05"),
+		kindDisplay(candidate.Kind),
+		formatBytes(candidate.ContentLength),
+		cache,
+		sourceDisplay(source),
+	)
+	restWidth := width - lipgloss.Width(prefix)
+	if restWidth <= 8 {
+		return fitLine(prefix, width)
+	}
+	label := candidateLabel(candidate)
+	info := candidateReadableInfo(candidate)
+	labelWidth := min(26, max(10, restWidth/3))
+	infoWidth := restWidth - labelWidth - 3
+	if infoWidth < 8 {
+		infoWidth = 8
+	}
+	return fitLine(prefix+fitLine(label, labelWidth)+" · "+fitLine(info, infoWidth), width)
 }
 
 func (m *model) refresh() {
@@ -703,7 +739,28 @@ func candidateSummary(candidate miniprogram.Candidate) string {
 	if candidate.CachedPath != "" {
 		cache = "cache"
 	}
-	return fmt.Sprintf("%s %s %s", candidate.Kind, cache, shortURL(candidate.URL, 80))
+	return fmt.Sprintf("%s %s %s %s", kindDisplay(candidate.Kind), cache, formatBytes(candidate.ContentLength), candidateReadableInfo(candidate))
+}
+
+func fitLine(value string, width int) string {
+	if width <= 0 {
+		return ""
+	}
+	if lipgloss.Width(value) <= width {
+		return value
+	}
+	if width <= 3 {
+		return strings.Repeat(".", width)
+	}
+	var b strings.Builder
+	for _, r := range value {
+		next := b.String() + string(r)
+		if lipgloss.Width(next)+3 > width {
+			break
+		}
+		b.WriteRune(r)
+	}
+	return b.String() + "..."
 }
 
 func categoryDisplay(value category) string {
@@ -962,6 +1019,12 @@ func progressBar(progress minidownload.Progress, width int) string {
 	}
 	if width > 60 {
 		width = 60
+	}
+	if progress.Status == "done" {
+		return simpleBar(1, 1, width)
+	}
+	if progress.Status == "error" {
+		return simpleBar(0, 1, width)
 	}
 	if progress.Total <= 0 {
 		return simpleSpinner(width)

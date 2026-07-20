@@ -7,7 +7,7 @@
 
 ## 下载
 
-从 GitHub Releases 下载：
+从 GitHub Releases 下载，不要从源码仓库的 `dist/` 目录取包：
 
 - `wx-mini-video-windows-amd64.zip`
 
@@ -17,7 +17,7 @@
 - `wx-mini-video.yaml`
 - `README.md`
 
-基础包不内置 ffmpeg。首次需要处理 `m3u8` 视频时，程序会自动下载便携版 `ffmpeg.exe`。
+基础包不内置 ffmpeg。首次处理 `m3u8` 视频时，程序会自动下载便携版 `ffmpeg.exe` 到下载目录。
 
 ## 使用
 
@@ -64,7 +64,7 @@
 
 ### 证书安装失败
 
-请确认已“以管理员身份运行”。如果仍失败，可以手动安装下载目录里的 `QimingRoot.cer` 到“受信任的根证书颁发机构”。
+请确认已“以管理员身份运行”。如果仍失败，可以手动安装下载目录里的 `WxMiniVideoRoot.cer` 到“受信任的根证书颁发机构”。
 
 代理启动后，也可以访问：
 
@@ -120,6 +120,13 @@ build\build.bat windows
 - `dist\wx-mini-video-windows-amd64.zip`
 
 `dist\` 是本机构建目录，不提交到 Git。对外分发时，把 zip 上传到 GitHub Releases。
+
+项目维护文档：
+
+- `AGENTS.md`：项目规则、边界和证据入口
+- `wx-mini-video-knowledge.md`：架构、配置、分发和排障知识
+- `docs/superpowers/plans/`：当前优化和修改计划
+- `docs/archive/`：历史文档
 
 ## 免责声明
 

@@ -6,6 +6,9 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"wx_channel/internal/app"
+	"wx_channel/internal/config"
+	"wx_channel/internal/minidownload"
 	"wx_channel/internal/miniprogram"
 )
 
@@ -82,5 +85,73 @@ func TestCandidateReadableInfoUsesFieldHostAndFilename(t *testing.T) {
 		if !strings.Contains(info, want) {
 			t.Fatalf("candidateReadableInfo() = %q, want %q", info, want)
 		}
+	}
+}
+
+func TestCandidateSummaryDoesNotExposeQueryString(t *testing.T) {
+	candidate := miniprogram.Candidate{
+		Kind:          "video",
+		URL:           "https://wxsmw.wxs.qq.com/path/video.mp4?ck=secret&sha256=long",
+		ContentLength: 1024,
+	}
+
+	got := candidateSummary(candidate)
+	if strings.Contains(got, "?ck=") || strings.Contains(got, "sha256=") {
+		t.Fatalf("candidateSummary() exposed query string: %q", got)
+	}
+	if !strings.Contains(got, "wxsmw.wxs.qq.com") || !strings.Contains(got, "video.mp4") {
+		t.Fatalf("candidateSummary() = %q, want host and filename", got)
+	}
+}
+
+func TestViewKeepsProgressWhenCategoryChanges(t *testing.T) {
+	m := model{
+		runtime: &app.Runtime{
+			Settings: config.AppSettings{
+				DownloadDir:   "downloads",
+				ProxyHostname: "127.0.0.1",
+				ProxyPort:     2023,
+				Target:        miniprogram.Target{AppID: "wx123"},
+			},
+		},
+		candidates: []miniprogram.Candidate{
+			{Kind: "image", URL: "https://example.com/cover.jpg"},
+			{Kind: "video", URL: "https://example.com/video.mp4"},
+		},
+		category:    categoryVideo,
+		targetReady: true,
+		started:     true,
+		downloading: true,
+		progress: minidownload.Progress{
+			Status:     "downloading",
+			Downloaded: 20,
+			Total:      100,
+		},
+		ffmpegSetup: &ffmpegProgressState{state: minidownload.FFmpegState{State: "found", Path: "ffmpeg"}},
+		width:       80,
+		height:      14,
+	}
+
+	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("2")})
+	got := next.(model).View()
+	if !strings.Contains(got, "下载中 20%") {
+		t.Fatalf("View() lost download progress after category switch:\n%s", got)
+	}
+}
+
+func TestCandidateListLineTruncatesLongResource(t *testing.T) {
+	candidate := miniprogram.Candidate{
+		Kind:          "image",
+		URL:           "https://wximg.wxs.qq.com/141/20204/snscosdownload/SZ/reserved/very-long-resource-name.jpg?ck=secret&sha256=long",
+		ContentLength: 27491,
+		Source:        "response",
+	}
+
+	got := candidateListLine(candidate, 48)
+	if strings.Contains(got, "?ck=") || strings.Contains(got, "sha256=") {
+		t.Fatalf("candidateListLine() exposed query string: %q", got)
+	}
+	if len([]rune(got)) > 60 {
+		t.Fatalf("candidateListLine() was not truncated enough: %q", got)
 	}
 }

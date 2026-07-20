@@ -1,7 +1,6 @@
 package interceptor
 
 import (
-	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -167,18 +166,7 @@ func addMiniProgramCandidate(store *miniprogram.Store, target miniprogram.Target
 	if candidate.Kind == "" || candidate.Kind == "segment" {
 		return
 	}
-	added, ok := store.Add(candidate)
-	if !ok {
-		return
-	}
-	fmt.Printf("[MINIPROGRAM] %s %s %s size=%d source=%s field=%s\n",
-		added.AppName,
-		added.Kind,
-		added.URL,
-		added.ContentLength,
-		added.SourceURL,
-		added.FieldPath,
-	)
+	_, _ = store.Add(candidate)
 }
 
 func parseContentLength(value string) int64 {

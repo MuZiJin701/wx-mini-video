@@ -131,6 +131,12 @@ func (r *Runtime) ClearCandidates() {
 	r.Store.Clear(r.Settings.Target.AppID)
 }
 
+func (r *Runtime) ClearProgress() {
+	r.progressMu.Lock()
+	r.progress = minidownload.Progress{}
+	r.progressMu.Unlock()
+}
+
 func (r *Runtime) Download(ctx context.Context, candidate miniprogram.Candidate, preferredName string) (string, error) {
 	if candidate.ID != "" {
 		if latest, ok := r.Store.Get(candidate.ID); ok {
@@ -234,7 +240,7 @@ func (r *Runtime) exportRootCert() string {
 	if err := os.MkdirAll(r.Settings.DownloadDir, 0o755); err != nil {
 		return ""
 	}
-	path := filepath.Join(r.Settings.DownloadDir, "QimingRoot.cer")
+	path := filepath.Join(r.Settings.DownloadDir, "WxMiniVideoRoot.cer")
 	if err := os.WriteFile(path, r.cert.Cert, 0o644); err != nil {
 		return ""
 	}
