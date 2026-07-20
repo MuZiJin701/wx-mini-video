@@ -2,16 +2,91 @@ package minidownload
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"wx_channel/internal/miniprogram"
 )
+
+func TestDownloadDirectResumesPartialAndWritesHistory(t *testing.T) {
+	body := []byte(strings.Repeat("wx-mini-video", 1024))
+	half := len(body) / 2
+	var requests int
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		if r.Header.Get("Range") == "" {
+			w.Header().Set("Content-Length", strconv.Itoa(len(body)))
+			_, _ = w.Write(body[:half])
+			return
+		}
+		if got := r.Header.Get("Range"); got != "bytes="+strconv.Itoa(half)+"-" {
+			t.Fatalf("Range = %q, want resume from %d", got, half)
+		}
+		w.Header().Set("Content-Range", fmt.Sprintf("bytes %d-%d/%d", half, len(body)-1, len(body)))
+		w.WriteHeader(http.StatusPartialContent)
+		_, _ = w.Write(body[half:])
+	}))
+	defer ts.Close()
+
+	d := New(t.TempDir())
+	candidate := miniprogram.Candidate{
+		ID:            "resume-history",
+		URL:           ts.URL + "/resume.mp4",
+		Kind:          "video",
+		Suffix:        ".mp4",
+		ContentLength: int64(len(body)),
+	}
+
+	if _, err := d.Download(context.Background(), candidate, ""); err == nil {
+		t.Fatal("first download should fail after the server closes the response early")
+	}
+	partPath := filepath.Join(d.Dir, "resume.mp4.part")
+	if got := fileSize(partPath); got != int64(half) {
+		t.Fatalf("partial size = %d, want %d", got, half)
+	}
+
+	outputPath, err := d.Download(context.Background(), candidate, "")
+	if err != nil {
+		t.Fatalf("resumed download failed: %v", err)
+	}
+	if requests != 2 {
+		t.Fatalf("server requests = %d, want initial request plus resume", requests)
+	}
+	got, err := os.ReadFile(outputPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != string(body) {
+		t.Fatalf("downloaded body does not match original content")
+	}
+	if fileExists(partPath) {
+		t.Fatalf("partial file %q should be renamed after completion", partPath)
+	}
+
+	historyBody, err := os.ReadFile(filepath.Join(d.Dir, "history.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var record DownloadHistory
+	if err := json.Unmarshal([]byte(strings.TrimSpace(string(historyBody))), &record); err != nil {
+		t.Fatalf("history record is not JSON: %v", err)
+	}
+	if record.Path != outputPath || record.SourceDomain != "127.0.0.1" || record.Size != int64(len(body)) {
+		t.Fatalf("history record = %#v", record)
+	}
+	if record.CompletedAt.IsZero() || time.Since(record.CompletedAt) < 0 {
+		t.Fatalf("history timestamp = %v, want recent UTC time", record.CompletedAt)
+	}
+}
 
 func TestChooseM3U8ModeAutoUsesRemoteForShortPlaylist(t *testing.T) {
 	short := []byte(`#EXTM3U

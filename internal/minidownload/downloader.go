@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -38,6 +39,13 @@ type Progress struct {
 	Error      string
 }
 
+type DownloadHistory struct {
+	Path         string    `json:"path"`
+	SourceDomain string    `json:"source_domain"`
+	Size         int64     `json:"size"`
+	CompletedAt  time.Time `json:"completed_at"`
+}
+
 type Downloader struct {
 	Dir                string
 	FFmpegPath         string
@@ -47,6 +55,7 @@ type Downloader struct {
 	SegmentRetries     int
 	KeepSegments       bool
 	DownloadMode       string
+	historyMu          sync.Mutex
 }
 
 func New(dir string) *Downloader {
@@ -195,12 +204,15 @@ func (d *Downloader) Download(ctx context.Context, candidate miniprogram.Candida
 	name := OutputName(candidate, preferredName)
 	outputPath := filepath.Join(d.Dir, name)
 	d.emit(Progress{ID: candidate.ID, Name: name, Path: outputPath, Status: "starting", Total: candidate.ContentLength})
+	var err error
 	if candidate.Kind == "m3u8" || strings.EqualFold(filepath.Ext(candidate.URL), ".m3u8") {
-		err := d.downloadM3U8(ctx, candidate, outputPath)
-		d.finishProgress(candidate, name, outputPath, err)
-		return outputPath, err
+		err = d.downloadM3U8(ctx, candidate, outputPath)
+	} else {
+		err = d.downloadDirect(ctx, candidate, outputPath)
 	}
-	err := d.downloadDirect(ctx, candidate, outputPath)
+	if err == nil {
+		_ = d.appendHistory(candidate, outputPath)
+	}
 	d.finishProgress(candidate, name, outputPath, err)
 	return outputPath, err
 }
@@ -212,12 +224,16 @@ func (d *Downloader) finishProgress(candidate miniprogram.Candidate, name, outpu
 		status = "error"
 		errText = err.Error()
 	}
+	downloadedPath := outputPath
+	if err != nil && !fileExists(outputPath) {
+		downloadedPath += ".part"
+	}
 	d.emit(Progress{
 		ID:         candidate.ID,
 		Name:       name,
 		Path:       outputPath,
 		Status:     status,
-		Downloaded: fileSize(outputPath),
+		Downloaded: fileSize(downloadedPath),
 		Total:      candidate.ContentLength,
 		Error:      errText,
 	})
@@ -721,6 +737,11 @@ func resolveM3U8Reference(base *url.URL, rel *url.URL) *url.URL {
 }
 
 func (d *Downloader) downloadDirect(ctx context.Context, candidate miniprogram.Candidate, outputPath string) error {
+	partPath := outputPath + ".part"
+	offset := fileSize(partPath)
+	if candidate.ContentLength > 0 && offset == candidate.ContentLength {
+		return commitPartFile(partPath, outputPath)
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, candidate.URL, nil)
 	if err != nil {
 		return err
@@ -728,26 +749,50 @@ func (d *Downloader) downloadDirect(ctx context.Context, candidate miniprogram.C
 	for key, value := range candidate.Headers {
 		req.Header.Set(key, value)
 	}
+	if offset > 0 {
+		req.Header.Set("Range", fmt.Sprintf("bytes=%d-", offset))
+	}
 	resp, err := d.Client.Do(req)
 	if err != nil {
 		return err
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusRequestedRangeNotSatisfiable && candidate.ContentLength > 0 && offset == candidate.ContentLength {
+		return commitPartFile(partPath, outputPath)
+	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return fmt.Errorf("下载失败，HTTP %s", resp.Status)
 	}
-	file, err := os.Create(outputPath)
+	resumed := offset > 0 && resp.StatusCode == http.StatusPartialContent
+	if resumed {
+		start, ok := parseContentRangeStart(resp.Header.Get("Content-Range"))
+		if !ok || start != offset {
+			return fmt.Errorf("服务器返回了无效的 Content-Range: %q", resp.Header.Get("Content-Range"))
+		}
+	}
+	if !resumed {
+		offset = 0
+	}
+	flags := os.O_CREATE | os.O_WRONLY
+	if resumed {
+		flags |= os.O_APPEND
+	} else {
+		flags |= os.O_TRUNC
+	}
+	file, err := os.OpenFile(partPath, flags, 0o644)
 	if err != nil {
 		return err
 	}
-	defer file.Close()
 	total := candidate.ContentLength
 	if total <= 0 {
-		total = resp.ContentLength
+		if resp.ContentLength > 0 {
+			total = offset + resp.ContentLength
+		}
 	}
 	reader := &progressReader{
-		Reader: resp.Body,
-		Total:  total,
+		Reader:  resp.Body,
+		Total:   total,
+		Current: offset,
 		OnProgress: func(downloaded int64, total int64) {
 			d.emit(Progress{
 				ID:         candidate.ID,
@@ -758,8 +803,69 @@ func (d *Downloader) downloadDirect(ctx context.Context, candidate miniprogram.C
 			})
 		},
 	}
-	_, err = io.Copy(file, reader)
-	return err
+	_, copyErr := io.Copy(file, reader)
+	closeErr := file.Close()
+	if copyErr != nil {
+		return copyErr
+	}
+	if closeErr != nil {
+		return closeErr
+	}
+	return commitPartFile(partPath, outputPath)
+}
+
+func parseContentRangeStart(value string) (int64, bool) {
+	value = strings.TrimSpace(value)
+	if !strings.HasPrefix(strings.ToLower(value), "bytes ") {
+		return 0, false
+	}
+	value = strings.TrimSpace(value[len("bytes "):])
+	separator := strings.IndexByte(value, '-')
+	if separator <= 0 {
+		return 0, false
+	}
+	start, err := strconv.ParseInt(value[:separator], 10, 64)
+	return start, err == nil
+}
+
+func commitPartFile(partPath, outputPath string) error {
+	if err := os.Rename(partPath, outputPath); err == nil {
+		return nil
+	} else if !os.IsExist(err) {
+		return err
+	}
+	if err := os.Remove(outputPath); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return os.Rename(partPath, outputPath)
+}
+
+func (d *Downloader) appendHistory(candidate miniprogram.Candidate, outputPath string) error {
+	sourceDomain := ""
+	if parsed, err := url.Parse(candidate.URL); err == nil {
+		sourceDomain = parsed.Hostname()
+	}
+	record := DownloadHistory{
+		Path:         outputPath,
+		SourceDomain: sourceDomain,
+		Size:         fileSize(outputPath),
+		CompletedAt:  time.Now().UTC(),
+	}
+	data, err := json.Marshal(record)
+	if err != nil {
+		return err
+	}
+	d.historyMu.Lock()
+	defer d.historyMu.Unlock()
+	file, err := os.OpenFile(filepath.Join(d.Dir, "history.jsonl"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	if err != nil {
+		return err
+	}
+	if _, err := file.Write(append(data, '\n')); err != nil {
+		_ = file.Close()
+		return err
+	}
+	return file.Close()
 }
 
 type progressReader struct {
