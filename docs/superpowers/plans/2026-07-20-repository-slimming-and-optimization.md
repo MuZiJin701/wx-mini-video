@@ -31,7 +31,7 @@
 - [x] 删除 `.dockerignore`，因为 Docker 不再是支持的构建或分发路径。
 - [x] 忽略截图和海报输出，避免宣传图、本地 QA 截图进入提交。
 - [x] 保持 `dist/` 被忽略，zip 分发包通过 Releases 发布。
-- [ ] 后续清理时验证 `pkg/system/fs.go`、`pkg/system/util.go`、`pkg/platform/*` 是否仍有引用；只有 `rg` 和测试证明未使用时才删除。
+- [x] 验证 `pkg/system/fs.go`、`pkg/system/util.go`、`pkg/platform/*` 的引用；保留仍被调用的 `system.Open`，删除未使用的辅助函数和包。
 
 ### 任务 2：规范文档结构
 
