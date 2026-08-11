@@ -462,6 +462,30 @@ seg2.ts
 	}
 }
 
+func TestDownloadM3U8FallsBackToRemotePlaylistWithSessionHeaders(t *testing.T) {
+	var gotSession string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotSession = r.Header.Get("X-Wx-Session")
+		_, _ = w.Write([]byte("#EXTM3U\n#EXT-X-ENDLIST\n"))
+	}))
+	defer ts.Close()
+
+	d := New(t.TempDir())
+	d.FFmpegPath = "nonexistent_ffmpeg_xxx"
+	_, err := d.Download(context.Background(), miniprogram.Candidate{
+		ID:      "remote-fallback",
+		Kind:    "m3u8",
+		URL:     ts.URL + "/playlist.m3u8",
+		Headers: map[string]string{"X-Wx-Session": "current-session"},
+	}, "")
+	if err == nil || !strings.Contains(err.Error(), "未找到 ffmpeg") {
+		t.Fatalf("Download() error = %v, want successful playlist fallback before ffmpeg check", err)
+	}
+	if gotSession != "current-session" {
+		t.Fatalf("remote playlist request X-Wx-Session = %q, want current session header", gotSession)
+	}
+}
+
 func TestDownloadM3U8FailsWithoutFFmpeg(t *testing.T) {
 	dir := t.TempDir()
 	playlist := filepath.Join(dir, "playlist.m3u8")

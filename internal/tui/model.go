@@ -193,10 +193,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			visible := m.filteredCandidates()
 			if !m.downloading && len(visible) > 0 {
 				candidate := visible[m.selected]
-				if candidate.Kind == "m3u8" && candidate.CachedPath == "" && candidate.Source == "json" {
-					m.addLog("该 m3u8 尚未缓存，不能直接下载。请按 c 清空候选后重新播放目标视频，等待 cache 标记出现。")
-					return m, nil
-				}
 				m.downloading = true
 				m.addLog("开始下载: " + candidateSummary(candidate))
 				return m, downloadCmd(m.runtime, candidate)
