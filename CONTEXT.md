@@ -31,3 +31,7 @@ _Avoid_: 抓包、下载
 **受管 ffmpeg**：
 由工具在下载目录维护、用于处理 m3u8 媒体的 ffmpeg；显式配置的 ffmpeg 不属于受管 ffmpeg。
 _Avoid_: 系统 ffmpeg、PATH ffmpeg
+
+**便携应用目录**：
+用户解压分发 zip 后运行程序的目录；默认下载、缓存、日志、证书和受管 ffmpeg 都属于该目录，而不是 zip 文件本身。
+_Avoid_: 分发包目录、当前工作目录
