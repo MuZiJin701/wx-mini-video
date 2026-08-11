@@ -82,4 +82,4 @@
 - [x] 运行 `go vet ./...`。
 - [x] 运行 `cmd /c build\build.bat windows`。
 - [x] 使用 `tar -tf dist\wx-mini-video-windows-amd64.zip` 检查 zip 内容。
-- [ ] 将 zip 上传到 GitHub Releases，并附简短变更说明。
+- [x] 将 zip 上传到 GitHub Releases，并附简短变更说明（v0.1.1）。
