@@ -124,7 +124,7 @@ func registerDefaults() {
 }
 
 func (c *Config) Settings() AppSettings {
-	downloadDir := resolveDownloadDir(viper.GetString("download.dir"))
+	downloadDir := resolveDownloadDir(viper.GetString("download.dir"), c.RootDir)
 	return AppSettings{
 		DownloadDir:        downloadDir,
 		FFmpegPath:         viper.GetString("download.ffmpeg"),
@@ -144,10 +144,10 @@ func (c *Config) Settings() AppSettings {
 	}
 }
 
-func resolveDownloadDir(value string) string {
+func resolveDownloadDir(value, rootDir string) string {
 	if value == "" {
-		if wd, err := os.Getwd(); err == nil {
-			return filepath.Join(wd, "downloads")
+		if rootDir != "" {
+			return filepath.Join(rootDir, "downloads")
 		}
 		return "downloads"
 	}

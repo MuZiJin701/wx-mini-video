@@ -17,7 +17,7 @@
 
 默认配置模板在 `internal/config/config.template.yaml`。常用项：
 
-- `download.dir`: 下载目录，空值表示程序旁 `downloads/`。
+- `download.dir`: 下载目录，空值表示便携应用目录下的 `downloads/`；媒体、缓存、日志、证书和受管 ffmpeg 都在此目录。
 - `download.ffmpeg`: 显式 ffmpeg.exe 完整路径；留空时使用下载目录的受管 ffmpeg。旧配置中的 `ffmpeg` 会视为留空，绝不从 PATH 查找。
 - `download.mode`: `auto`、`prefetch`、`remote-ffmpeg`。
 - `download.segmentConcurrency`: m3u8 分片并发数，默认 `6`。
@@ -26,7 +26,7 @@
 
 ## 分发
 
-基础包不内置 ffmpeg。首次下载 m3u8 时，若未配置显式路径，程序会下载固定版本并校验 SHA-256 后使用下载目录的受管 ffmpeg。
+基础包不内置 ffmpeg。首次下载 m3u8 时，若未配置显式路径，程序会下载固定版本并校验 SHA-256 后使用下载目录的受管 ffmpeg；网络或 HTTP 5xx 失败最多重试三次。
 
 构建命令：
 

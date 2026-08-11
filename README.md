@@ -17,7 +17,7 @@
 - `wx-mini-video.yaml`
 - `README.md`
 
-基础包不内置 ffmpeg。首次下载 `m3u8` 时，如果没有配置 `download.ffmpeg` 的本地完整路径，程序会下载并校验固定版本的受管 `ffmpeg.exe` 到下载目录；不会使用系统 `PATH` 中的 ffmpeg。
+基础包不内置 ffmpeg。首次下载 `m3u8` 时，如果没有配置 `download.ffmpeg` 的本地完整路径，程序会下载并校验固定版本的受管 `ffmpeg.exe` 到下载目录；短暂网络或服务器错误会自动重试最多三次，不会使用系统 `PATH` 中的 ffmpeg。
 
 ## 使用
 
@@ -32,7 +32,7 @@
 
 资源列表默认显示“视频”分类，可用 `Tab` 或数字键切换到“全部 / 图片 / 视频 / m3u8”。
 
-下载文件默认保存在程序旁边的 `downloads` 目录。
+下载文件、缓存、日志、证书和受管 ffmpeg 默认保存在程序旁边的 `downloads` 目录；移动解压后的程序目录即可一并移动这些运行时数据。设置 `download.dir` 后使用该显式目录。
 
 直链下载会先写入同名 `.part` 文件，网络中断后再次下载会尝试从已有部分继续。成功完成的下载会追加记录到 `downloads/history.jsonl`。
 

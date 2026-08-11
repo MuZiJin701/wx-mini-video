@@ -12,12 +12,17 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 )
 
 const (
+	managedFFmpegMarker    = ".wx-mini-video-ffmpeg.sha256"
+	ffmpegDownloadAttempts = 3
+)
+
+var (
 	managedFFmpegURL    = "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-08-11-13-11/ffmpeg-n8.1.2-34-g9b6c8969e0-win64-gpl-8.1.zip"
 	managedFFmpegSHA256 = "05eedc113542be39af5d0f78f0b1093bafb89c98cecf25b77e8644670293107f"
-	managedFFmpegMarker = ".wx-mini-video-ffmpeg.sha256"
 )
 
 type FFmpegState struct {
@@ -59,7 +64,7 @@ func EnsureFFmpeg(ctx context.Context, targetDir string, onProgress func(FFmpegS
 	localPath := filepath.Join(targetDir, "ffmpeg.exe")
 	zipPath := filepath.Join(targetDir, "ffmpeg_temp.zip")
 	if err := downloadFFmpegArchive(ctx, zipPath, emit); err != nil {
-		return "", err
+		return "", fmt.Errorf("%w；可配置 download.ffmpeg 为本地 ffmpeg.exe", err)
 	}
 	defer os.Remove(zipPath)
 
@@ -78,27 +83,47 @@ func EnsureFFmpeg(ctx context.Context, targetDir string, onProgress func(FFmpegS
 }
 
 func downloadFFmpegArchive(ctx context.Context, zipPath string, emit func(FFmpegState)) error {
+	var lastErr error
+	for attempt := 0; attempt < ffmpegDownloadAttempts; attempt++ {
+		retry, err := downloadFFmpegArchiveOnce(ctx, zipPath, emit)
+		if err == nil {
+			return nil
+		}
+		lastErr = err
+		if !retry || attempt == ffmpegDownloadAttempts-1 {
+			return err
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(time.Duration(attempt+1) * 100 * time.Millisecond):
+		}
+	}
+	return lastErr
+}
+
+func downloadFFmpegArchiveOnce(ctx context.Context, zipPath string, emit func(FFmpegState)) (bool, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, managedFFmpegURL, nil)
 	if err != nil {
 		emit(FFmpegState{State: "error", Error: err})
-		return fmt.Errorf("创建 ffmpeg 下载请求失败: %w", err)
+		return false, fmt.Errorf("创建 ffmpeg 下载请求失败: %w", err)
 	}
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		emit(FFmpegState{State: "error", Error: err})
-		return fmt.Errorf("下载 ffmpeg 失败: %w", err)
+		return true, fmt.Errorf("下载 ffmpeg 失败: %w", err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		err := fmt.Errorf("下载 ffmpeg 失败: HTTP %s", resp.Status)
 		emit(FFmpegState{State: "error", Error: err})
-		return err
+		return resp.StatusCode >= 500, err
 	}
 
 	file, err := os.Create(zipPath)
 	if err != nil {
 		emit(FFmpegState{State: "error", Error: err})
-		return fmt.Errorf("创建临时文件失败: %w", err)
+		return false, fmt.Errorf("创建临时文件失败: %w", err)
 	}
 	defer file.Close()
 
@@ -111,20 +136,20 @@ func downloadFFmpegArchive(ctx context.Context, zipPath string, emit func(FFmpeg
 		},
 	}
 	if _, err := io.Copy(file, reader); err != nil {
-		os.Remove(zipPath)
+		_ = os.Remove(zipPath)
 		emit(FFmpegState{State: "error", Error: err})
-		return fmt.Errorf("下载 ffmpeg 失败: %w", err)
+		return true, fmt.Errorf("下载 ffmpeg 失败: %w", err)
 	}
 	if err := file.Close(); err != nil {
 		emit(FFmpegState{State: "error", Error: err})
-		return fmt.Errorf("写入 ffmpeg 失败: %w", err)
+		return false, fmt.Errorf("写入 ffmpeg 失败: %w", err)
 	}
 	if err := verifyFileSHA256(zipPath, managedFFmpegSHA256); err != nil {
 		_ = os.Remove(zipPath)
 		emit(FFmpegState{State: "error", Error: err})
-		return fmt.Errorf("下载的 ffmpeg 校验失败: %w；请检查网络或配置 download.ffmpeg 为本地 ffmpeg.exe", err)
+		return false, fmt.Errorf("下载的 ffmpeg 校验失败: %w", err)
 	}
-	return nil
+	return false, nil
 }
 
 func ManagedFFmpegPath(targetDir string) string {
