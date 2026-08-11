@@ -58,24 +58,24 @@ func EnsureFFmpeg(ctx context.Context, targetDir string, onProgress func(FFmpegS
 
 	if err := os.MkdirAll(targetDir, 0o755); err != nil {
 		emit(FFmpegState{State: "error", Error: err})
-		return "", fmt.Errorf("创建目录失败: %w", err)
+		return "", managedFFmpegError(fmt.Errorf("创建目录失败: %w", err))
 	}
 
 	localPath := filepath.Join(targetDir, "ffmpeg.exe")
 	zipPath := filepath.Join(targetDir, "ffmpeg_temp.zip")
 	if err := downloadFFmpegArchive(ctx, zipPath, emit); err != nil {
-		return "", fmt.Errorf("%w；可配置 download.ffmpeg 为本地 ffmpeg.exe", err)
+		return "", managedFFmpegError(err)
 	}
 	defer os.Remove(zipPath)
 
 	emit(FFmpegState{State: "extracting"})
 	if err := extractFFmpegExe(zipPath, localPath); err != nil {
 		emit(FFmpegState{State: "error", Error: err})
-		return "", err
+		return "", managedFFmpegError(err)
 	}
 	if err := writeManagedFFmpegMarker(targetDir, localPath); err != nil {
 		emit(FFmpegState{State: "error", Error: err})
-		return "", fmt.Errorf("写入 ffmpeg 校验标记失败: %w", err)
+		return "", managedFFmpegError(fmt.Errorf("写入 ffmpeg 校验标记失败: %w", err))
 	}
 
 	emit(FFmpegState{State: "done", Path: localPath})
@@ -85,12 +85,12 @@ func EnsureFFmpeg(ctx context.Context, targetDir string, onProgress func(FFmpegS
 func downloadFFmpegArchive(ctx context.Context, zipPath string, emit func(FFmpegState)) error {
 	var lastErr error
 	for attempt := 0; attempt < ffmpegDownloadAttempts; attempt++ {
-		retry, err := downloadFFmpegArchiveOnce(ctx, zipPath, emit)
+		retryable, err := downloadFFmpegArchiveOnce(ctx, zipPath, emit)
 		if err == nil {
 			return nil
 		}
 		lastErr = err
-		if !retry || attempt == ffmpegDownloadAttempts-1 {
+		if !retryable || attempt == ffmpegDownloadAttempts-1 {
 			return err
 		}
 		select {
@@ -102,7 +102,7 @@ func downloadFFmpegArchive(ctx context.Context, zipPath string, emit func(FFmpeg
 	return lastErr
 }
 
-func downloadFFmpegArchiveOnce(ctx context.Context, zipPath string, emit func(FFmpegState)) (bool, error) {
+func downloadFFmpegArchiveOnce(ctx context.Context, zipPath string, emit func(FFmpegState)) (retryable bool, err error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, managedFFmpegURL, nil)
 	if err != nil {
 		emit(FFmpegState{State: "error", Error: err})
@@ -150,6 +150,13 @@ func downloadFFmpegArchiveOnce(ctx context.Context, zipPath string, emit func(FF
 		return false, fmt.Errorf("下载的 ffmpeg 校验失败: %w", err)
 	}
 	return false, nil
+}
+
+func managedFFmpegError(err error) error {
+	if strings.Contains(err.Error(), "download.ffmpeg") {
+		return err
+	}
+	return fmt.Errorf("%w；可配置 download.ffmpeg 为本地 ffmpeg.exe", err)
 }
 
 func ManagedFFmpegPath(targetDir string) string {

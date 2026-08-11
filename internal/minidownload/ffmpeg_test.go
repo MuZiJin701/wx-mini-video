@@ -134,6 +134,25 @@ func TestEnsureFFmpegDoesNotRetryClientOrChecksumFailure(t *testing.T) {
 	}
 }
 
+func TestEnsureFFmpegExplainsRecoveryAfterExtractionFailure(t *testing.T) {
+	var archive bytes.Buffer
+	zw := zip.NewWriter(&archive)
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	sum := sha256.Sum256(archive.Bytes())
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write(archive.Bytes())
+	}))
+	defer server.Close()
+	setManagedFFmpegSource(t, server.URL, hex.EncodeToString(sum[:]))
+
+	_, err := EnsureFFmpeg(context.Background(), t.TempDir(), nil)
+	if err == nil || !strings.Contains(err.Error(), "download.ffmpeg") {
+		t.Fatalf("EnsureFFmpeg() error = %v, want recovery guidance", err)
+	}
+}
+
 func testFFmpegArchive(t *testing.T) ([]byte, string) {
 	t.Helper()
 	var out bytes.Buffer
