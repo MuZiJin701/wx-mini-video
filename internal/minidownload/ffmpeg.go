@@ -68,7 +68,7 @@ func EnsureFFmpeg(ctx context.Context, targetDir string, onProgress func(FFmpegS
 		emit(FFmpegState{State: "error", Error: err})
 		return "", err
 	}
-	if err := os.WriteFile(filepath.Join(targetDir, managedFFmpegMarker), []byte(managedFFmpegSHA256+"\n"), 0o644); err != nil {
+	if err := writeManagedFFmpegMarker(targetDir, localPath); err != nil {
 		emit(FFmpegState{State: "error", Error: err})
 		return "", fmt.Errorf("写入 ffmpeg 校验标记失败: %w", err)
 	}
@@ -133,26 +133,46 @@ func ManagedFFmpegPath(targetDir string) string {
 		return ""
 	}
 	marker, err := os.ReadFile(filepath.Join(targetDir, managedFFmpegMarker))
-	if err != nil || strings.TrimSpace(string(marker)) != managedFFmpegSHA256 {
+	parts := strings.Fields(string(marker))
+	if err != nil || len(parts) != 2 || parts[0] != managedFFmpegSHA256 {
+		return ""
+	}
+	if err := verifyFileSHA256(path, parts[1]); err != nil {
 		return ""
 	}
 	return path
 }
 
-func verifyFileSHA256(path, expected string) error {
-	file, err := os.Open(path)
+func writeManagedFFmpegMarker(targetDir, executablePath string) error {
+	sum, err := fileSHA256(executablePath)
 	if err != nil {
 		return err
+	}
+	return os.WriteFile(filepath.Join(targetDir, managedFFmpegMarker), []byte(managedFFmpegSHA256+"\n"+sum+"\n"), 0o644)
+}
+
+func verifyFileSHA256(path, expected string) error {
+	got, err := fileSHA256(path)
+	if err != nil {
+		return err
+	}
+	if !strings.EqualFold(got, expected) {
+		return fmt.Errorf("SHA-256 不匹配: 得到 %s", got)
+	}
+	return nil
+}
+
+func fileSHA256(path string) (string, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return "", err
 	}
 	defer file.Close()
 	h := sha256.New()
 	if _, err := io.Copy(h, file); err != nil {
-		return err
+		return "", err
 	}
-	if got := hex.EncodeToString(h.Sum(nil)); !strings.EqualFold(got, expected) {
-		return fmt.Errorf("SHA-256 不匹配: 得到 %s", got)
-	}
-	return nil
+	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
 func extractFFmpegExe(zipPath string, localPath string) error {

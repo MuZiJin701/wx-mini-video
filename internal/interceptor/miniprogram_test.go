@@ -79,3 +79,25 @@ func TestMiniProgramPluginSkipsM3U8CandidateFromJSON(t *testing.T) {
 		t.Fatalf("JSON m3u8 candidates = %#v, want none", got)
 	}
 }
+
+func TestMiniProgramPluginAddsDirectM3U8Response(t *testing.T) {
+	store := miniprogram.NewStore()
+	plugin := CreateMiniProgramInterceptorPlugin(miniprogram.Target{AppID: "wx123"}, store, t.TempDir())
+	ctx := &testProxyContext{
+		req: &proxy.ContextReq{
+			URL:    &proxy.ContextURL{String: "https://cdn.example.com/live/index.m3u8"},
+			Header: http.Header{"User-Agent": {"wx-test"}},
+		},
+		headers: http.Header{"Content-Type": {"application/vnd.apple.mpegurl"}},
+		body:    []byte("#EXTM3U\n#EXT-X-ENDLIST\n"),
+	}
+
+	plugin.OnResponse(ctx)
+	got := store.List("wx123")
+	if len(got) != 1 || got[0].Kind != "m3u8" || got[0].Source != "response" {
+		t.Fatalf("direct m3u8 candidates = %#v, want one response candidate", got)
+	}
+	if got[0].CachedPath == "" {
+		t.Fatalf("candidate = %#v, want cached playlist", got[0])
+	}
+}

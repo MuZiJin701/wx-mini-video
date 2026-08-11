@@ -27,11 +27,21 @@ func TestManagedFFmpegPathRequiresVerifiedMarker(t *testing.T) {
 	if got := ManagedFFmpegPath(dir); got != "" {
 		t.Fatalf("ManagedFFmpegPath() = %q, want no unverified executable", got)
 	}
-	if err := os.WriteFile(filepath.Join(dir, managedFFmpegMarker), []byte(managedFFmpegSHA256+"\n"), 0o644); err != nil {
+	sum, err := fileSHA256(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, managedFFmpegMarker), []byte(managedFFmpegSHA256+"\n"+sum+"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if got := ManagedFFmpegPath(dir); got != path {
 		t.Fatalf("ManagedFFmpegPath() = %q, want %q", got, path)
+	}
+	if err := os.WriteFile(path, []byte("different"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if got := ManagedFFmpegPath(dir); got != "" {
+		t.Fatalf("ManagedFFmpegPath() = %q, want no modified executable", got)
 	}
 }
 

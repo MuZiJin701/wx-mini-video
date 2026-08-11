@@ -114,6 +114,11 @@ func safeOutputName(name string) string {
 	if name == "" {
 		return "wx-mini-video"
 	}
+	base := strings.ToUpper(strings.TrimSuffix(name, filepath.Ext(name)))
+	if base == "CON" || base == "PRN" || base == "AUX" || base == "NUL" ||
+		(len(base) == 4 && (strings.HasPrefix(base, "COM") || strings.HasPrefix(base, "LPT")) && base[3] >= '1' && base[3] <= '9') {
+		return "_" + name
+	}
 	return name
 }
 
@@ -374,7 +379,7 @@ func (d *Downloader) runFFmpeg(ctx context.Context, candidate miniprogram.Candid
 	if err == nil {
 		return nil
 	}
-	errText := redactFFmpegOutput(strings.TrimSpace(output.String()), candidate.Headers)
+	errText := redactFFmpegOutput(strings.TrimSpace(output.String()), candidate.URL, candidate.Headers)
 	logPath := ffmpegLogPath(d.Dir, candidate.ID)
 	if err := os.MkdirAll(filepath.Dir(logPath), 0o755); err != nil {
 		return fmt.Errorf("%s", extractFFmpegError(errText))
@@ -393,7 +398,12 @@ func ffmpegLogPath(dir, candidateID string) string {
 	return filepath.Join(dir, ".ffmpeg", name+".log")
 }
 
-func redactFFmpegOutput(output string, headers map[string]string) string {
+func redactFFmpegOutput(output, resourceURL string, headers map[string]string) string {
+	if parsed, err := url.Parse(resourceURL); err == nil && parsed.RawQuery != "" {
+		parsed.RawQuery = ""
+		parsed.ForceQuery = false
+		output = strings.ReplaceAll(output, resourceURL, parsed.String())
+	}
 	for key, value := range headers {
 		key = strings.TrimSpace(key)
 		value = strings.TrimSpace(value)
