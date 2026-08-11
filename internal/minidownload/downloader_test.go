@@ -484,6 +484,10 @@ func TestDownloadM3U8FallsBackToRemotePlaylistWithSessionHeaders(t *testing.T) {
 	if gotSession != "current-session" {
 		t.Fatalf("remote playlist request X-Wx-Session = %q, want current session header", gotSession)
 	}
+	cached, err := os.ReadFile(filepath.Join(d.Dir, "remote-fallback.m3u8"))
+	if err != nil || !strings.Contains(string(cached), "#EXTM3U") {
+		t.Fatalf("remote fallback playlist = %q, %v; want cached playlist", cached, err)
+	}
 }
 
 func TestDownloadM3U8FailsWithoutFFmpeg(t *testing.T) {
@@ -525,6 +529,12 @@ func TestDownloadM3U8FailsClearlyWhenPlaylistCacheIsUnavailable(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "没有拿到 m3u8 本地缓存") {
 		t.Fatalf("expected cache guidance error, got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "HTTP 404") || !strings.Contains(err.Error(), "重新播放目标媒体后重试") {
+		t.Fatalf("expected actionable remote failure, got: %v", err)
+	}
+	if strings.Contains(err.Error(), "按 c") || strings.Contains(err.Error(), "cache 标记") {
+		t.Fatalf("error should not require clearing candidates or a cache marker: %v", err)
 	}
 	if strings.Contains(err.Error(), "ffmpeg 合并失败") {
 		t.Fatalf("should not pass expired remote m3u8 to ffmpeg, got: %v", err)

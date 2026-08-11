@@ -255,7 +255,7 @@ func (d *Downloader) downloadM3U8(ctx context.Context, candidate miniprogram.Can
 		d.emit(Progress{ID: candidate.ID, Path: outputPath, Status: "cache-m3u8"})
 		localPath, err := d.cacheM3U8FromURL(ctx, candidate)
 		if err != nil {
-			return fmt.Errorf("没有拿到 m3u8 本地缓存，远程 playlist 也已不可用(%v)。请按 c 清空候选后重新播放目标视频，等待列表中出现 cache 标记后再下载", err)
+			return fmt.Errorf("没有拿到 m3u8 本地缓存，远程 playlist 也已不可用(%v)。请重新播放目标媒体后重试", err)
 		}
 		inputURL = localPath
 		source = "下载到本地文件"

@@ -65,9 +65,6 @@ func CreateMiniProgramInterceptorPlugin(target miniprogram.Target, store *minipr
 			}
 			ctx.SetResponseBody(string(body))
 			for _, candidate := range miniprogram.ExtractMediaURLsFromJSON(body) {
-				if candidate.Kind == "m3u8" {
-					continue
-				}
 				candidate.SourceURL = sourceURL
 				candidate.ContentType = contentType
 				candidate.Headers = headers
