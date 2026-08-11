@@ -1,4 +1,8 @@
-# wx-mini-video 基础知识
+# wx-mini-video 基础知识 / Project Knowledge
+
+`wx-mini-video` 是面向 Windows 的通用微信小程序媒体嗅探与下载工具。
+
+`wx-mini-video` is a Windows-first, general-purpose media sniffer and downloader for WeChat Mini Programs.
 
 ## 架构
 

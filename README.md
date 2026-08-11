@@ -1,6 +1,8 @@
-# 微信小程序媒体下载器
+# 微信小程序媒体下载器 / WeChat Mini Program Media Downloader
 
-一个 Windows TUI 工具，用于嗅探并下载 PC 微信小程序加载的图片和视频。
+面向 Windows 的 TUI 工具，用于嗅探并下载 PC 微信小程序加载的图片、直链视频和 m3u8 媒体。
+
+A Windows-first TUI for sniffing and downloading images, direct videos, and m3u8 media loaded by WeChat Mini Programs on desktop.
 
 支持图片：`jpg`、`png`、`webp`、`gif`、`bmp`、`avif`  
 支持视频：`mp4`、`webm`、`mov`、`m3u8`

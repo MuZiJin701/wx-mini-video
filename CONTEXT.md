@@ -1,6 +1,6 @@
 # wx-mini-video
 
-`wx-mini-video` 是面向 PC 微信小程序媒体保存的 Windows 工具。本文件只定义项目领域语言。
+`wx-mini-video` 是面向 PC 微信小程序媒体保存的 Windows 工具。`wx-mini-video` is a Windows-first tool for saving media from desktop WeChat Mini Programs. 本文件只定义项目领域语言。
 
 ## Language
 
