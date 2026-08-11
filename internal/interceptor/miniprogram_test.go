@@ -61,7 +61,7 @@ func TestAddMiniProgramCandidateDoesNotWriteStdout(t *testing.T) {
 	}
 }
 
-func TestMiniProgramPluginAddsM3U8CandidateFromJSON(t *testing.T) {
+func TestMiniProgramPluginSkipsM3U8CandidateFromJSON(t *testing.T) {
 	store := miniprogram.NewStore()
 	plugin := CreateMiniProgramInterceptorPlugin(miniprogram.Target{AppID: "wx123"}, store, t.TempDir())
 	ctx := &testProxyContext{
@@ -75,13 +75,7 @@ func TestMiniProgramPluginAddsM3U8CandidateFromJSON(t *testing.T) {
 
 	plugin.OnResponse(ctx)
 	got := store.List("wx123")
-	if len(got) != 1 {
-		t.Fatalf("JSON m3u8 candidates = %#v, want one", got)
-	}
-	if got[0].Kind != "m3u8" || got[0].Source != "json" {
-		t.Fatalf("candidate = %#v, want JSON m3u8", got[0])
-	}
-	if got[0].Headers["User-Agent"] != "wx-test" {
-		t.Fatalf("candidate headers = %#v, want session header", got[0].Headers)
+	if len(got) != 0 {
+		t.Fatalf("JSON m3u8 candidates = %#v, want none", got)
 	}
 }

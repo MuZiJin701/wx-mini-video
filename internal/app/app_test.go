@@ -9,9 +9,15 @@ func TestConfiguredFFmpegPathKeepsExplicitConfig(t *testing.T) {
 	}
 }
 
-func TestConfiguredFFmpegPathDefaultsToFFmpeg(t *testing.T) {
+func TestConfiguredFFmpegPathLeavesEmptyConfigUnmanaged(t *testing.T) {
 	got := configuredFFmpegPath("")
-	if got != "ffmpeg" {
+	if got != "" {
+		t.Fatalf("configuredFFmpegPath() = %q", got)
+	}
+}
+
+func TestConfiguredFFmpegPathTreatsLegacyDefaultAsUnmanaged(t *testing.T) {
+	if got := configuredFFmpegPath("ffmpeg"); got != "" {
 		t.Fatalf("configuredFFmpegPath() = %q", got)
 	}
 }

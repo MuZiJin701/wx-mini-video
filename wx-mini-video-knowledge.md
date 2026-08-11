@@ -18,7 +18,7 @@
 默认配置模板在 `internal/config/config.template.yaml`。常用项：
 
 - `download.dir`: 下载目录，空值表示程序旁 `downloads/`。
-- `download.ffmpeg`: ffmpeg 命令或路径，默认 `ffmpeg`。
+- `download.ffmpeg`: 显式 ffmpeg.exe 完整路径；留空时使用下载目录的受管 ffmpeg。旧配置中的 `ffmpeg` 会视为留空，绝不从 PATH 查找。
 - `download.mode`: `auto`、`prefetch`、`remote-ffmpeg`。
 - `download.segmentConcurrency`: m3u8 分片并发数，默认 `6`。
 - `proxy.system`: 是否设置 Windows 系统代理，默认 `true`。
@@ -26,7 +26,7 @@
 
 ## 分发
 
-基础包不内置 ffmpeg。首次下载 m3u8 时，如果本机未找到 ffmpeg，程序会自动下载便携版到下载目录。
+基础包不内置 ffmpeg。首次下载 m3u8 时，若未配置显式路径，程序会下载固定版本并校验 SHA-256 后使用下载目录的受管 ffmpeg。
 
 构建命令：
 
@@ -52,6 +52,7 @@ zip 用于 GitHub Releases，不提交到源码仓库。
 - 证书失败：以管理员身份运行，或手动安装下载目录导出的 `WxMiniVideoRoot.cer` 到“受信任的根证书颁发机构”。
 - 资源太多：先按 `c` 清空，再打开目标图片或播放目标视频。
 - m3u8 慢：长视频分片多，优先看 TUI 的分片数、失败数和 ffmpeg 合并进度。失败数高时把 `segmentConcurrency` 调低到 `4`。
+- m3u8 合并失败：查看 `下载目录\\.ffmpeg\\<候选ID>.log`；该日志会移除已捕获请求头值。
 
 ## 当前限制
 

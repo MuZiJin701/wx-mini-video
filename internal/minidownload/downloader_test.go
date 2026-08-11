@@ -88,6 +88,51 @@ func TestDownloadDirectResumesPartialAndWritesHistory(t *testing.T) {
 	}
 }
 
+func TestDownloadUsesSafeDistinctWindowsOutputName(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("video"))
+	}))
+	defer ts.Close()
+
+	d := New(t.TempDir())
+	candidate := miniprogram.Candidate{ID: "candidate-12345678", URL: ts.URL + "/video.mp4", Kind: "video", Suffix: ".mp4"}
+	if err := os.WriteFile(filepath.Join(d.Dir, "回放_2026-08-06T19-30-00Z.mp4"), []byte("old"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	path, err := d.Download(context.Background(), candidate, "回放_2026-08-06T19:30:00Z")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := filepath.Base(path), "回放_2026-08-06T19-30-00Z_candidat.mp4"; got != want {
+		t.Fatalf("output filename = %q, want %q", got, want)
+	}
+}
+
+func TestRunFFmpegWritesRedactedCandidateLog(t *testing.T) {
+	d := New(t.TempDir())
+	ffmpeg := filepath.Join(d.Dir, "failing-ffmpeg.cmd")
+	if err := os.WriteFile(ffmpeg, []byte("@echo Authorization: Bearer test-secret 1>&2\r\n@exit /b 1\r\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	d.FFmpegPath = ffmpeg
+	candidate := miniprogram.Candidate{ID: "candidate-log-123", Headers: map[string]string{"Authorization": "Bearer test-secret"}}
+	err := d.runFFmpeg(context.Background(), candidate, "playlist.m3u8", filepath.Join(d.Dir, "output.mp4"), 0)
+	if err == nil {
+		t.Fatal("runFFmpeg should report the process failure")
+	}
+	logPath := filepath.Join(d.Dir, ".ffmpeg", "candidate-log-123.log")
+	if !strings.Contains(err.Error(), logPath) {
+		t.Fatalf("error = %q, want log path %q", err, logPath)
+	}
+	logBody, readErr := os.ReadFile(logPath)
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	if strings.Contains(string(logBody), "test-secret") || !strings.Contains(string(logBody), "<REDACTED HEADER>") {
+		t.Fatalf("ffmpeg log = %q, want redacted secret", logBody)
+	}
+}
+
 func TestChooseM3U8ModeAutoUsesRemoteForShortPlaylist(t *testing.T) {
 	short := []byte(`#EXTM3U
 #EXTINF:10.000,

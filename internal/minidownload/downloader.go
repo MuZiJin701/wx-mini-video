@@ -61,7 +61,7 @@ type Downloader struct {
 func New(dir string) *Downloader {
 	return &Downloader{
 		Dir:                dir,
-		FFmpegPath:         "ffmpeg",
+		FFmpegPath:         "",
 		Client:             defaultHTTPClient(),
 		SegmentConcurrency: 6,
 		SegmentRetries:     3,
@@ -91,7 +91,7 @@ func OutputName(candidate miniprogram.Candidate, preferred string) string {
 		if ext != "" {
 			name = strings.TrimSuffix(name, filepath.Ext(name))
 		}
-		return name + ".mp4"
+		return safeOutputName(name + ".mp4")
 	}
 	suffix := candidate.Suffix
 	if suffix == "" {
@@ -100,7 +100,52 @@ func OutputName(candidate miniprogram.Candidate, preferred string) string {
 	if suffix != "" && !strings.EqualFold(filepath.Ext(name), suffix) {
 		name += suffix
 	}
+	return safeOutputName(name)
+}
+
+func safeOutputName(name string) string {
+	name = strings.Map(func(r rune) rune {
+		if r < 32 || strings.ContainsRune(`<>:"/\\|?*`, r) {
+			return '-'
+		}
+		return r
+	}, name)
+	name = strings.TrimRight(name, ". ")
+	if name == "" {
+		return "wx-mini-video"
+	}
 	return name
+}
+
+func outputPath(dir, name, candidateID string) string {
+	path := filepath.Join(dir, name)
+	if !fileExists(path) {
+		return path
+	}
+	ext := filepath.Ext(name)
+	stem := strings.TrimSuffix(name, ext)
+	suffix := shortCandidateID(candidateID)
+	if suffix == "" {
+		suffix = "copy"
+	}
+	for n := 1; ; n++ {
+		candidateName := stem + "_" + suffix
+		if n > 1 {
+			candidateName += fmt.Sprintf("_%d", n)
+		}
+		path = filepath.Join(dir, candidateName+ext)
+		if !fileExists(path) {
+			return path
+		}
+	}
+}
+
+func shortCandidateID(id string) string {
+	id = strings.TrimSpace(id)
+	if len(id) > 8 {
+		return id[:8]
+	}
+	return id
 }
 
 func candidateName(candidate miniprogram.Candidate) string {
@@ -192,9 +237,6 @@ func (d *Downloader) Download(ctx context.Context, candidate miniprogram.Candida
 	if d.Client == nil {
 		d.Client = defaultHTTPClient()
 	}
-	if d.FFmpegPath == "" {
-		d.FFmpegPath = "ffmpeg"
-	}
 	if d.Dir == "" {
 		d.Dir = "."
 	}
@@ -202,7 +244,7 @@ func (d *Downloader) Download(ctx context.Context, candidate miniprogram.Candida
 		return "", err
 	}
 	name := OutputName(candidate, preferredName)
-	outputPath := filepath.Join(d.Dir, name)
+	outputPath := outputPath(d.Dir, name, candidate.ID)
 	d.emit(Progress{ID: candidate.ID, Name: name, Path: outputPath, Status: "starting", Total: candidate.ContentLength})
 	var err error
 	if candidate.Kind == "m3u8" || strings.EqualFold(filepath.Ext(candidate.URL), ".m3u8") {
@@ -260,8 +302,8 @@ func (d *Downloader) downloadM3U8(ctx context.Context, candidate miniprogram.Can
 		inputURL = localPath
 		source = "下载到本地文件"
 	}
-	if _, err := exec.LookPath(d.FFmpegPath); err != nil {
-		return fmt.Errorf("未找到 ffmpeg，无法下载 m3u8 视频；请安装 ffmpeg 或配置 download.ffmpeg 路径")
+	if _, err := os.Stat(d.FFmpegPath); err != nil {
+		return fmt.Errorf("未找到 ffmpeg（路径不可用），无法下载 m3u8 视频；请配置 download.ffmpeg 路径或使用受管 ffmpeg")
 	}
 	playlistBody, err := os.ReadFile(inputURL)
 	if err != nil {
@@ -332,12 +374,36 @@ func (d *Downloader) runFFmpeg(ctx context.Context, candidate miniprogram.Candid
 	if err == nil {
 		return nil
 	}
-	errText := strings.TrimSpace(output.String())
-	logPath := outputPath + ".ffmpeg.log"
+	errText := redactFFmpegOutput(strings.TrimSpace(output.String()), candidate.Headers)
+	logPath := ffmpegLogPath(d.Dir, candidate.ID)
+	if err := os.MkdirAll(filepath.Dir(logPath), 0o755); err != nil {
+		return fmt.Errorf("%s", extractFFmpegError(errText))
+	}
 	if writeErr := os.WriteFile(logPath, []byte(errText), 0o644); writeErr == nil {
 		return fmt.Errorf("完整日志: %s\n%s", logPath, extractFFmpegError(errText))
 	}
 	return fmt.Errorf("%s", extractFFmpegError(errText))
+}
+
+func ffmpegLogPath(dir, candidateID string) string {
+	name := safeOutputName(strings.TrimSpace(candidateID))
+	if name == "" || name == "wx-mini-video" {
+		name = "ffmpeg"
+	}
+	return filepath.Join(dir, ".ffmpeg", name+".log")
+}
+
+func redactFFmpegOutput(output string, headers map[string]string) string {
+	for key, value := range headers {
+		key = strings.TrimSpace(key)
+		value = strings.TrimSpace(value)
+		if key == "" || value == "" {
+			continue
+		}
+		output = strings.ReplaceAll(output, key+": "+value, "<REDACTED HEADER>")
+		output = strings.ReplaceAll(output, value, "<REDACTED>")
+	}
+	return output
 }
 
 func scanFFmpegProgress(data []byte, atEOF bool) (advance int, token []byte, err error) {

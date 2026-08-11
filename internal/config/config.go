@@ -106,7 +106,7 @@ func (c *Config) LoadConfig() error {
 
 func registerDefaults() {
 	Register(ConfigItem{Key: "download.dir", Type: ConfigTypeString, Default: "", Title: "下载目录", Group: "Download"})
-	Register(ConfigItem{Key: "download.ffmpeg", Type: ConfigTypeString, Default: "ffmpeg", Title: "FFmpeg 路径", Group: "Download"})
+	Register(ConfigItem{Key: "download.ffmpeg", Type: ConfigTypeString, Default: "", Title: "FFmpeg 路径", Group: "Download"})
 	Register(ConfigItem{Key: "download.segmentConcurrency", Type: ConfigTypeInt, Default: 6, Title: "分片并发数", Group: "Download"})
 	Register(ConfigItem{Key: "download.segmentRetries", Type: ConfigTypeInt, Default: 3, Title: "分片重试次数", Group: "Download"})
 	Register(ConfigItem{Key: "download.keepSegments", Type: ConfigTypeBool, Default: false, Title: "保留分片缓存", Group: "Download"})

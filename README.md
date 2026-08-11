@@ -17,7 +17,7 @@
 - `wx-mini-video.yaml`
 - `README.md`
 
-基础包不内置 ffmpeg。首次处理 `m3u8` 视频时，程序会自动下载便携版 `ffmpeg.exe` 到下载目录。
+基础包不内置 ffmpeg。首次下载 `m3u8` 时，如果没有配置 `download.ffmpeg` 的本地完整路径，程序会下载并校验固定版本的受管 `ffmpeg.exe` 到下载目录；不会使用系统 `PATH` 中的 ffmpeg。
 
 ## 使用
 
@@ -80,6 +80,10 @@ http://127.0.0.1:2023/cert
 
 长视频通常包含大量分片，耗时会比普通 mp4 更久。程序会并发下载分片并显示进度。如果失败较多，可以把配置里的 `segmentConcurrency` 从 `6` 改成 `4`。
 
+### m3u8 合并失败
+
+完整 ffmpeg 输出写入 `下载目录\.ffmpeg\<候选ID>.log`，界面错误会给出该路径。日志不会写入已捕获的请求头值。
+
 ### 没有识别到目标资源
 
 先按 `c` 清空列表，再重新打开目标图片或播放目标视频。部分小程序资源可能不是常见图片、视频或 m3u8 格式，暂时无法识别。
@@ -91,7 +95,7 @@ http://127.0.0.1:2023/cert
 ```yaml
 download:
   dir: ""
-  ffmpeg: "ffmpeg"
+  ffmpeg: ""
   mode: "auto"
   segmentConcurrency: 6
   segmentRetries: 3
@@ -108,7 +112,7 @@ target:
   name: ""
 ```
 
-一般不需要修改配置。
+一般不需要修改配置。若已自行安装 ffmpeg，可将 `download.ffmpeg` 设置为该 `ffmpeg.exe` 的完整路径；留空时使用受管 ffmpeg。
 
 ## 开发构建
 

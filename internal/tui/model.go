@@ -10,7 +10,6 @@ import (
 	"regexp"
 	"sort"
 	"strings"
-	"sync"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -35,11 +34,6 @@ type downloadMsg struct {
 
 type logMsg string
 
-type ffmpegDoneMsg struct {
-	path string
-	err  error
-}
-
 type model struct {
 	runtime      *app.Runtime
 	candidates   []miniprogram.Candidate
@@ -55,8 +49,6 @@ type model struct {
 	downloading  bool
 	downloadPath string
 	progress     minidownload.Progress
-	ffmpegSetup  *ffmpegProgressState
-	ffmpegErr    error
 	logOffset    int
 	targetReady  bool
 	appIDInput   string
@@ -76,23 +68,6 @@ const (
 
 var categories = []category{categoryAll, categoryImage, categoryVideo, categoryM3U8}
 
-type ffmpegProgressState struct {
-	mu    sync.Mutex
-	state minidownload.FFmpegState
-}
-
-func (s *ffmpegProgressState) set(state minidownload.FFmpegState) {
-	s.mu.Lock()
-	s.state = state
-	s.mu.Unlock()
-}
-
-func (s *ffmpegProgressState) get() minidownload.FFmpegState {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.state
-}
-
 var (
 	titleStyle    = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("42"))
 	errorStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("196"))
@@ -102,14 +77,12 @@ var (
 )
 
 func Run(runtime *app.Runtime) error {
-	ffmpegSetup := &ffmpegProgressState{}
 	m := model{
-		runtime:     runtime,
-		showLogs:    true,
-		ffmpegSetup: ffmpegSetup,
-		category:    categoryVideo,
-		appIDInput:  runtime.Settings.Target.AppID,
-		nameInput:   runtime.Settings.Target.Name,
+		runtime:    runtime,
+		showLogs:   true,
+		category:   categoryVideo,
+		appIDInput: runtime.Settings.Target.AppID,
+		nameInput:  runtime.Settings.Target.Name,
 	}
 	p := tea.NewProgram(m, tea.WithAltScreen())
 	_, err := p.Run()
@@ -120,10 +93,7 @@ func (m model) Init() tea.Cmd {
 	if !m.targetReady {
 		return nil
 	}
-	if m.runtime.HasFFmpeg() {
-		return tea.Batch(m.startProxy, tick())
-	}
-	return tea.Batch(m.startProxy, setupFFmpegCmd(m.runtime, m.ffmpegSetup), tick())
+	return tea.Batch(m.startProxy, tick())
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -218,13 +188,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.downloadPath = v.path
 			m.addLog("下载完成: " + v.path)
 		}
-	case ffmpegDoneMsg:
-		m.ffmpegErr = v.err
-		if v.err != nil {
-			m.addLog("ffmpeg 自动下载失败: " + v.err.Error())
-		} else {
-			m.addLog("ffmpeg 就绪: " + v.path)
-		}
 	case logMsg:
 		m.addLog(string(v))
 	}
@@ -241,11 +204,7 @@ func (m model) View() string {
 		h = 40
 	}
 
-	ffmpegSetupLine := m.renderFFmpegSetupProgress()
 	headerLines := 5
-	if ffmpegSetupLine != "" {
-		headerLines++
-	}
 	progressLines := m.downloadProgressLines()
 	logPanelLines := 0
 	if m.showLogs {
@@ -286,11 +245,6 @@ func (m model) View() string {
 	b.WriteString("\n")
 	b.WriteString(m.renderCategoryTabs())
 	b.WriteString("\n")
-	if ffmpegSetupLine != "" {
-		b.WriteString(okStyle.Render(shortURL(ffmpegSetupLine, m.width-1)))
-		b.WriteString("\n")
-	}
-
 	b.WriteString(m.renderCandidates(listAvailable))
 	if len(detailLines) > 0 {
 		b.WriteString(strings.Join(detailLines, "\n"))
@@ -343,13 +297,8 @@ func (m model) updateTargetInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.targetReady = true
 		m.inputErr = ""
 		preflightLogs := m.runtime.PreflightChecks()
-		m.logs = append(preflightLogs, "正在启动代理...", "正在检查 ffmpeg...")
-		if m.runtime.HasFFmpeg() {
-			m.ffmpegSetup.set(minidownload.FFmpegState{State: "found", Path: m.runtime.Downloader.FFmpegPath})
-			m.logs = append(preflightLogs, "正在启动代理...", "ffmpeg 已可用")
-			return m, tea.Batch(m.startProxy, tick())
-		}
-		return m, tea.Batch(m.startProxy, setupFFmpegCmd(m.runtime, m.ffmpegSetup), tick())
+		m.logs = append(preflightLogs, "正在启动代理...")
+		return m, tea.Batch(m.startProxy, tick())
 	default:
 		if len(msg.Runes) == 0 {
 			return m, nil
@@ -800,19 +749,6 @@ func (m model) stopProxy() tea.Msg {
 	return logMsg("代理已关闭")
 }
 
-func setupFFmpegCmd(runtime *app.Runtime, state *ffmpegProgressState) tea.Cmd {
-	return func() tea.Msg {
-		err := runtime.EnsureFFmpeg(context.Background(), func(progress minidownload.FFmpegState) {
-			state.set(progress)
-		})
-		progress := state.get()
-		if err != nil {
-			return ffmpegDoneMsg{err: err}
-		}
-		return ffmpegDoneMsg{path: progress.Path}
-	}
-}
-
 func tick() tea.Cmd {
 	return tea.Tick(time.Second, func(t time.Time) tea.Msg {
 		return tickMsg(t)
@@ -1073,49 +1009,10 @@ func progressText(progress minidownload.Progress) string {
 }
 
 func (m model) renderFFmpegState() string {
-	state := m.ffmpegSetup.get()
-	switch state.State {
-	case "checking":
-		return "ffmpeg: 检查中"
-	case "found":
+	if m.runtime.HasFFmpeg() {
 		return "ffmpeg: 可用"
-	case "downloading":
-		if state.Total > 0 {
-			pct := int(float64(state.Current) / float64(state.Total) * 100)
-			return fmt.Sprintf("ffmpeg: 下载中 %d%%", pct)
-		}
-		return "ffmpeg: 下载中"
-	case "extracting":
-		return "ffmpeg: 解压中"
-	case "done":
-		return "ffmpeg: 可用"
-	case "error":
-		return "ffmpeg: 自动下载失败"
-	default:
-		if m.runtime.HasFFmpeg() {
-			return "ffmpeg: 可用"
-		}
-		if m.ffmpegErr != nil {
-			return "ffmpeg: 自动下载失败"
-		}
-		return "ffmpeg: 未检测到"
 	}
-}
-
-func (m model) renderFFmpegSetupProgress() string {
-	state := m.ffmpegSetup.get()
-	switch state.State {
-	case "downloading":
-		if state.Total > 0 {
-			pct := int(float64(state.Current) / float64(state.Total) * 100)
-			return fmt.Sprintf("下载 ffmpeg %s %d%%  %s/%s", simpleBar(state.Current, state.Total, 24), pct, formatBytes(state.Current), formatBytes(state.Total))
-		}
-		return "下载 ffmpeg " + simpleSpinner(24)
-	case "extracting":
-		return "正在解压 ffmpeg..."
-	default:
-		return ""
-	}
+	return "ffmpeg: 下载 m3u8 时准备"
 }
 
 func progressBar(progress minidownload.Progress, width int) string {

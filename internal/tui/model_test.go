@@ -72,12 +72,12 @@ func TestCategorySwitchingUsesTabAndNumbers(t *testing.T) {
 	}
 }
 
-func TestDownloadAllowsUncachedJSONM3U8(t *testing.T) {
+func TestDownloadAllowsUncachedDirectM3U8(t *testing.T) {
 	m := model{
 		runtime: &app.Runtime{Settings: config.AppSettings{DownloadDir: t.TempDir()}},
 		candidates: []miniprogram.Candidate{{
 			Kind:    "m3u8",
-			Source:  "json",
+			Source:  "response",
 			URL:     "https://example.com/playlist.m3u8",
 			Headers: map[string]string{"User-Agent": "wx-test"},
 		}},
@@ -88,10 +88,10 @@ func TestDownloadAllowsUncachedJSONM3U8(t *testing.T) {
 	next, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("d")})
 	got := next.(model)
 	if !got.downloading {
-		t.Fatal("uncached JSON m3u8 should enter the download flow")
+		t.Fatal("uncached direct m3u8 should enter the download flow")
 	}
 	if cmd == nil {
-		t.Fatal("uncached JSON m3u8 should schedule a download")
+		t.Fatal("uncached direct m3u8 should schedule a download")
 	}
 }
 
@@ -187,6 +187,7 @@ func TestViewKeepsProgressWhenCategoryChanges(t *testing.T) {
 				ProxyPort:     2023,
 				Target:        miniprogram.Target{AppID: "wx123"},
 			},
+			Downloader: minidownload.New(t.TempDir()),
 		},
 		candidates: []miniprogram.Candidate{
 			{Kind: "image", URL: "https://example.com/cover.jpg"},
@@ -201,9 +202,8 @@ func TestViewKeepsProgressWhenCategoryChanges(t *testing.T) {
 			Downloaded: 20,
 			Total:      100,
 		},
-		ffmpegSetup: &ffmpegProgressState{state: minidownload.FFmpegState{State: "found", Path: "ffmpeg"}},
-		width:       80,
-		height:      14,
+		width:  80,
+		height: 14,
 	}
 
 	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("2")})

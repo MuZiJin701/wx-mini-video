@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -77,7 +76,7 @@ func (r *Runtime) PreflightChecks() []string {
 	if r.HasFFmpeg() {
 		checks = append(checks, "自检通过: ffmpeg 可用")
 	} else {
-		checks = append(checks, "自检提示: 未检测到 ffmpeg，Windows 下会自动下载")
+		checks = append(checks, "自检提示: 首次下载 m3u8 时会准备受管 ffmpeg")
 	}
 	return checks
 }
@@ -180,12 +179,19 @@ func (r *Runtime) SetTarget(target miniprogram.Target) {
 }
 
 func (r *Runtime) HasFFmpeg() bool {
-	path := configuredFFmpegPath(r.Downloader.FFmpegPath)
-	_, err := exec.LookPath(path)
-	if err == nil {
-		r.Downloader.FFmpegPath = path
+	path := configuredFFmpegPath(r.Settings.FFmpegPath)
+	if path != "" {
+		if _, err := os.Stat(path); err == nil {
+			r.Downloader.FFmpegPath = path
+			return true
+		}
+		return false
 	}
-	return err == nil
+	if path = minidownload.ManagedFFmpegPath(r.Settings.DownloadDir); path != "" {
+		r.Downloader.FFmpegPath = path
+		return true
+	}
+	return false
 }
 
 func (r *Runtime) EnsureFFmpeg(ctx context.Context, onProgress func(minidownload.FFmpegState)) error {
@@ -195,14 +201,15 @@ func (r *Runtime) EnsureFFmpeg(ctx context.Context, onProgress func(minidownload
 	if dir == "" {
 		dir = "."
 	}
-	if path := configuredFFmpegPath(r.Downloader.FFmpegPath); path != "" {
-		if _, err := exec.LookPath(path); err == nil {
+	if path := configuredFFmpegPath(r.Settings.FFmpegPath); path != "" {
+		if _, err := os.Stat(path); err == nil {
 			if onProgress != nil {
 				onProgress(minidownload.FFmpegState{State: "found", Path: path})
 			}
 			r.Downloader.FFmpegPath = path
 			return nil
 		}
+		return fmt.Errorf("配置的 download.ffmpeg 不可用: %s；请修正该路径或留空以下载受管 ffmpeg", path)
 	}
 	path, err := minidownload.EnsureFFmpeg(ctx, dir, onProgress)
 	if err != nil {
@@ -215,10 +222,11 @@ func (r *Runtime) EnsureFFmpeg(ctx context.Context, onProgress func(minidownload
 }
 
 func configuredFFmpegPath(configured string) string {
-	if configured != "" {
-		return configured
+	path := strings.TrimSpace(configured)
+	if strings.EqualFold(path, "ffmpeg") {
+		return ""
 	}
-	return "ffmpeg"
+	return path
 }
 
 func needsFFmpeg(candidate miniprogram.Candidate) bool {

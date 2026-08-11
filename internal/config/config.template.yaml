@@ -1,6 +1,6 @@
 download:
   dir: ""
-  ffmpeg: "ffmpeg"
+  ffmpeg: ""
   segmentConcurrency: 6
   segmentRetries: 3
   keepSegments: false
