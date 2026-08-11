@@ -11,7 +11,7 @@
 - **术语、边界或不变量：** `CONTEXT.md`。
 - **架构、配置、构建与排障：** `wx-mini-video-knowledge.md`。
 - **用户流程或发布说明：** `README.md`。
-- **当前计划：** `docs/superpowers/plans/`；`docs/archive/` 只提供历史背景。
+- **历史计划与背景：** `docs/archive/`。
 - **代码入口：** 启动看 `main.go` 和 `internal/app/`；TUI 看 `internal/tui/model.go`；嗅探看 `internal/interceptor/miniprogram.go`；下载看 `internal/minidownload/`。
 
 ## 变更
@@ -41,4 +41,4 @@
 
 ### Domain docs
 
-单上下文布局：根目录 `CONTEXT.md` 与 `docs/adr/`。参见 `docs/agents/domain.md`。
+单上下文布局：根目录 `CONTEXT.md`；需要 ADR 时在 `docs/adr/` 创建。参见 `docs/agents/domain.md`。

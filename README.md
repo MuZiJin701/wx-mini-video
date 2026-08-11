@@ -129,12 +129,11 @@ build\build.bat windows
 项目维护文档：
 
 - `AGENTS.md`：agent 的项目规则、文档入口和验证要求
-- `CONTEXT.md`：项目术语、边界和不变量
+- `CONTEXT.md`：项目领域术语
 - `wx-mini-video-knowledge.md`：实现、配置、分发和排障知识
-- `docs/adr/`：长期架构决策
+- `docs/adr/`：按需记录的长期架构决策
 - `docs/agents/`：工程技能的 issue、标签和领域文档约定
-- `docs/superpowers/plans/`：当前优化和修改计划
-- `docs/archive/`：历史文档
+- `docs/archive/`：历史文档与已完成计划
 
 ## 免责声明
 
