@@ -9,6 +9,43 @@
 
 支持直链音频：`mp3`、`m4a`、`aac`、`wav`、`ogg`、`flac`、`opus`、`amr`。按响应 Content-Type 或 URL 后缀识别，直接保存原文件，不转码，也不从视频中提取音轨。
 
+## 界面预览
+
+选定小程序，浏览媒体，按键下载。手动输入目标 AppID 或使用小程序发现，再按分类查看候选资源；按 `d` 或 `Enter` 保存，按 `o` 打开下载目录。
+
+![媒体列表界面：按分类浏览候选资源并下载](docs/images/使用界面.png)
+
+<details>
+<summary>展开查看完整使用流程：从选择目标到下载完成</summary>
+
+**1. 输入目标 AppID**
+
+已知 AppID 时直接输入，小程序名称可选；也可以按 `Ctrl+D` 切换到小程序发现。
+
+![首页：输入目标 AppID 和可选的小程序名称](docs/images/首页.png)
+
+**2. 开始小程序发现**
+
+在 PC 微信中打开目标小程序，让工具观察其网络活动。
+
+![小程序发现：代理已启动，等待打开目标小程序](docs/images/自动探测.png)
+
+**3. 选择发现的目标**
+
+用 `↑/↓` 选择 AppID，按 `Enter` 进入名称补填界面并确认；随后重新打开目标内容，开始媒体嗅探。
+
+![发现列表：选择已观察到的小程序 AppID](docs/images/已探测到.png)
+
+**4. 下载并查看结果**
+
+在媒体列表中选择候选资源，按 `d` 或 `Enter` 下载，完成后按 `o` 打开下载目录。下图展示图片下载完成的状态。
+
+![下载完成：图片已保存到本地，界面显示成功状态和保存路径](docs/images/下载完成.png)
+
+</details>
+
+[下载最新版本](https://github.com/MuZiJin701/wx-mini-video/releases/latest) · [查看使用步骤](#使用)
+
 ## 下载
 
 从 [GitHub Releases 最新版本](https://github.com/MuZiJin701/wx-mini-video/releases/latest)下载，不要从源码仓库的 `dist/` 目录取包：

@@ -10,6 +10,43 @@ Supported videos: `mp4`, `webm`, `mov`, `m3u8`
 
 Supported direct audio: `mp3`, `m4a`, `aac`, `wav`, `ogg`, `flac`, `opus`, `amr`. Detection uses the response Content-Type or URL extension. Files are saved unchanged, without transcoding or extracting audio tracks from videos.
 
+## Interface preview
+
+Choose a Mini Program, browse its media, and download with a keypress. Enter the target AppID or use Mini Program discovery, then browse candidates by category. Press `d` or `Enter` to save a file and `o` to open the download directory.
+
+![Media list: browse candidates by category and download](docs/images/使用界面.png)
+
+<details>
+<summary>Show the full workflow: from target selection to a completed download</summary>
+
+**1. Enter the target AppID**
+
+Enter a known AppID with an optional Mini Program name, or press `Ctrl+D` to switch to discovery.
+
+![Start screen: enter the target AppID and an optional Mini Program name](docs/images/首页.png)
+
+**2. Start Mini Program discovery**
+
+Open the target Mini Program in desktop WeChat so the app can observe its network activity.
+
+![Mini Program discovery: the proxy is running and waiting for the target to open](docs/images/自动探测.png)
+
+**3. Select the discovered target**
+
+Use `↑/↓` to select an AppID, then press `Enter` to fill in its name and confirm. Reopen the target content to start media sniffing.
+
+![Discovery list: select an observed Mini Program AppID](docs/images/已探测到.png)
+
+**4. Download and view the result**
+
+Select a candidate in the media list and press `d` or `Enter` to download it. When finished, press `o` to open the download directory. This screenshot shows a completed image download.
+
+![Download complete: the image is saved locally, with its success status and output path shown](docs/images/下载完成.png)
+
+</details>
+
+[Download the latest release](https://github.com/MuZiJin701/wx-mini-video/releases/latest) · [Read the usage steps](#usage)
+
 ## Download
 
 Download `wx-mini-video-windows-amd64.zip` from the [latest GitHub Release](https://github.com/MuZiJin701/wx-mini-video/releases/latest). The source repository's `dist/` directory is for local builds.
