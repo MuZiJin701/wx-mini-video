@@ -19,7 +19,7 @@ The package does not bundle ffmpeg. On the first m3u8 download, unless `download
 ## Usage
 
 1. Right-click `wx-mini-video.exe` and choose **Run as administrator**.
-2. Enter the target AppID with an optional name, or press `F2` to start Mini Program discovery.
+2. Enter the target AppID with an optional name, or press `Ctrl+D` to start Mini Program discovery.
 3. For discovery, open the Mini Program in desktop WeChat, select its AppID with `↑/↓`, and press `Enter` to fill in its name and then `Enter` again to confirm. Missing names appear as “名称未识别” (name not identified). Even a single discovered Mini Program requires selection.
 4. After confirming the target, reopen its image or replay its video. Discovery only records Mini Program identifiers; it does not collect media or create media caches. Manual AppID entry goes directly to target sniffing.
 5. Select a candidate and press `d` or `Enter` to download it.
@@ -28,11 +28,11 @@ The package does not bundle ffmpeg. On the first m3u8 download, unless `download
 
 The list initially shows videos. Use `Tab` or number keys to switch between All, Images, Videos, and m3u8.
 
-Press `s` to return to target selection. Select another discovered AppID or press `F2` for manual entry. Switching clears candidates and progress while preserving downloads, history, partial downloads, and existing caches. Switching is blocked during a download.
+Press `s` to return to target selection. Select another discovered AppID or press `Ctrl+D` for manual entry. Switching clears candidates and progress while preserving downloads, history, partial downloads, and existing caches. Switching is blocked during a download.
 
 ### Finding an AppID
 
-In mobile WeChat, open the Mini Program, tap the top-right `…`, and open its introduction page using the Mini Program name. Tap that page's `…` and choose **More information** to find its AppID. Menu wording varies by WeChat version. Administrators can also find it in the WeChat public platform under **Settings → Basic settings / Development settings**. Alternatively, use this app's `F2` discovery.
+In mobile WeChat, open the Mini Program, tap the top-right `…`, and open its introduction page using the Mini Program name. Tap that page's `…` and choose **More information** to find its AppID. Menu wording varies by WeChat version. Administrators can also find it in the WeChat public platform under **Settings → Basic settings / Development settings**. Alternatively, use this app's `Ctrl+D` discovery.
 
 Downloads, caches, logs, certificates, and managed ffmpeg are stored in `downloads/` beside the executable by default. Moving the extracted app directory moves this runtime data with it. Set `download.dir` to use an explicit directory.
 
@@ -91,7 +91,7 @@ Confirm the target AppID, then reopen the image or replay the video. Requests wi
 
 ### Target Mini Program is not discovered
 
-Confirm that the proxy started, then reopen the Mini Program in desktop WeChat to generate requests. Press `r` to refresh or retry startup, or `F2` to enter the AppID manually. Both entry methods use the same filtering rules; manual entry cannot bypass missing source information.
+Confirm that the proxy started, then reopen the Mini Program in desktop WeChat to generate requests. Press `r` to refresh or retry startup, or `Ctrl+D` to enter the AppID manually. Both entry methods use the same filtering rules; manual entry cannot bypass missing source information.
 
 ## Configuration
 

@@ -22,7 +22,7 @@ func (m model) updateDiscovery(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "q", "ctrl+c", "esc":
 		return m, tea.Sequence(m.stopProxy, tea.Quit)
-	case "f2":
+	case "ctrl+d":
 		m.discovering = false
 		m.inputErr = ""
 		return m.ensureProxy()
@@ -71,7 +71,7 @@ func (m model) renderDiscovery() string {
 	}
 	b.WriteString("\n\n")
 	if len(m.programs) == 0 {
-		b.WriteString("未发现小程序。请重新打开小程序，或按 F2 手动输入 AppID。\n")
+		b.WriteString("未发现小程序。请重新打开小程序，或按 Ctrl+D 手动输入 AppID。\n")
 	} else {
 		visible := max(1, height-10)
 		start := max(0, m.programIndex-visible+1)
@@ -89,6 +89,6 @@ func (m model) renderDiscovery() string {
 			b.WriteString(line + "\n")
 		}
 	}
-	b.WriteString("\n快捷键: ↑/↓ 选择  Enter 补填名称并确认  F2 手动输入  r 刷新/重试  q 退出\n")
+	b.WriteString("\n快捷键: ↑/↓ 选择  Enter 补填名称并确认  Ctrl+D 手动输入  r 刷新/重试  q 退出\n")
 	return b.String()
 }

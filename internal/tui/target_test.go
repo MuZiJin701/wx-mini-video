@@ -51,9 +51,9 @@ func TestDiscoveryRequiresExplicitSelection(t *testing.T) {
 	runtime := targetRuntime(t)
 	plugin := interceptor.CreateMiniProgramInterceptorPlugin(miniprogram.Target{}, runtime.Store, runtime.Settings.DownloadDir)
 	m := model{runtime: runtime, width: 100, height: 24}
-	m, cmd := targetKey(m, tea.KeyF2, "")
+	m, cmd := targetKey(m, tea.KeyCtrlD, "")
 	if cmd == nil || !strings.Contains(m.View(), "小程序发现") {
-		t.Fatal("F2 should enter discovery and schedule proxy startup")
+		t.Fatal("Ctrl+D should enter discovery and schedule proxy startup")
 	}
 	next, _ := m.Update(startMsg{})
 	m = next.(model)
@@ -94,7 +94,7 @@ func TestTargetSwitchClearsCandidatesAndKeepsFiles(t *testing.T) {
 	if m.targetReady || len(runtime.Store.List("")) != 0 || m.progress.Status != "" || m.downloadPath != "" {
 		t.Fatal("switch should return to target selection and clear candidates and progress")
 	}
-	m, _ = targetKey(m, tea.KeyF2, "")
+	m, _ = targetKey(m, tea.KeyCtrlD, "")
 	m, _ = targetKey(m, tea.KeyRunes, "wx456")
 	m, _ = targetKey(m, tea.KeyTab, "")
 	m, _ = targetKey(m, tea.KeyRunes, "同名小程序")

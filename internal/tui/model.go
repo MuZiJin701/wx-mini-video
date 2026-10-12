@@ -299,7 +299,7 @@ func (m model) updateTargetInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "ctrl+c", "esc":
 		return m, tea.Sequence(m.stopProxy, tea.Quit)
-	case "f2":
+	case "ctrl+d":
 		m.runtime.SetTarget(miniprogram.Target{})
 		m.discovering = true
 		m.programs = m.runtime.Store.Programs()
@@ -359,7 +359,7 @@ func (m model) renderTargetInput() string {
 	var b strings.Builder
 	b.WriteString(titleStyle.Render("微信小程序视频下载"))
 	b.WriteString("\n\n")
-	b.WriteString("输入目标 AppID，或按 F2 自动发现小程序。名称可选。\n")
+	b.WriteString("输入目标 AppID，或按 Ctrl+D 自动发现小程序。名称可选。\n")
 	b.WriteString("只收集来源 AppID 匹配的媒体；来源不明的媒体会被过滤。\n")
 	b.WriteString("查找 AppID：手机微信打开小程序 → 右上角 … → 小程序介绍 → 更多资料。\n\n")
 	b.WriteString(renderInputLine("AppID", m.appIDInput, m.inputFocus == 0, width))
@@ -374,7 +374,7 @@ func (m model) renderTargetInput() string {
 		b.WriteString(errorStyle.Render("代理启动失败: " + m.startErr.Error()))
 		b.WriteString("\n")
 	}
-	b.WriteString(mutedStyle.Render("快捷键: F2 自动发现  Tab 切换输入项  Enter 确认目标  Esc/Ctrl+C 退出"))
+	b.WriteString(mutedStyle.Render("快捷键: Ctrl+D 自动发现  Tab 切换输入项  Enter 确认目标  Esc/Ctrl+C 退出"))
 	b.WriteString("\n")
 	return b.String()
 }
