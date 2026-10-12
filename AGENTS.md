@@ -2,15 +2,16 @@
 
 ## 项目
 
-`wx-mini-video` 是 Windows 优先的 Go TUI：通过本地 HTTPS 代理识别 PC 微信小程序加载的图片、直链视频和 m3u8，并下载到本地。It is a Windows-first Go TUI that sniffs and downloads images, direct videos, and m3u8 media loaded by desktop WeChat Mini Programs through a local HTTPS proxy.
+`wx-mini-video` 是 Windows 优先的 Go TUI：通过本地 HTTPS 代理识别 PC 微信目标小程序加载的图片、直链视频、直链音频和 m3u8，并下载到本地。
 
-当前范围是通用小程序媒体嗅探与下载。保持单二进制 TUI、Echo 代理适配、Windows 系统代理与证书、媒体候选识别、图片/直链视频下载及 m3u8 的 ffmpeg 合并。发布包不内置 ffmpeg。
+当前范围是通用小程序媒体嗅探与下载。保持单二进制 TUI、Echo 代理适配、Windows 系统代理与证书、目标 AppID 严格过滤、手动输入与小程序发现、图片/直链视频/直链音频下载及 m3u8 的 ffmpeg 合并。Windows 启动请求 UAC 并优先使用已安装的 Terminal；发布包不内置 ffmpeg。
 
 ## 先读
 
 - **领域术语：** `GLOSSARY.md`。
 - **架构、配置、构建与排障：** `wx-mini-video-knowledge.md`。
 - **用户流程或发布说明：** `README.md`。
+- **版本变更与发布合并：** `CHANGELOG.md`；发布操作见 `wx-mini-video-knowledge.md` 的“分发”。
 - **历史计划与背景：** `docs/archive/`。
 - **代码入口：** 启动看 `main.go` 和 `internal/app/`；TUI 看 `internal/tui/model.go`；嗅探看 `internal/interceptor/miniprogram.go`；下载看 `internal/minidownload/`。
 

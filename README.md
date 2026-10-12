@@ -11,7 +11,7 @@
 
 ## 下载
 
-从 GitHub Releases 下载，不要从源码仓库的 `dist/` 目录取包：
+从 [GitHub Releases 最新版本](https://github.com/MuZiJin701/wx-mini-video/releases/latest)下载，不要从源码仓库的 `dist/` 目录取包：
 
 - `wx-mini-video-windows-amd64.zip`
 
@@ -22,6 +22,10 @@
 - `README.md`
 
 基础包不内置 ffmpeg。首次下载 `m3u8` 时，如果没有配置 `download.ffmpeg` 的本地完整路径，程序会下载并校验固定版本的受管 `ffmpeg.exe` 到下载目录；短暂网络或服务器错误会自动重试最多三次，不会使用系统 `PATH` 中的 ffmpeg。
+
+### v0.1.7（2026-10-12）
+
+统一包含目标 AppID 严格过滤、小程序发现与名称补填、`Ctrl+D` 切换入口、Windows Terminal 优先启动与 UAC 提权，以及直链音频识别和下载。此版本合并当天的 v0.1.4、v0.1.5、v0.1.6 发布，完整说明见 [CHANGELOG.md](CHANGELOG.md)。升级时解压新版包，替换 exe；保留已有配置和 `downloads/` 数据。
 
 ## 使用
 
@@ -55,6 +59,7 @@
 | `↑/↓`、`k/j` | 选择资源 |
 | `Tab`、`Shift+Tab` | 切换分类 |
 | `1/2/3/4/5` | 切换到全部、图片、视频、m3u8、音频 |
+| `Ctrl+D` | 在 AppID 输入界面与小程序发现界面之间切换 |
 | `d`、`Enter` | 下载选中资源 |
 | `i` | 显示或隐藏选中资源详情 |
 | `c` | 清空资源列表 |
@@ -67,12 +72,12 @@
 
 ## 重要说明
 
-- 本工具通过本地 HTTPS 代理识别图片和视频资源。
+- 本工具通过本地 HTTPS 代理识别图片、视频、音频和 m3u8 媒体。
 - 首次运行需要安装本地根证书，Windows 可能弹出权限确认。
 - AppID 用于过滤请求来源：仅接受 HTTPS `servicewechat.com/<AppID>/<版本>/page-frame.html` 格式的 `Referer`，并完整匹配目标 AppID。其他小程序以及来源信息缺失、格式非法的媒体均不会进入列表，也不会触发媒体缓存或回补请求；正常网络转发继续。
 - 来自已匹配目标 JSON 接口的图片、直链视频和直链音频链接可进入列表；JSON 中的 m3u8 链接继续跳过，需实际观察到匹配来源的播放列表响应。音频与其他媒体使用相同的 AppID 来源过滤规则。
 - 严格过滤可能漏掉没有来源信息的目标媒体。小程序发现只覆盖代理实际观察到的小程序，不保证所有 AppID 都能自动取得名称；名称可手动补填且不参与过滤。
-- 小程序一次可能加载很多图片或视频，建议先按 `c` 清空，再操作目标内容。
+- 小程序一次可能加载很多媒体，建议先按 `c` 清空，再操作目标内容。
 - 如果程序异常退出后网络异常，重新以管理员身份运行本工具，再按 `q` 正常退出即可恢复代理。
 
 ## 常见问题
@@ -153,9 +158,11 @@ build\build.bat windows
 
 - `AGENTS.md`：agent 的项目规则、文档入口和验证要求
 - `GLOSSARY.md`：项目领域术语
+- `CHANGELOG.md`：版本变更与合并发布说明
 - `wx-mini-video-knowledge.md`：实现、配置、分发和排障知识
 - `docs/adr/`：按需记录的长期架构决策
 - `docs/agents/`：工程技能的 issue、标签和领域文档约定
+- `docs/appid-filtering-requirements.md`：已实现的 AppID 过滤规格快照及后续扩展说明
 - `docs/archive/`：历史文档与已完成计划
 
 ## 免责声明

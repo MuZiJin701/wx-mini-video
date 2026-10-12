@@ -1,5 +1,7 @@
 # 启明星小程序视频下载 TUI 实施进度
 
+> **历史进度：** 下文“当前状态”与验证记录均指当时版本。固定小程序、启动时准备 ffmpeg 等流程已经演进；当前使用说明见 [README.md](../../README.md)，版本说明见 [CHANGELOG.md](../../CHANGELOG.md)。
+
 ## 当前状态
 
 核心功能已收敛为 Windows 优先的启明星小程序视频 TUI 下载器。最新验证：`go test ./...`、`go vet ./...`、`go build -o qiming-video.exe .` 全部通过。

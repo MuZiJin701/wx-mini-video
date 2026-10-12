@@ -1,8 +1,10 @@
 # 目标 AppID 过滤与小程序发现
 
-GitHub spec：[#4](https://github.com/MuZiJin701/wx-mini-video/issues/4)，标记为 `bug`、`ready-for-agent`。本文件保留发布时的规格副本，后续需求变更以 issue 为准。
+GitHub spec：[#4](https://github.com/MuZiJin701/wx-mini-video/issues/4)。本文件保留原始规格，以下问题陈述描述实施前的行为；当前使用说明见 [README.md](../README.md)，版本扩展见 [CHANGELOG.md](../CHANGELOG.md)。
 
-状态：待实施。本文根据需求澄清整理，不代表当前版本已支持。测试入口已由用户确认：复用代理响应和 TUI 操作两处现有入口，另行验收真实 PC 微信流量。
+状态：代码已实现，自动化回归已通过，真实 PC 微信来源覆盖仍待人工验收。测试入口已由用户确认：复用代理响应和 TUI 操作两处现有入口，另行验收真实 PC 微信流量。
+
+2026-10-12 后续扩展：输入与发现界面使用 `Ctrl+D` 切换，媒体界面按 `s` 返回选择；直链音频与匹配 JSON 中的音频链接沿用本规格的严格来源过滤，按 `5` 查看音频。Windows 启动优先使用已安装的 Terminal 并请求 UAC。上述变更统一包含在 v0.1.7；保留以下原始故事和验收矩阵以便追溯。
 
 ## 问题陈述
 

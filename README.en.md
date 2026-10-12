@@ -12,11 +12,15 @@ Supported direct audio: `mp3`, `m4a`, `aac`, `wav`, `ogg`, `flac`, `opus`, `amr`
 
 ## Download
 
-Download `wx-mini-video-windows-amd64.zip` from GitHub Releases. The source repository's `dist/` directory is for local builds.
+Download `wx-mini-video-windows-amd64.zip` from the [latest GitHub Release](https://github.com/MuZiJin701/wx-mini-video/releases/latest). The source repository's `dist/` directory is for local builds.
 
 The extracted package contains `wx-mini-video.exe`, `wx-mini-video.yaml`, and `README.md`.
 
 The package does not bundle ffmpeg. On the first m3u8 download, unless `download.ffmpeg` specifies a local executable, the app downloads and verifies a fixed version of managed `ffmpeg.exe` in the download directory. Temporary network or server errors are retried up to three times. The app does not use ffmpeg from the system `PATH`.
+
+### v0.1.7 (2026-10-12)
+
+This release combines strict target AppID filtering, Mini Program discovery and optional names, `Ctrl+D` entry switching, Windows Terminal startup with UAC elevation, and direct-audio detection and downloads. It consolidates the day's v0.1.4, v0.1.5, and v0.1.6 releases; see [CHANGELOG.md](CHANGELOG.md) for the full Chinese release notes. To upgrade, extract the new package and replace the executable while keeping your configuration and `downloads/` data.
 
 ## Usage
 
@@ -49,6 +53,7 @@ Direct downloads first write to a `.part` file. Retrying after a network interru
 | `↑/↓`, `k/j` | Select a candidate |
 | `Tab`, `Shift+Tab` | Switch categories |
 | `1/2/3/4/5` | Show All / Images / Videos / m3u8 / Audio |
+| `Ctrl+D` | Switch between AppID entry and Mini Program discovery |
 | `d`, `Enter` | Download the selected candidate |
 | `i` | Show or hide candidate details |
 | `c` | Clear the list |
@@ -142,9 +147,11 @@ Maintainer documentation is in Chinese:
 
 - `AGENTS.md`: project rules, documentation entry points, and validation requirements.
 - `GLOSSARY.md`: domain terminology.
+- `CHANGELOG.md`: version changes and release consolidation.
 - `wx-mini-video-knowledge.md`: implementation, configuration, distribution, and troubleshooting.
 - `docs/adr/`: long-term architecture decisions.
 - `docs/agents/`: issue tracker, triage labels, and domain documentation conventions.
+- `docs/appid-filtering-requirements.md`: implemented AppID filtering spec snapshot and subsequent extensions.
 - `docs/archive/`: historical documents and completed plans.
 
 ## Disclaimer

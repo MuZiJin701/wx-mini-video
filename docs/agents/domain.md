@@ -23,7 +23,9 @@
 ├── GLOSSARY.md
 ├── docs/adr/
 │   ├── 0001-managed-ffmpeg.md
-│   └── 0002-portable-runtime-data.md
+│   ├── 0002-portable-runtime-data.md
+│   ├── 0003-target-appid-filtering.md
+│   └── 0004-windows-terminal-startup.md
 └── wx-mini-video-knowledge.md
 ```
 
