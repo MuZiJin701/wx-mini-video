@@ -18,7 +18,7 @@ The package does not bundle ffmpeg. On the first m3u8 download, unless `download
 
 ## Usage
 
-1. Right-click `wx-mini-video.exe` and choose **Run as administrator**.
+1. Double-click `wx-mini-video.exe` and approve the Windows administrator (UAC) prompt if shown. The app prefers Windows Terminal and reuses the current window when already running in an administrator Terminal.
 2. Enter the target AppID with an optional name, or press `Ctrl+D` to start Mini Program discovery.
 3. For discovery, open the Mini Program in desktop WeChat, select its AppID with `↑/↓`, and press `Enter` to fill in its name and then `Enter` again to confirm. Missing names appear as “名称未识别” (name not identified). Even a single discovered Mini Program requires selection.
 4. After confirming the target, reopen its image or replay its video. Discovery only records Mini Program identifiers; it does not collect media or create media caches. Manual AppID entry goes directly to target sniffing.
@@ -29,6 +29,8 @@ The package does not bundle ffmpeg. On the first m3u8 download, unless `download
 The list initially shows videos. Use `Tab` or number keys to switch between All, Images, Videos, and m3u8.
 
 Press `s` to return to target selection. Select another discovered AppID or press `Ctrl+D` for manual entry. Switching clears candidates and progress while preserving downloads, history, partial downloads, and existing caches. Switching is blocked during a download.
+
+If Windows Terminal is not installed or `wt.exe` is unavailable, the app keeps the current console. If Chinese text is missing, use Windows Terminal or choose a console font with Chinese glyphs. Cancelling UAC stops startup; startup failures appear in an error dialog. The app does not install Terminal or change the system default terminal.
 
 ### Finding an AppID
 

@@ -4,6 +4,8 @@
 
 `wx-mini-video` is a Windows-first, general-purpose media sniffer and downloader for WeChat Mini Programs.
 
+Windows 启动先经 `pkg/system.PrepareConsole`：未提权时使用 `ShellExecuteW` 的 `runas` 请求 UAC，再由管理员进程通过 `wt.exe -w new new-tab` 在 Windows Terminal 中重启自身。已在管理员 Terminal 中运行时直接使用当前窗口；未找到 `wt.exe` 时保留原控制台。内部重启标记限制提权和终端重启次数；实际进程令牌仍须具备管理员权限。工作目录、参数与 `WX_MINI_VIDEO_CONFIG` 显式路径在重启时保留，Terminal 的分号分隔符单独转义。启动准备发生在配置、证书和代理初始化前，取消或失败不会启动代理；错误通过 Unicode 对话框显示。
+
 ## 架构
 
 `wx-mini-video` 是单进程 Go TUI 工具。入口 `main.go` 加载配置后进入 Bubble Tea TUI；用户手动输入目标 AppID，或按 `Ctrl+D` 启动代理发现小程序。选择目标后才开始媒体嗅探；`internal/app` 维护代理、目标、候选资源和下载器。
@@ -70,7 +72,7 @@ zip 用于 GitHub Releases，不提交到源码仓库。
 
 ## 真实 PC 微信验收
 
-1. 以管理员身份启动本地构建，按 `Ctrl+D` 进入发现，分别打开两个小程序；确认 AppID 去重，尚未选择时没有媒体候选或播放列表缓存。
+1. 双击本地构建并同意 UAC，确认进入管理员 Windows Terminal；已在管理员 Terminal 中启动不重复开窗。另检查取消 UAC 不启动代理、未安装 Terminal 时回退原控制台，以及含中文、空格的路径和显式配置文件仍生效。按 `Ctrl+D` 进入发现，分别打开两个小程序；确认 AppID 去重，尚未选择时没有媒体候选或播放列表缓存。
 2. 选择目标、补填名称并确认，再重新打开图片、播放直链视频和 m3u8；核对详情中的 `Referer` 与目标 AppID 是否匹配。若未观察到来源信息，记录该媒体路径的覆盖限制，不通过放宽过滤解决。
 3. 同时操作另一个小程序；其媒体不能出现在当前目标列表。来自匹配 JSON 接口的图片、直链视频仍可出现，JSON m3u8 继续跳过。
 4. 按 `s` 切换目标并重新加载媒体；旧候选和进度清空，本地文件保留。下载进行中按 `s` 应提示无法切换，并继续下载。
