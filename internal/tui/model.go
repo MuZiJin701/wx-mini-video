@@ -45,6 +45,7 @@ type model struct {
 	width        int
 	height       int
 	started      bool
+	starting     bool
 	startErr     error
 	downloading  bool
 	downloadPath string
@@ -55,6 +56,9 @@ type model struct {
 	nameInput    string
 	inputFocus   int
 	inputErr     string
+	discovering  bool
+	programs     []miniprogram.Target
+	programIndex int
 }
 
 type category string
@@ -103,6 +107,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = v.Height
 	case tea.KeyMsg:
 		if !m.targetReady {
+			if m.discovering {
+				return m.updateDiscovery(v)
+			}
 			return m.updateTargetInput(v)
 		}
 		switch v.String() {
@@ -138,6 +145,23 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.selected = 0
 			m.progress = minidownload.Progress{}
 			m.addLog("已清空候选资源")
+		case "s":
+			if m.downloading {
+				m.showLogs = true
+				m.addLog("下载正在进行，完成后才能切换目标")
+				break
+			}
+			m.runtime.SetTarget(miniprogram.Target{})
+			m.targetReady = false
+			m.discovering = true
+			m.programs = m.runtime.Store.Programs()
+			m.programIndex = 0
+			m.candidates = nil
+			m.selected = 0
+			m.progress = minidownload.Progress{}
+			m.downloadPath = ""
+			m.showDetails = false
+			m.addLog("请选择目标，确认后重新打开图片或播放视频")
 		case "l":
 			m.showLogs = !m.showLogs
 		case "i":
@@ -169,6 +193,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 	case startMsg:
+		m.starting = false
 		m.started = v.err == nil
 		m.startErr = v.err
 		if v.err != nil {
@@ -177,6 +202,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.addLog(fmt.Sprintf("代理已启动: %s (耗时 %s)", m.runtime.ProxyAddr(), v.duration.Round(time.Millisecond)))
 		}
 	case tickMsg:
+		if m.discovering {
+			m.programs = m.runtime.Store.Programs()
+		}
 		m.refresh()
 		m.progress = m.runtime.DownloadProgress()
 		return m, tick()
@@ -196,6 +224,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m model) View() string {
 	if !m.targetReady {
+		if m.discovering {
+			return m.renderDiscovery()
+		}
 		return m.renderTargetInput()
 	}
 
@@ -240,7 +271,7 @@ func (m model) View() string {
 		b.WriteString("\n")
 	}
 
-	shortcuts := "快捷键: Tab 分类  1/2/3/4 全部/图片/视频/m3u8  ↑/↓ 选择  i 详情  d/Enter 下载  c 清空  l 日志  q 退出"
+	shortcuts := "快捷键: s 切换目标  Tab 分类  1/2/3/4 全部/图片/视频/m3u8  ↑/↓ 选择  i 详情  d/Enter 下载  c 清空  l 日志  q 退出"
 	b.WriteString(mutedStyle.Render(fitLine(shortcuts, m.width-1)))
 	b.WriteString("\n")
 	b.WriteString(m.renderCategoryTabs())
@@ -267,7 +298,14 @@ func (m model) View() string {
 func (m model) updateTargetInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "ctrl+c", "esc":
-		return m, tea.Quit
+		return m, tea.Sequence(m.stopProxy, tea.Quit)
+	case "f2":
+		m.runtime.SetTarget(miniprogram.Target{})
+		m.discovering = true
+		m.programs = m.runtime.Store.Programs()
+		m.programIndex = 0
+		m.inputErr = ""
+		return m.ensureProxy()
 	case "tab", "shift+tab", "up", "down":
 		if m.inputFocus == 0 {
 			m.inputFocus = 1
@@ -296,9 +334,8 @@ func (m model) updateTargetInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.runtime.SetTarget(miniprogram.Target{AppID: m.appIDInput, Name: m.nameInput})
 		m.targetReady = true
 		m.inputErr = ""
-		preflightLogs := m.runtime.PreflightChecks()
-		m.logs = append(preflightLogs, "正在启动代理...")
-		return m, tea.Batch(m.startProxy, tick())
+		m.addLog("已选定目标，请重新打开图片或播放视频；来源不明的媒体会被过滤")
+		return m.ensureProxy()
 	default:
 		if len(msg.Runes) == 0 {
 			return m, nil
@@ -322,8 +359,9 @@ func (m model) renderTargetInput() string {
 	var b strings.Builder
 	b.WriteString(titleStyle.Render("微信小程序视频下载"))
 	b.WriteString("\n\n")
-	b.WriteString("请输入本次要嗅探的小程序信息，AppID 必填，名称可选。\n")
-	b.WriteString("APPID 作为本次会话标签；请确认后只播放目标小程序的视频。\n\n")
+	b.WriteString("输入目标 AppID，或按 F2 自动发现小程序。名称可选。\n")
+	b.WriteString("只收集来源 AppID 匹配的媒体；来源不明的媒体会被过滤。\n")
+	b.WriteString("查找 AppID：手机微信打开小程序 → 右上角 … → 小程序介绍 → 更多资料。\n\n")
 	b.WriteString(renderInputLine("AppID", m.appIDInput, m.inputFocus == 0, width))
 	b.WriteString("\n")
 	b.WriteString(renderInputLine("名称", m.nameInput, m.inputFocus == 1, width))
@@ -332,7 +370,11 @@ func (m model) renderTargetInput() string {
 		b.WriteString(errorStyle.Render(m.inputErr))
 		b.WriteString("\n\n")
 	}
-	b.WriteString(mutedStyle.Render("快捷键: Tab 切换  Enter 确认并启动代理  Esc/Ctrl+C 退出"))
+	if m.startErr != nil {
+		b.WriteString(errorStyle.Render("代理启动失败: " + m.startErr.Error()))
+		b.WriteString("\n")
+	}
+	b.WriteString(mutedStyle.Render("快捷键: F2 自动发现  Tab 切换输入项  Enter 确认目标  Esc/Ctrl+C 退出"))
 	b.WriteString("\n")
 	return b.String()
 }
@@ -367,7 +409,7 @@ func (m model) renderCandidates(maxLines int) string {
 		return ""
 	}
 	if len(m.candidates) == 0 {
-		return mutedStyle.Render(fitLine("暂无候选资源。打开图片或播放视频后，图片、mp4 或 m3u8 会出现在这里。", m.width-1)) + "\n"
+		return mutedStyle.Render(fitLine("暂无候选资源。请重新打开图片或播放视频；来源不明的媒体会被过滤。", m.width-1)) + "\n"
 	}
 	if len(visibleCandidates) == 0 {
 		return mutedStyle.Render(fitLine(fmt.Sprintf("当前分类暂无资源。已嗅探 %d 个资源，可按 Tab 或 1/2/3/4 切换分类。", len(m.candidates)), m.width-1)) + "\n"

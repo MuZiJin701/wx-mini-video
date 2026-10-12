@@ -87,9 +87,6 @@ func (r *Runtime) Start() error {
 	if r.started {
 		return nil
 	}
-	if strings.TrimSpace(r.Settings.Target.AppID) == "" {
-		return fmt.Errorf("请先输入小程序 AppID")
-	}
 	addr := fmt.Sprintf("%s:%d", r.Settings.ProxyHostname, r.Settings.ProxyPort)
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
@@ -175,6 +172,10 @@ func (r *Runtime) SetTarget(target miniprogram.Target) {
 	target.Name = strings.TrimSpace(target.Name)
 	r.mu.Lock()
 	r.Settings.Target = target
+	if r.Store != nil {
+		r.Store.SetTarget(target)
+	}
+	r.ClearProgress()
 	r.mu.Unlock()
 }
 

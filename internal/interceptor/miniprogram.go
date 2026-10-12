@@ -16,6 +16,9 @@ import (
 var m3u8Client = &http.Client{Timeout: 0}
 
 func CreateMiniProgramInterceptorPlugin(target miniprogram.Target, store *miniprogram.Store, downloadDir string) *proxy.Plugin {
+	if store != nil {
+		store.SetTarget(target)
+	}
 	dir := downloadDir
 	if dir == "" {
 		dir = "."
@@ -23,11 +26,16 @@ func CreateMiniProgramInterceptorPlugin(target miniprogram.Target, store *minipr
 	return &proxy.Plugin{
 		Match: "",
 		OnResponse: func(ctx proxy.Context) {
-			if store == nil || !isMiniProgramTargetEnabled(target) {
+			if store == nil {
 				return
 			}
 			req := ctx.Req()
 			if req == nil || req.URL == nil {
+				return
+			}
+			appID := requestAppID(req.Header)
+			target, generation := store.Observe(appID)
+			if appID == "" || appID != target.AppID {
 				return
 			}
 			rawURL := contextURLString(req.URL)
@@ -39,8 +47,10 @@ func CreateMiniProgramInterceptorPlugin(target miniprogram.Target, store *minipr
 			kind, suffix := miniprogram.Classify(contentType, rawURL)
 			headers := miniprogram.CleanHeaders(req.Header)
 			sourceURL := rawURL
-			if kind != "" {
+			if kind != "" && kind != "segment" {
 				candidate := miniprogram.Candidate{
+					AppID:         target.AppID,
+					AppName:       target.Name,
 					URL:           rawURL,
 					SourceURL:     sourceURL,
 					Source:        "response",
@@ -51,10 +61,15 @@ func CreateMiniProgramInterceptorPlugin(target miniprogram.Target, store *minipr
 					Headers:       headers,
 				}
 				candidate.ID = miniprogram.CandidateID(target.AppID, candidate.URL)
+				var cache func() string
 				if kind == "m3u8" {
-					candidate.CachedPath = captureM3U8(ctx, dir, candidate)
+					body := readProxyBody(ctx)
+					if len(body) == 0 && store.IsCurrentTarget(generation) {
+						body = fetchM3U8HTTP(candidate)
+					}
+					cache = func() string { return cacheM3U8(body, dir, candidate) }
 				}
-				addMiniProgramCandidate(store, target, candidate)
+				_, _ = store.AddForTarget(generation, candidate, cache)
 			}
 			if !strings.Contains(strings.ToLower(contentType), "json") {
 				return
@@ -65,23 +80,37 @@ func CreateMiniProgramInterceptorPlugin(target miniprogram.Target, store *minipr
 			}
 			ctx.SetResponseBody(string(body))
 			for _, candidate := range miniprogram.ExtractMediaURLsFromJSON(body) {
-				if candidate.Kind == "m3u8" {
+				if candidate.Kind == "m3u8" || candidate.Kind == "segment" {
 					continue
 				}
 				candidate.SourceURL = sourceURL
 				candidate.ContentType = contentType
 				candidate.Headers = headers
-				addMiniProgramCandidate(store, target, candidate)
+				candidate.AppID = target.AppID
+				candidate.AppName = target.Name
+				_, _ = store.AddForTarget(generation, candidate, nil)
 			}
 		},
 	}
 }
 
-func captureM3U8(ctx proxy.Context, dir string, candidate miniprogram.Candidate) string {
-	body := readProxyBody(ctx)
-	if len(body) == 0 {
-		body = fetchM3U8HTTP(candidate)
+func requestAppID(header http.Header) string {
+	values := header.Values("Referer")
+	if len(values) != 1 {
+		return ""
 	}
+	u, err := url.Parse(values[0])
+	if err != nil || u.Scheme != "https" || !strings.EqualFold(u.Host, "servicewechat.com") || u.User != nil || u.RawQuery != "" || u.Fragment != "" || u.RawPath != "" {
+		return ""
+	}
+	parts := strings.Split(u.Path, "/")
+	if len(parts) != 4 || parts[0] != "" || parts[1] == "" || parts[2] == "" || parts[3] != "page-frame.html" || strings.ContainsAny(parts[1]+parts[2], " \t\r\n\\") {
+		return ""
+	}
+	return parts[1]
+}
+
+func cacheM3U8(body []byte, dir string, candidate miniprogram.Candidate) string {
 	if len(body) == 0 {
 		return ""
 	}
@@ -151,22 +180,6 @@ func rewriteRelativeSegments(body []byte, baseURL string) []byte {
 		out.WriteString("\n")
 	}
 	return []byte(strings.TrimRight(out.String(), "\n"))
-}
-
-func isMiniProgramTargetEnabled(target miniprogram.Target) bool {
-	return target.AppID != "" || target.Name != "" || target.OriginalID != ""
-}
-
-func addMiniProgramCandidate(store *miniprogram.Store, target miniprogram.Target, candidate miniprogram.Candidate) {
-	candidate.AppID = target.AppID
-	candidate.AppName = target.Name
-	if candidate.Kind == "" {
-		candidate.Kind, candidate.Suffix = miniprogram.Classify(candidate.ContentType, candidate.URL)
-	}
-	if candidate.Kind == "" || candidate.Kind == "segment" {
-		return
-	}
-	_, _ = store.Add(candidate)
 }
 
 func parseContentLength(value string) int64 {

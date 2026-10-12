@@ -44,6 +44,9 @@ type Store struct {
 	mu               sync.RWMutex
 	items            map[string]Candidate
 	order            []string
+	target           Target
+	generation       uint64
+	programs         []Target
 	OnCandidateAdded func(Candidate)
 }
 
@@ -54,6 +57,14 @@ func NewStore() *Store {
 }
 
 func (s *Store) Add(candidate Candidate) (Candidate, bool) {
+	return s.add(candidate, nil, nil)
+}
+
+func (s *Store) AddForTarget(generation uint64, candidate Candidate, cache func() string) (Candidate, bool) {
+	return s.add(candidate, &generation, cache)
+}
+
+func (s *Store) add(candidate Candidate, generation *uint64, cache func() string) (Candidate, bool) {
 	if candidate.URL == "" {
 		return candidate, false
 	}
@@ -64,6 +75,13 @@ func (s *Store) Add(candidate Candidate) (Candidate, bool) {
 		candidate.CreatedAt = time.Now()
 	}
 	s.mu.Lock()
+	if generation != nil && (*generation != s.generation || s.target.AppID == "" || candidate.AppID != s.target.AppID) {
+		s.mu.Unlock()
+		return candidate, false
+	}
+	if cache != nil {
+		candidate.CachedPath = cache()
+	}
 	if existing, exists := s.items[candidate.ID]; exists {
 		changed := false
 		if candidate.CachedPath != "" {
