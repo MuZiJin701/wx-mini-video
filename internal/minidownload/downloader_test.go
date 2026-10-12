@@ -17,6 +17,32 @@ import (
 	"wx_channel/internal/miniprogram"
 )
 
+func TestDownloadDirectAudioPreservesBytesAndSuffixWithoutFFmpeg(t *testing.T) {
+	body := []byte("ID3\x00\x00\x00direct audio fixture")
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Referer") != "https://servicewechat.com/wx123/1/page-frame.html" {
+			t.Error("audio download lost its replay headers")
+		}
+		w.Header().Set("Content-Type", "audio/mpeg")
+		_, _ = w.Write(body)
+	}))
+	defer ts.Close()
+	d := New(t.TempDir())
+	d.FFmpegPath = filepath.Join(d.Dir, "ffmpeg-not-installed.exe")
+	url := ts.URL + "/stream"
+	kind, suffix := miniprogram.Classify("audio/mpeg", url)
+	candidate := miniprogram.Candidate{ID: "audio-test", URL: url, Kind: kind, Suffix: suffix,
+		Headers: map[string]string{"Referer": "https://servicewechat.com/wx123/1/page-frame.html"}}
+	output, err := d.Download(context.Background(), candidate, "音频标题")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(output)
+	if err != nil || string(got) != string(body) || filepath.Base(output) != "音频标题.mp3" {
+		t.Fatalf("audio output changed bytes or suffix: %s, %v", output, err)
+	}
+}
+
 func TestDownloadDirectResumesPartialAndWritesHistory(t *testing.T) {
 	body := []byte(strings.Repeat("wx-mini-video", 1024))
 	half := len(body) / 2

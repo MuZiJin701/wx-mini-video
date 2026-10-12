@@ -68,9 +68,10 @@ const (
 	categoryImage category = "image"
 	categoryVideo category = "video"
 	categoryM3U8  category = "m3u8"
+	categoryAudio category = "audio"
 )
 
-var categories = []category{categoryAll, categoryImage, categoryVideo, categoryM3U8}
+var categories = []category{categoryAll, categoryImage, categoryVideo, categoryM3U8, categoryAudio}
 
 var (
 	titleStyle    = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("42"))
@@ -127,6 +128,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.setCategory(categoryVideo)
 		case "4":
 			m.setCategory(categoryM3U8)
+		case "5":
+			m.setCategory(categoryAudio)
 		case "up", "k":
 			if m.selected > 0 {
 				m.selected--
@@ -161,7 +164,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.progress = minidownload.Progress{}
 			m.downloadPath = ""
 			m.showDetails = false
-			m.addLog("请选择目标，确认后重新打开图片或播放视频")
+			m.addLog("请选择目标，确认后重新打开图片或播放视频或音频")
 		case "l":
 			m.showLogs = !m.showLogs
 		case "i":
@@ -248,7 +251,7 @@ func (m model) View() string {
 	}
 
 	var b strings.Builder
-	b.WriteString(titleStyle.Render("微信小程序视频下载"))
+	b.WriteString(titleStyle.Render("微信小程序媒体下载"))
 	b.WriteString("\n")
 
 	ffmpegState := m.renderFFmpegState()
@@ -264,14 +267,14 @@ func (m model) View() string {
 		b.WriteString(errorStyle.Render(fitLine("代理未启动: "+m.startErr.Error(), m.width-1)))
 		b.WriteString("\n")
 	} else if m.started {
-		b.WriteString(okStyle.Render(fitLine("代理运行中。建议先按 c 清空，再打开目标图片或播放目标视频，以便识别最新候选。", m.width-1)))
+		b.WriteString(okStyle.Render(fitLine("代理运行中。建议先按 c 清空，再打开目标图片或播放目标视频或音频，以便识别最新候选。", m.width-1)))
 		b.WriteString("\n")
 	} else {
 		b.WriteString(mutedStyle.Render(fitLine("代理启动中...", m.width-1)))
 		b.WriteString("\n")
 	}
 
-	shortcuts := "快捷键: s 切换目标  Tab 分类  1/2/3/4 全部/图片/视频/m3u8  ↑/↓ 选择  i 详情  d/Enter 下载  c 清空  l 日志  q 退出"
+	shortcuts := "快捷键: s 切换目标  Tab 分类  1/2/3/4/5 全部/图片/视频/m3u8/音频  ↑/↓ 选择  i 详情  d/Enter 下载  c 清空  l 日志  q 退出"
 	b.WriteString(mutedStyle.Render(fitLine(shortcuts, m.width-1)))
 	b.WriteString("\n")
 	b.WriteString(m.renderCategoryTabs())
@@ -334,7 +337,7 @@ func (m model) updateTargetInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.runtime.SetTarget(miniprogram.Target{AppID: m.appIDInput, Name: m.nameInput})
 		m.targetReady = true
 		m.inputErr = ""
-		m.addLog("已选定目标，请重新打开图片或播放视频；来源不明的媒体会被过滤")
+		m.addLog("已选定目标，请重新打开图片或播放视频或音频；来源不明的媒体会被过滤")
 		return m.ensureProxy()
 	default:
 		if len(msg.Runes) == 0 {
@@ -357,7 +360,7 @@ func (m model) renderTargetInput() string {
 		width = 80
 	}
 	var b strings.Builder
-	b.WriteString(titleStyle.Render("微信小程序视频下载"))
+	b.WriteString(titleStyle.Render("微信小程序媒体下载"))
 	b.WriteString("\n\n")
 	b.WriteString("输入目标 AppID，或按 Ctrl+D 自动发现小程序。名称可选。\n")
 	b.WriteString("只收集来源 AppID 匹配的媒体；来源不明的媒体会被过滤。\n")
@@ -409,10 +412,10 @@ func (m model) renderCandidates(maxLines int) string {
 		return ""
 	}
 	if len(m.candidates) == 0 {
-		return mutedStyle.Render(fitLine("暂无候选资源。请重新打开图片或播放视频；来源不明的媒体会被过滤。", m.width-1)) + "\n"
+		return mutedStyle.Render(fitLine("暂无当前分类候选。按 1 查看全部、5 查看音频；重新打开或播放目标媒体，来源不明的媒体会被过滤。", m.width-1)) + "\n"
 	}
 	if len(visibleCandidates) == 0 {
-		return mutedStyle.Render(fitLine(fmt.Sprintf("当前分类暂无资源。已嗅探 %d 个资源，可按 Tab 或 1/2/3/4 切换分类。", len(m.candidates)), m.width-1)) + "\n"
+		return mutedStyle.Render(fitLine(fmt.Sprintf("当前分类暂无资源。已嗅探 %d 个资源，按 1 查看全部、5 查看音频，或 Tab 切换分类。", len(m.candidates)), m.width-1)) + "\n"
 	}
 
 	visible := maxLines
@@ -682,13 +685,7 @@ func (m model) filteredCandidates() []miniprogram.Candidate {
 	}
 	out := make([]miniprogram.Candidate, 0, len(m.candidates))
 	for _, candidate := range m.candidates {
-		if active == categoryImage && candidate.Kind == "image" {
-			out = append(out, candidate)
-		}
-		if active == categoryVideo && candidate.Kind == "video" {
-			out = append(out, candidate)
-		}
-		if active == categoryM3U8 && candidate.Kind == "m3u8" {
+		if candidate.Kind == string(active) {
 			out = append(out, candidate)
 		}
 	}
@@ -738,19 +735,8 @@ func (m model) renderCategoryTabs() string {
 func (m model) categoryCount(item category) int {
 	count := 0
 	for _, candidate := range m.candidates {
-		switch item {
-		case categoryImage:
-			if candidate.Kind == "image" {
-				count++
-			}
-		case categoryVideo:
-			if candidate.Kind == "video" {
-				count++
-			}
-		case categoryM3U8:
-			if candidate.Kind == "m3u8" {
-				count++
-			}
+		if candidate.Kind == string(item) {
+			count++
 		}
 	}
 	return count
@@ -853,6 +839,8 @@ func categoryDisplay(value category) string {
 		return "视频"
 	case categoryM3U8:
 		return "m3u8"
+	case categoryAudio:
+		return "音频"
 	default:
 		return string(value)
 	}
@@ -864,6 +852,8 @@ func kindDisplay(kind string) string {
 		return "图片"
 	case "video":
 		return "视频"
+	case "audio":
+		return "音频"
 	case "m3u8":
 		return "m3u8"
 	default:
@@ -963,6 +953,8 @@ func fieldDisplay(fieldPath string) string {
 		return "标志"
 	case strings.Contains(key, "video"):
 		return "视频"
+	case strings.Contains(key, "audio"), strings.Contains(key, "voice"), strings.Contains(key, "sound"):
+		return "音频"
 	case strings.Contains(key, "image"), strings.Contains(key, "img"), strings.Contains(key, "pic"), strings.Contains(key, "photo"):
 		return "图片"
 	default:

@@ -2,11 +2,13 @@
 
 [简体中文](README.md)
 
-A Windows-first TUI for sniffing and downloading images, direct videos, and m3u8 media loaded by desktop WeChat Mini Programs.
+A Windows-first TUI for sniffing and downloading images, direct videos, direct audio, and m3u8 media loaded by desktop WeChat Mini Programs.
 
 Supported images: `jpg`, `png`, `webp`, `gif`, `bmp`, `avif`
 
 Supported videos: `mp4`, `webm`, `mov`, `m3u8`
+
+Supported direct audio: `mp3`, `m4a`, `aac`, `wav`, `ogg`, `flac`, `opus`, `amr`. Detection uses the response Content-Type or URL extension. Files are saved unchanged, without transcoding or extracting audio tracks from videos.
 
 ## Download
 
@@ -21,12 +23,12 @@ The package does not bundle ffmpeg. On the first m3u8 download, unless `download
 1. Double-click `wx-mini-video.exe` and approve the Windows administrator (UAC) prompt if shown. The app prefers Windows Terminal and reuses the current window when already running in an administrator Terminal.
 2. Enter the target AppID with an optional name, or press `Ctrl+D` to start Mini Program discovery.
 3. For discovery, open the Mini Program in desktop WeChat, select its AppID with `↑/↓`, and press `Enter` to fill in its name and then `Enter` again to confirm. Missing names appear as “名称未识别” (name not identified). Even a single discovered Mini Program requires selection.
-4. After confirming the target, reopen its image or replay its video. Discovery only records Mini Program identifiers; it does not collect media or create media caches. Manual AppID entry goes directly to target sniffing.
+4. After confirming the target, reopen its image or replay its video or audio. Discovery only records Mini Program identifiers; it does not collect media or create media caches. Manual AppID entry goes directly to target sniffing.
 5. Select a candidate and press `d` or `Enter` to download it.
 6. Press `i` to inspect its full URL, source URL, request header summary, and local cache path.
 7. Press `q` to quit and restore the previous system proxy.
 
-The list initially shows videos. Use `Tab` or number keys to switch between All, Images, Videos, and m3u8.
+The list initially shows videos. Use `Tab` or number keys to switch between All, Images, Videos, m3u8, and Audio. Press `5` for Audio or `1` for All. Direct audio uses the existing resume and download-history workflow and does not require ffmpeg.
 
 Press `s` to return to target selection. Select another discovered AppID or press `Ctrl+D` for manual entry. Switching clears candidates and progress while preserving downloads, history, partial downloads, and existing caches. Switching is blocked during a download.
 
@@ -46,7 +48,7 @@ Direct downloads first write to a `.part` file. Retrying after a network interru
 | --- | --- |
 | `↑/↓`, `k/j` | Select a candidate |
 | `Tab`, `Shift+Tab` | Switch categories |
-| `1/2/3/4` | Show All / Images / Videos / m3u8 |
+| `1/2/3/4/5` | Show All / Images / Videos / m3u8 / Audio |
 | `d`, `Enter` | Download the selected candidate |
 | `i` | Show or hide candidate details |
 | `c` | Clear the list |
@@ -62,7 +64,7 @@ Direct downloads first write to a `.part` file. Retrying after a network interru
 - The app identifies media through a local HTTPS proxy.
 - The first run installs a local root certificate; Windows may request confirmation.
 - AppID filters request sources. Only a Referer in the HTTPS `servicewechat.com/<AppID>/<version>/page-frame.html` format with an exact target AppID match is accepted. Other Mini Programs and missing or invalid sources do not produce candidates, media caches, or playlist fallback requests. Normal network forwarding continues.
-- Images and direct-video links from matching JSON API responses remain supported. JSON m3u8 links are skipped until a matching playlist response is actually observed.
+- Images, direct-video links, and direct-audio links from matching JSON API responses are supported. JSON m3u8 links are skipped until a matching playlist response is actually observed. Audio uses the same AppID source filter as other media.
 - Strict filtering may miss target media without source information. Discovery lists only Mini Programs actually observed by the proxy. Automatic names are not guaranteed; names can be entered manually and do not affect filtering.
 - A Mini Program may load many candidates at once. Clear the list before opening the content you want.
 - If an abnormal exit leaves networking broken, run the app again as administrator and quit with `q`.
@@ -89,7 +91,7 @@ The error shows the ffmpeg log path: `<download directory>\.ffmpeg\<candidate ID
 
 ### Expected media does not appear
 
-Confirm the target AppID, then reopen the image or replay the video. Requests without matching source information are excluded; sharing a CDN domain does not widen the scope. Media outside the supported image, direct-video, and m3u8 formats may not be recognized.
+Confirm the target AppID, then reopen the image or replay the video or audio. Press `1` for All or `5` for Audio. Requests without matching source information are excluded; sharing a CDN domain does not widen the scope. Media outside the supported image, direct-video, direct-audio, and m3u8 formats may not be recognized.
 
 ### Target Mini Program is not discovered
 

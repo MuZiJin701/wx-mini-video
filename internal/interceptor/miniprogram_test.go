@@ -235,7 +235,7 @@ func TestMiniProgramPluginRejectsUnknownSourcesWithoutSideEffects(t *testing.T) 
 func TestMiniProgramPluginCollectsOnlyMatchedJSONMedia(t *testing.T) {
 	store := miniprogram.NewStore()
 	plugin := CreateMiniProgramInterceptorPlugin(miniprogram.Target{AppID: "wx123", Name: "测试小程序"}, store, t.TempDir())
-	body := []byte(`{"title":"媒体标题","cover":"https://cdn.example.com/cover.jpg","video":"https://cdn.example.com/video.mp4","playlist":"https://cdn.example.com/live.m3u8"}`)
+	body := []byte(`{"title":"媒体标题","cover":"https://cdn.example.com/cover.jpg","video":"https://cdn.example.com/video.mp4","audio":"https://cdn.example.com/audio.m4a","playlist":"https://cdn.example.com/live.m3u8"}`)
 	for _, appID := range []string{"wx456", "wx123"} {
 		ctx := &testProxyContext{
 			req:     &proxy.ContextReq{URL: &proxy.ContextURL{String: "https://api.example.com/feed"}, Header: http.Header{"Referer": {"https://servicewechat.com/" + appID + "/devtools/page-frame.html"}}},
@@ -251,12 +251,43 @@ func TestMiniProgramPluginCollectsOnlyMatchedJSONMedia(t *testing.T) {
 		}
 	}
 	got := store.List("")
-	if len(got) != 2 {
-		t.Fatalf("matched JSON candidates = %d, want image and video", len(got))
+	if len(got) != 3 {
+		t.Fatalf("matched JSON candidates = %d, want image, video and audio", len(got))
 	}
 	for _, candidate := range got {
 		if candidate.AppID != "wx123" || candidate.AppName != "测试小程序" || candidate.Title != "媒体标题" || candidate.SourceURL != "https://api.example.com/feed" || candidate.Kind == "m3u8" {
 			t.Fatalf("matched JSON candidate has wrong ownership or source: %#v", candidate)
 		}
+	}
+}
+
+func TestMiniProgramPluginFiltersDirectAudio(t *testing.T) {
+	store := miniprogram.NewStore()
+	dir := t.TempDir()
+	plugin := CreateMiniProgramInterceptorPlugin(miniprogram.Target{AppID: "wx123"}, store, dir)
+	for _, appID := range []string{"", "wx456", "wx123"} {
+		ctx := &testProxyContext{
+			req: &proxy.ContextReq{
+				URL:    &proxy.ContextURL{String: "https://cdn.example.com/play"},
+				Header: http.Header{"Referer": {"https://servicewechat.com/" + appID + "/1/page-frame.html"}},
+			},
+			headers: http.Header{"Content-Type": {"audio/mpeg"}},
+			body:    []byte("ID3 audio bytes"),
+		}
+		plugin.OnResponse(ctx)
+		if ctx.reads != 0 || string(ctx.body) != "ID3 audio bytes" {
+			t.Fatal("direct audio sniffing should leave the forwarded body untouched")
+		}
+		if appID != "wx123" && len(store.List("")) != 0 {
+			t.Fatal("unknown or other AppID audio was admitted")
+		}
+	}
+	got := store.List("wx123")
+	if len(got) != 1 || got[0].Kind != "audio" || got[0].Suffix != ".mp3" || got[0].Source != "response" {
+		t.Fatalf("matched direct audio candidates = %#v", got)
+	}
+	files, err := os.ReadDir(dir)
+	if err != nil || len(files) != 0 {
+		t.Fatalf("audio sniffing should not create a media cache: %v, %v", files, err)
 	}
 }

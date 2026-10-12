@@ -206,6 +206,22 @@ func ClassifyByContentType(contentType string) (kind, suffix string) {
 		return "video", ".webm"
 	case "video/quicktime":
 		return "video", ".mov"
+	case "audio/mpeg", "audio/mp3":
+		return "audio", ".mp3"
+	case "audio/mp4", "audio/x-m4a":
+		return "audio", ".m4a"
+	case "audio/aac":
+		return "audio", ".aac"
+	case "audio/wav", "audio/x-wav", "audio/vnd.wave":
+		return "audio", ".wav"
+	case "audio/ogg":
+		return "audio", ".ogg"
+	case "audio/flac", "audio/x-flac":
+		return "audio", ".flac"
+	case "audio/opus":
+		return "audio", ".opus"
+	case "audio/amr":
+		return "audio", ".amr"
 	case "application/vnd.apple.mpegurl", "application/x-mpegurl", "audio/x-mpegurl", "application/x-mpeg":
 		return "m3u8", ".m3u8"
 	case "video/mp2t":
@@ -229,6 +245,8 @@ func ClassifyByURL(rawURL string) (kind, suffix string) {
 		return "image", ext
 	case ".mp4", ".webm", ".mov":
 		return "video", ext
+	case ".mp3", ".m4a", ".aac", ".wav", ".ogg", ".flac", ".opus", ".amr":
+		return "audio", ext
 	case ".m3u8":
 		return "m3u8", ".m3u8"
 	case ".ts":
@@ -242,7 +260,11 @@ func Classify(contentType, rawURL string) (kind, suffix string) {
 	if kind, suffix = ClassifyByContentType(contentType); kind != "" {
 		return kind, suffix
 	}
-	return ClassifyByURL(rawURL)
+	kind, suffix = ClassifyByURL(rawURL)
+	if kind == "audio" && strings.HasPrefix(strings.ToLower(strings.TrimSpace(contentType)), "video/") {
+		return "", ""
+	}
+	return kind, suffix
 }
 
 func CleanHeaders(header http.Header) map[string]string {
@@ -361,7 +383,7 @@ func jsonObjectTitle(value map[string]any) string {
 		compact := strings.NewReplacer("_", "", "-", "").Replace(strings.ToLower(key))
 		rank := 100
 		switch compact {
-		case "title", "videotitle", "mediatitle":
+		case "title", "videotitle", "audiotitle", "mediatitle":
 			rank = 1
 		case "caption", "subject":
 			rank = 2

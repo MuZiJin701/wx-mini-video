@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-func TestClassifyDetectsVideoAndM3U8(t *testing.T) {
+func TestClassifyDetectsMedia(t *testing.T) {
 	tests := []struct {
 		name        string
 		contentType string
@@ -19,7 +19,21 @@ func TestClassifyDetectsVideoAndM3U8(t *testing.T) {
 		{name: "mp4 content type", contentType: "video/mp4; charset=utf-8", rawURL: "https://example.com/play", wantKind: "video", wantSuffix: ".mp4"},
 		{name: "m3u8 content type", contentType: "application/vnd.apple.mpegurl", rawURL: "https://example.com/play", wantKind: "m3u8", wantSuffix: ".m3u8"},
 		{name: "mp4 extension fallback", contentType: "application/octet-stream", rawURL: "https://example.com/video.mp4?token=1", wantKind: "video", wantSuffix: ".mp4"},
+		{name: "mp3 content type without extension", contentType: "audio/mpeg", rawURL: "https://example.com/play", wantKind: "audio", wantSuffix: ".mp3"},
+		{name: "audio mp4 before video extension", contentType: "audio/mp4; codecs=mp4a.40.2", rawURL: "https://example.com/audio.mp4", wantKind: "audio", wantSuffix: ".m4a"},
+		{name: "aac content type", contentType: "audio/aac", rawURL: "https://example.com/play", wantKind: "audio", wantSuffix: ".aac"},
+		{name: "wav content type", contentType: "audio/vnd.wave", rawURL: "https://example.com/play", wantKind: "audio", wantSuffix: ".wav"},
+		{name: "ogg content type", contentType: "audio/ogg", rawURL: "https://example.com/play", wantKind: "audio", wantSuffix: ".ogg"},
+		{name: "flac content type", contentType: "audio/flac", rawURL: "https://example.com/play", wantKind: "audio", wantSuffix: ".flac"},
+		{name: "opus content type", contentType: "audio/opus", rawURL: "https://example.com/play", wantKind: "audio", wantSuffix: ".opus"},
+		{name: "amr content type", contentType: "audio/amr", rawURL: "https://example.com/play", wantKind: "audio", wantSuffix: ".amr"},
+		{name: "video ogg is not audio", contentType: "video/ogg", rawURL: "https://example.com/clip.ogg", wantKind: "", wantSuffix: ""},
 		{name: "unknown", contentType: "text/html", rawURL: "https://example.com/page", wantKind: "", wantSuffix: ""},
+	}
+	for _, extension := range []string{"mp3", "m4a", "aac", "wav", "ogg", "flac", "opus", "amr"} {
+		tests = append(tests, struct {
+			name, contentType, rawURL, wantKind, wantSuffix string
+		}{extension + " extension", "application/octet-stream", "https://example.com/track." + extension + "?token=1", "audio", "." + extension})
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -82,6 +96,13 @@ func TestExtractMediaURLsFromJSONUsesNearbyTitle(t *testing.T) {
 	}
 	if got[0].Title != "春日活动" {
 		t.Fatalf("Title = %q, want nearby JSON title", got[0].Title)
+	}
+}
+
+func TestExtractMediaURLsFromJSONUsesAudioTitle(t *testing.T) {
+	got := ExtractMediaURLsFromJSON([]byte(`{"audioTitle":"课程讲解","voiceUrl":"https://cdn.example.com/lesson.m4a"}`))
+	if len(got) != 1 || got[0].Kind != "audio" || got[0].Suffix != ".m4a" || got[0].Title != "课程讲解" || got[0].FieldPath != "voiceUrl" {
+		t.Fatalf("JSON audio title or source was lost: %#v", got)
 	}
 }
 

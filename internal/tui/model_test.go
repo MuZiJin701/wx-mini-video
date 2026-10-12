@@ -72,6 +72,42 @@ func TestCategorySwitchingUsesTabAndNumbers(t *testing.T) {
 	}
 }
 
+func TestAudioCategorySelectsAndStartsDownload(t *testing.T) {
+	m := model{
+		runtime: targetRuntime(t), targetReady: true,
+		candidates: []miniprogram.Candidate{
+			{Kind: "image", URL: "https://example.com/cover.jpg"},
+			{Kind: "audio", URL: "https://example.com/song.mp3", Suffix: ".mp3", Title: "音频标题"},
+		},
+		width: 100, height: 24,
+	}
+	if view := m.View(); !strings.Contains(view, "5 查看音频") {
+		t.Fatal("default video filter should guide users to the detected audio")
+	}
+	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("5")})
+	m = next.(model)
+	if got := m.filteredCandidates(); len(got) != 1 || got[0].Kind != "audio" {
+		t.Fatalf("5 should show only audio: %#v", got)
+	}
+	if view := m.View(); !strings.Contains(view, "5 音频(1)") || !strings.Contains(view, "音频标题") {
+		t.Fatalf("audio tab count or candidate was not displayed: %q", view)
+	}
+	next, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if !next.(model).downloading || cmd == nil {
+		t.Fatal("Enter should start the selected audio download")
+	}
+	// Existing keys remain stable; Tab from m3u8 enters audio and wraps to all.
+	m, _ = targetKey(m, tea.KeyRunes, "4")
+	m, _ = targetKey(m, tea.KeyTab, "")
+	if m.category != categoryAudio {
+		t.Fatal("Tab from m3u8 should enter audio")
+	}
+	m, _ = targetKey(m, tea.KeyTab, "")
+	if len(m.filteredCandidates()) != 2 {
+		t.Fatal("Tab from audio should show all media")
+	}
+}
+
 func TestDownloadAllowsUncachedDirectM3U8(t *testing.T) {
 	m := model{
 		runtime: &app.Runtime{Settings: config.AppSettings{DownloadDir: t.TempDir()}},
