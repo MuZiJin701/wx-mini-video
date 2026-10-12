@@ -15,8 +15,8 @@
 
 ![媒体列表界面：按分类浏览候选资源并下载](docs/images/使用界面.png)
 
-<details>
-<summary>展开查看完整使用流程：从选择目标到下载完成</summary>
+<details open>
+<summary>完整使用流程：从选择目标到下载完成</summary>
 
 **1. 输入目标 AppID**
 

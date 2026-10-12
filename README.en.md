@@ -16,8 +16,8 @@ Choose a Mini Program, browse its media, and download with a keypress. Enter the
 
 ![Media list: browse candidates by category and download](docs/images/使用界面.png)
 
-<details>
-<summary>Show the full workflow: from target selection to a completed download</summary>
+<details open>
+<summary>Full workflow: from target selection to a completed download</summary>
 
 **1. Enter the target AppID**
 
