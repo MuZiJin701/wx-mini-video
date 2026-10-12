@@ -8,7 +8,7 @@
 
 ## 先读
 
-- **术语、边界或不变量：** `CONTEXT.md`。
+- **领域术语：** `GLOSSARY.md`。
 - **架构、配置、构建与排障：** `wx-mini-video-knowledge.md`。
 - **用户流程或发布说明：** `README.md`。
 - **历史计划与背景：** `docs/archive/`。
@@ -33,12 +33,12 @@
 
 ### Issue tracker
 
-需求与缺陷记录在 GitHub Issues。参见 `docs/agents/issue-tracker.md`。
+创建、读取或更新需求与缺陷时使用 GitHub Issues；操作约定见 `docs/agents/issue-tracker.md`。
 
 ### Triage labels
 
-使用默认五类标签。参见 `docs/agents/triage-labels.md`。
+执行 triage 时使用默认五类状态标签及分类标签；映射见 `docs/agents/triage-labels.md`。
 
 ### Domain docs
 
-单上下文布局：根目录 `CONTEXT.md`；需要 ADR 时在 `docs/adr/` 创建。参见 `docs/agents/domain.md`。
+探索代码或维护领域文档时采用单上下文布局：根目录 `GLOSSARY.md` 与 `docs/adr/`；读取和维护规则见 `docs/agents/domain.md`。
