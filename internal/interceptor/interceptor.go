@@ -1,6 +1,7 @@
 package interceptor
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -14,6 +15,12 @@ import (
 	"wx_channel/internal/interceptor/proxy"
 	"wx_channel/pkg/certificate"
 	"wx_channel/pkg/system"
+)
+
+var (
+	captureProxySnapshot = system.CaptureProxySnapshot
+	enableSystemProxy    = system.EnableProxy
+	restoreProxySnapshot = system.RestoreProxySnapshot
 )
 
 type Interceptor struct {
@@ -36,7 +43,7 @@ func NewInterceptor(cfg *InterceptorConfig, cert *certificate.CertFileAndKeyFile
 	}
 }
 
-func (c *Interceptor) Start() error {
+func (c *Interceptor) Start() (err error) {
 	echo.SetLogEnabled(false)
 	client, err := proxy.NewProxy(c.Cert.Cert, c.Cert.PrivateKey, c.Settings.ProxyUpstreamProxy)
 	if err != nil {
@@ -46,6 +53,11 @@ func (c *Interceptor) Start() error {
 		client.AddPlugin(plugin)
 	}
 	c.proxy = client
+	defer func() {
+		if err != nil {
+			err = errors.Join(err, c.Stop())
+		}
+	}()
 	if !c.Settings.ProxySkipInstallRootCert {
 		existing, err := certificate.CheckHasCertificate(c.Cert.Name)
 		if err != nil {
@@ -58,37 +70,41 @@ func (c *Interceptor) Start() error {
 		}
 	}
 	if c.Settings.ProxySetSystem {
-		snapshot, err := system.CaptureProxySnapshot()
+		snapshot, err := captureProxySnapshot()
 		if err != nil {
-			return fmt.Errorf("读取原系统代理失败: %v", err)
+			return fmt.Errorf("读取原系统代理失败: %w", err)
 		}
 		if isOwnProxySnapshot(snapshot, c.Settings.ProxyServerHostname, strconv.Itoa(c.Settings.ProxyServerPort)) {
 			snapshot = &system.ProxySnapshot{Enabled: false}
 		}
 		c.proxyState = snapshot
-		if err := system.EnableProxy(system.ProxySettings{
+		if err := enableSystemProxy(system.ProxySettings{
 			Hostname: c.Settings.ProxyServerHostname,
 			Port:     strconv.Itoa(c.Settings.ProxyServerPort),
 		}); err != nil {
-			return fmt.Errorf("设置代理失败: %v", err)
+			return fmt.Errorf("设置代理失败: %w", err)
 		}
 	}
 	return client.Start(c.Settings.ProxyServerPort)
 }
 
 func (c *Interceptor) Stop() error {
-	if c.Settings.ProxySetSystem {
-		if err := system.RestoreProxySnapshot(c.proxyState); err != nil {
-			return fmt.Errorf("恢复系统代理失败: %v", err)
+	var stopErr error
+	if c.proxyState != nil {
+		if err := restoreProxySnapshot(c.proxyState); err != nil {
+			stopErr = fmt.Errorf("恢复系统代理失败: %w", err)
+		} else {
+			c.proxyState = nil
 		}
-		c.proxyState = nil
 	}
 	if c.proxy != nil {
 		if err := c.proxy.Close(); err != nil {
-			return fmt.Errorf("关闭代理服务失败: %v", err)
+			stopErr = errors.Join(stopErr, fmt.Errorf("关闭代理服务失败: %w", err))
+		} else {
+			c.proxy = nil
 		}
 	}
-	return nil
+	return stopErr
 }
 
 func isOwnProxySnapshot(snapshot *system.ProxySnapshot, hostname string, port string) bool {
@@ -101,12 +117,22 @@ func isOwnProxySnapshot(snapshot *system.ProxySnapshot, hostname string, port st
 		"localhost:" + port,
 		"127.0.0.1:" + port,
 	}
-	for _, target := range targets {
-		if server == target || strings.Contains(server, "="+target) || strings.Contains(server, ";"+target) {
-			return true
+	for _, entry := range strings.Split(server, ";") {
+		if _, value, ok := strings.Cut(entry, "="); ok {
+			entry = value
+		}
+		matched := false
+		for _, target := range targets {
+			if strings.TrimSpace(entry) == target {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			return false
 		}
 	}
-	return false
+	return true
 }
 
 func (c *Interceptor) AddPostPlugin(plugin interface{}) {

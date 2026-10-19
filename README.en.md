@@ -1,196 +1,73 @@
 # WeChat Mini Program Media Downloader
 
-[简体中文](README.md)
+Save images, direct videos, direct audio, and m3u8 media loaded by desktop WeChat Mini Programs on Windows.
 
-A Windows-first TUI for sniffing and downloading images, direct videos, direct audio, and m3u8 media loaded by desktop WeChat Mini Programs.
+[Download latest](https://github.com/MuZiJin701/wx-mini-video/releases/latest) · [简体中文](https://github.com/MuZiJin701/wx-mini-video/blob/main/README.md)
 
-Supported images: `jpg`, `png`, `webp`, `gif`, `bmp`, `avif`
+## Get started
 
-Supported videos: `mp4`, `webm`, `mov`, `m3u8`
+1. Download `wx-mini-video-windows-amd64.zip`, **extract the whole archive**, and double-click `wx-mini-video.exe`.
+2. Accept the administrator (UAC) prompt. The app prefers an installed Windows Terminal. Starting the proxy for the first time installs a local root certificate.
+3. **Choose a Mini Program**: enter its AppID if known; the name is optional. Otherwise press `Ctrl+D`, open the Mini Program in desktop WeChat, select its AppID with `↑/↓`, press `Enter` to fill in its name, then `Enter` again to confirm.
+4. **Reload the media**: once the proxy is running, reopen the image or replay the video or audio. Select a candidate with `↑/↓`, press `d` or `Enter` to download, and `o` to open the download folder. The list starts on Videos; press `1` for All or `5` for Audio.
+5. Press `q` when finished to restore the previous system proxy. On the AppID entry screen, use `Esc` or `Ctrl+C` to quit.
 
-Supported direct audio: `mp3`, `m4a`, `aac`, `wav`, `ogg`, `flac`, `opus`, `amr`. Detection uses the response Content-Type or URL extension. Files are saved unchanged, without transcoding or extracting audio tracks from videos.
+Files are saved to `downloads/` beside the app by default. To upgrade, replace the exe and keep `wx-mini-video.yaml` and `downloads/`.
 
-## Interface preview
+![Media list: select a candidate and download](https://raw.githubusercontent.com/MuZiJin701/wx-mini-video/main/docs/images/使用界面.png)
 
-Choose a Mini Program, browse its media, and download with a keypress. Enter the target AppID or use Mini Program discovery, then browse candidates by category. Press `d` or `Enter` to save a file and `o` to open the download directory.
+<details>
+<summary>View workflow screenshots</summary>
 
-![Media list: browse candidates by category and download](docs/images/使用界面.png)
+Enter an AppID or press `Ctrl+D` for discovery:
 
-<details open>
-<summary>Full workflow: from target selection to a completed download</summary>
+![AppID entry](https://raw.githubusercontent.com/MuZiJin701/wx-mini-video/main/docs/images/首页.png)
 
-**1. Enter the target AppID**
+Once the proxy is running, open the Mini Program in desktop WeChat:
 
-Enter a known AppID with an optional Mini Program name, or press `Ctrl+D` to switch to discovery.
+![Waiting for Mini Program requests](https://raw.githubusercontent.com/MuZiJin701/wx-mini-video/main/docs/images/自动探测.png)
 
-![Start screen: enter the target AppID and an optional Mini Program name](docs/images/首页.png)
+Select the target, then confirm its name:
 
-**2. Start Mini Program discovery**
+![Select a discovered Mini Program](https://raw.githubusercontent.com/MuZiJin701/wx-mini-video/main/docs/images/已探测到.png)
 
-Open the target Mini Program in desktop WeChat so the app can observe its network activity.
+When the download finishes, press `o` to view the file:
 
-![Mini Program discovery: the proxy is running and waiting for the target to open](docs/images/自动探测.png)
-
-**3. Select the discovered target**
-
-Use `↑/↓` to select an AppID, then press `Enter` to fill in its name and confirm. Reopen the target content to start media sniffing.
-
-![Discovery list: select an observed Mini Program AppID](docs/images/已探测到.png)
-
-**4. Download and view the result**
-
-Select a candidate in the media list and press `d` or `Enter` to download it. When finished, press `o` to open the download directory. This screenshot shows a completed image download.
-
-![Download complete: the image is saved locally, with its success status and output path shown](docs/images/下载完成.png)
+![Completed image download](https://raw.githubusercontent.com/MuZiJin701/wx-mini-video/main/docs/images/下载完成.png)
 
 </details>
 
-[Download the latest release](https://github.com/MuZiJin701/wx-mini-video/releases/latest) · [Read the usage steps](#usage)
-
-## Download
-
-Download `wx-mini-video-windows-amd64.zip` from the [latest GitHub Release](https://github.com/MuZiJin701/wx-mini-video/releases/latest). The source repository's `dist/` directory is for local builds.
-
-The extracted package contains `wx-mini-video.exe`, `wx-mini-video.yaml`, and `README.md`.
-
-The package does not bundle ffmpeg. On the first m3u8 download, unless `download.ffmpeg` specifies a local executable, the app downloads and verifies a fixed version of managed `ffmpeg.exe` in the download directory. Temporary network or server errors are retried up to three times. The app does not use ffmpeg from the system `PATH`.
-
-### v0.1.7 (2026-10-12)
-
-This release combines strict target AppID filtering, Mini Program discovery and optional names, `Ctrl+D` entry switching, Windows Terminal startup with UAC elevation, and direct-audio detection and downloads. It consolidates the day's v0.1.4, v0.1.5, and v0.1.6 releases; see [CHANGELOG.md](CHANGELOG.md) for the full Chinese release notes. To upgrade, extract the new package and replace the executable while keeping your configuration and `downloads/` data.
-
-## Usage
-
-1. Double-click `wx-mini-video.exe` and approve the Windows administrator (UAC) prompt if shown. The app prefers Windows Terminal and reuses the current window when already running in an administrator Terminal.
-2. Enter the target AppID with an optional name, or press `Ctrl+D` to start Mini Program discovery.
-3. For discovery, open the Mini Program in desktop WeChat, select its AppID with `↑/↓`, and press `Enter` to fill in its name and then `Enter` again to confirm. Missing names appear as “名称未识别” (name not identified). Even a single discovered Mini Program requires selection.
-4. After confirming the target, reopen its image or replay its video or audio. Discovery only records Mini Program identifiers; it does not collect media or create media caches. Manual AppID entry goes directly to target sniffing.
-5. Select a candidate and press `d` or `Enter` to download it.
-6. Press `i` to inspect its full URL, source URL, request header summary, and local cache path.
-7. Press `q` to quit and restore the previous system proxy.
-
-The list initially shows videos. Use `Tab` or number keys to switch between All, Images, Videos, m3u8, and Audio. Press `5` for Audio or `1` for All. Direct audio uses the existing resume and download-history workflow and does not require ffmpeg.
-
-Press `s` to return to target selection. Select another discovered AppID or press `Ctrl+D` for manual entry. Switching clears candidates and progress while preserving downloads, history, partial downloads, and existing caches. Switching is blocked during a download.
-
-If Windows Terminal is not installed or `wt.exe` is unavailable, the app keeps the current console. If Chinese text is missing, use Windows Terminal or choose a console font with Chinese glyphs. Cancelling UAC stops startup; startup failures appear in an error dialog. The app does not install Terminal or change the system default terminal.
-
-### Finding an AppID
-
-In mobile WeChat, open the Mini Program, tap the top-right `…`, and open its introduction page using the Mini Program name. Tap that page's `…` and choose **More information** to find its AppID. Menu wording varies by WeChat version. Administrators can also find it in the WeChat public platform under **Settings → Basic settings / Development settings**. Alternatively, use this app's `Ctrl+D` discovery.
-
-Downloads, caches, logs, certificates, and managed ffmpeg are stored in `downloads/` beside the executable by default. Moving the extracted app directory moves this runtime data with it. Set `download.dir` to use an explicit directory.
-
-Direct downloads first write to a `.part` file. Retrying after a network interruption attempts to resume the existing partial download. Successful downloads are recorded in `downloads/history.jsonl`.
-
-## Keyboard shortcuts
+## Common keys
 
 | Key | Action |
 | --- | --- |
 | `↑/↓`, `k/j` | Select a candidate |
+| `d`, `Enter` | Download the selection |
 | `Tab`, `Shift+Tab` | Switch categories |
-| `1/2/3/4/5` | Show All / Images / Videos / m3u8 / Audio |
-| `Ctrl+D` | Switch between AppID entry and Mini Program discovery |
-| `d`, `Enter` | Download the selected candidate |
-| `i` | Show or hide candidate details |
-| `c` | Clear the list |
+| `1/2/3/4/5` | All / Images / Videos / m3u8 / Audio |
+| `c` | Clear the list before capturing again |
 | `s` | Return to target selection; blocked during downloads |
-| `r` | Refresh the list |
-| `o` | Open the download directory |
-| `l` | Show or hide logs |
-| `PgUp/PgDn` | Scroll logs |
-| `q` | Quit and restore the previous system proxy |
+| `i`, `l` | Toggle details and logs |
+| `o` | Open the download folder |
+| `q` | Quit discovery or the media screen and restore the proxy |
 
-## Notes
+## Before you use it
 
-- The app identifies media through a local HTTPS proxy.
-- The first run installs a local root certificate; Windows may request confirmation.
-- AppID filters request sources. Only a Referer in the HTTPS `servicewechat.com/<AppID>/<version>/page-frame.html` format with an exact target AppID match is accepted. Other Mini Programs and missing or invalid sources do not produce candidates, media caches, or playlist fallback requests. Normal network forwarding continues.
-- Images, direct-video links, and direct-audio links from matching JSON API responses are supported. JSON m3u8 links are skipped until a matching playlist response is actually observed. Audio uses the same AppID source filter as other media.
-- Strict filtering may miss target media without source information. Discovery lists only Mini Programs actually observed by the proxy. Automatic names are not guaranteed; names can be entered manually and do not affect filtering.
-- A Mini Program may load many candidates at once. Clear the list before opening the content you want.
-- If an abnormal exit leaves networking broken, run the app again as administrator and quit with `q`.
+- Only one target is active at a time. Discovery collects no media; reload content after confirming a target. Switching clears the list and progress while keeping local files.
+- Media is accepted only when the request's source AppID exactly matches the target. Missing or invalid sources are excluded, including with manual AppID entry. Names are optional labels and do not affect filtering.
+- Images, direct videos, and direct audio are saved unchanged. m3u8 requires ffmpeg, which is downloaded and verified on first use and is not bundled. To use an existing executable, set `download.ffmpeg` to its full path.
+- **Certificate risk: the default root certificate currently uses a publicly available shared private key. Installation changes Windows system trust; quitting does not remove the certificate.** See [risks and certificate removal (Chinese)](https://github.com/MuZiJin701/wx-mini-video/blob/main/wx-mini-video-knowledge.md#证书风险与清理).
 
 ## Troubleshooting
 
-### Mini Program fails to open or reports network errors
+| Problem | What to do |
+| --- | --- |
+| Mini Program not discovered | Check that the proxy is running and reopen the Mini Program. Press `r` to refresh or retry, or `Ctrl+D` for manual entry. |
+| Expected media is missing | Press `1` for All, check the AppID, then reload the media. Requests without a matching source remain excluded. |
+| Network fails after an abnormal exit | Restart the app, press `Ctrl+D`, wait until the proxy is running, then press `q`. Quitting directly from the entry screen does not restore the proxy. |
+| Certificate installation fails | Check that you accepted UAC; see [certificate troubleshooting (Chinese)](https://github.com/MuZiJin701/wx-mini-video/blob/main/wx-mini-video-knowledge.md#排障). |
+| m3u8 download or merge fails | Replay the media and retry. The error includes the ffmpeg log path; see [troubleshooting (Chinese)](https://github.com/MuZiJin701/wx-mini-video/blob/main/wx-mini-video-knowledge.md#排障). |
 
-The system proxy may not have been restored. Run the app again as administrator and quit with `q`.
+[Maintenance: configuration, builds, and acceptance checks (Chinese)](https://github.com/MuZiJin701/wx-mini-video/blob/main/wx-mini-video-knowledge.md) · [Changelog (Chinese)](https://github.com/MuZiJin701/wx-mini-video/blob/main/CHANGELOG.md)
 
-### Certificate installation fails
-
-Run as administrator. If needed, manually install `WxMiniVideoRoot.cer` from the download directory into **Trusted Root Certification Authorities**.
-
-After the proxy starts, the certificate is also available at `http://127.0.0.1:2023/cert`.
-
-### m3u8 downloads are slow
-
-Long videos contain many segments. Check the TUI's segment counts, failures, and ffmpeg merge progress. If many segments fail, reduce `segmentConcurrency` from `6` to `4`.
-
-### m3u8 merging fails
-
-The error shows the ffmpeg log path: `<download directory>\.ffmpeg\<candidate ID>.log`. Captured request header values are removed from the log.
-
-### Expected media does not appear
-
-Confirm the target AppID, then reopen the image or replay the video or audio. Press `1` for All or `5` for Audio. Requests without matching source information are excluded; sharing a CDN domain does not widen the scope. Media outside the supported image, direct-video, direct-audio, and m3u8 formats may not be recognized.
-
-### Target Mini Program is not discovered
-
-Confirm that the proxy started, then reopen the Mini Program in desktop WeChat to generate requests. Press `r` to refresh or retry startup, or `Ctrl+D` to enter the AppID manually. Both entry methods use the same filtering rules; manual entry cannot bypass missing source information.
-
-## Configuration
-
-The configuration file is `wx-mini-video.yaml`:
-
-```yaml
-download:
-  dir: ""
-  ffmpeg: ""
-  mode: "auto"
-  segmentConcurrency: 6
-  segmentRetries: 3
-  keepSegments: false
-
-proxy:
-  system: true
-  hostname: "127.0.0.1"
-  port: 2023
-  skipInstallRootCert: false
-
-target:
-  appID: ""
-  name: ""
-```
-
-The defaults normally need no changes. If ffmpeg is already installed, set `download.ffmpeg` to its full executable path; otherwise the app uses managed ffmpeg.
-
-## Development
-
-```powershell
-go test -count=1 ./...
-go vet ./...
-build\build.bat windows
-```
-
-Build outputs:
-
-- `dist\wx-mini-video-windows-amd64\`
-- `dist\wx-mini-video-windows-amd64.zip`
-
-Build outputs stay local and are excluded from Git. Upload the zip to GitHub Releases for distribution. The build script runs `build\verify-package.ps1` to ensure the zip contains only `README.md`, `wx-mini-video.exe`, and `wx-mini-video.yaml`.
-
-Maintainer documentation is in Chinese:
-
-- `AGENTS.md`: project rules, documentation entry points, and validation requirements.
-- `GLOSSARY.md`: domain terminology.
-- `CHANGELOG.md`: version changes and release consolidation.
-- `wx-mini-video-knowledge.md`: implementation, configuration, distribution, and troubleshooting.
-- `docs/adr/`: long-term architecture decisions.
-- `docs/agents/`: issue tracker, triage labels, and domain documentation conventions.
-- `docs/appid-filtering-requirements.md`: implemented AppID filtering spec snapshot and subsequent extensions.
-- `docs/archive/`: historical documents and completed plans.
-
-## Disclaimer
-
-This project is for technical discussion, learning, and research. Follow applicable laws and do not use it for unlawful purposes.
+Only save content you have permission to access, and follow applicable laws and platform rules.

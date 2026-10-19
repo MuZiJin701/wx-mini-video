@@ -1,6 +1,8 @@
 # 目标 AppID 过滤与小程序发现
 
-GitHub spec：[#4](https://github.com/MuZiJin701/wx-mini-video/issues/4)。本文件保留原始规格，以下问题陈述描述实施前的行为；当前使用说明见 [README.md](../README.md)，版本扩展见 [CHANGELOG.md](../CHANGELOG.md)。
+> 历史规格：保留实施前的问题、确认过程和验收矩阵，不作为当前行为说明，也不随实现持续更新。
+
+GitHub spec：[#4](https://github.com/MuZiJin701/wx-mini-video/issues/4)。当前使用说明见 [README.md](../../README.md)，实现与验收见 [维护指南](../../wx-mini-video-knowledge.md)，版本扩展见 [CHANGELOG.md](../../CHANGELOG.md)。
 
 状态：代码已实现，自动化回归已通过，真实 PC 微信来源覆盖仍待人工验收。测试入口已由用户确认：复用代理响应和 TUI 操作两处现有入口，另行验收真实 PC 微信流量。
 

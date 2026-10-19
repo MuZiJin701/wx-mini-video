@@ -2,7 +2,9 @@ package interceptor
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"strconv"
 	"sync"
@@ -33,18 +35,22 @@ func NewInterceptorServer(settings *InterceptorConfig, cert *certificate.CertFil
 }
 
 func (s *InterceptorServer) Start() error {
+	listener, err := net.Listen("tcp", s.server.Addr)
+	if err != nil {
+		return fmt.Errorf("代理端口不可用 %s: %w", s.server.Addr, err)
+	}
 	if err := s.Interceptor.Start(); err != nil {
-		return fmt.Errorf("failed to start interceptor: %v", err)
+		return errors.Join(fmt.Errorf("failed to start interceptor: %w", err), listener.Close())
 	}
 	go func() {
-		err := s.server.ListenAndServe()
+		err := s.server.Serve(listener)
 		if err != nil && err != http.ErrServerClosed {
 			s.errCh <- err
 		}
 	}()
 	select {
 	case err := <-s.errCh:
-		return err
+		return errors.Join(err, s.Stop())
 	case <-time.After(200 * time.Millisecond):
 	}
 	return nil
@@ -53,10 +59,7 @@ func (s *InterceptorServer) Start() error {
 func (s *InterceptorServer) Stop() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if err := s.Interceptor.Stop(); err != nil {
-		return fmt.Errorf("failed to stop interceptor: %v", err)
-	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	return s.server.Shutdown(ctx)
+	return errors.Join(s.Interceptor.Stop(), s.server.Shutdown(ctx))
 }

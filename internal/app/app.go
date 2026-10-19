@@ -87,14 +87,15 @@ func (r *Runtime) Start() error {
 	if r.started {
 		return nil
 	}
-	addr := fmt.Sprintf("%s:%d", r.Settings.ProxyHostname, r.Settings.ProxyPort)
-	ln, err := net.Listen("tcp", addr)
-	if err != nil {
-		return fmt.Errorf("代理端口不可用 %s: %w", addr, err)
+	if r.proxyServer != nil {
+		if err := r.proxyServer.Stop(); err != nil {
+			return err
+		}
+		r.proxyServer = nil
 	}
-	_ = ln.Close()
 	interceptorCfg := interceptor.NewInterceptorSettings(r.Config, r.Settings, r.Store)
 	server := interceptor.NewInterceptorServer(interceptorCfg, r.cert)
+	r.proxyServer = server
 	server.Interceptor.AddPostPlugin(interceptor.CreateMiniProgramInterceptorPlugin(r.Settings.Target, r.Store, r.Settings.DownloadDir))
 	certPath := r.exportRootCert()
 	if err := server.Start(); err != nil {
@@ -103,7 +104,6 @@ func (r *Runtime) Start() error {
 		}
 		return err
 	}
-	r.proxyServer = server
 	r.started = true
 	return nil
 }
@@ -111,11 +111,14 @@ func (r *Runtime) Start() error {
 func (r *Runtime) Stop() error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if !r.started || r.proxyServer == nil {
+	if r.proxyServer == nil {
 		return nil
 	}
 	err := r.proxyServer.Stop()
 	r.started = false
+	if err == nil {
+		r.proxyServer = nil
+	}
 	return err
 }
 
