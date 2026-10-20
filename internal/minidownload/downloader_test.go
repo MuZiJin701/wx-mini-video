@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -149,7 +150,12 @@ func TestRunFFmpegWritesRedactedCandidateLog(t *testing.T) {
 	d := New(t.TempDir())
 	ffmpeg := filepath.Join(d.Dir, "failing-ffmpeg.cmd")
 	resourceURL := "https://cdn.example.com/live.m3u8?token=query-secret"
-	if err := os.WriteFile(ffmpeg, []byte("@echo Authorization: Bearer test-secret 1>&2\r\n@echo "+resourceURL+" 1>&2\r\n@exit /b 1\r\n"), 0o755); err != nil {
+	script := "@echo Authorization: Bearer test-secret 1>&2\r\n@echo " + resourceURL + " 1>&2\r\n@exit /b 1\r\n"
+	if runtime.GOOS != "windows" {
+		ffmpeg = filepath.Join(d.Dir, "failing-ffmpeg")
+		script = "#!/bin/sh\nprintf '%s\\n' 'Authorization: Bearer test-secret' '" + resourceURL + "' >&2\nexit 1\n"
+	}
+	if err := os.WriteFile(ffmpeg, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	d.FFmpegPath = ffmpeg

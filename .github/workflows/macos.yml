@@ -1,0 +1,57 @@
+name: macOS
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  native:
+    name: macOS · ${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15-intel
+            arch: amd64
+          - runner: macos-15
+            arch: arm64
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version: '1.27.2'
+      - name: 记录并核对原生环境
+        run: |
+          sw_vers
+          uname -m
+          go version
+          test "$(go env GOOS)" = darwin
+          test "$(go env GOARCH)" = '${{ matrix.arch }}'
+      - name: 原生测试与静态检查
+        run: |
+          go test -count=1 -timeout=10m ./...
+          go vet ./...
+      - name: 真实命令与受管 ffmpeg 验证
+        env:
+          WX_MINI_VIDEO_MACOS_INTEGRATION: '1'
+        run: go test -v -count=1 -timeout=10m -run '^TestDarwin' ./pkg/system ./pkg/certificate ./internal/minidownload
+      - name: 构建并验证通用便携包
+        run: |
+          go run ./build/macos
+          python3 build/verify-macos.py
+          shasum -a 256 dist/wx-mini-video-macos-universal-unsigned.zip
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: macos-${{ matrix.arch }}-unsigned
+          path: dist/wx-mini-video-macos-universal-unsigned.zip
+          if-no-files-found: error
+          retention-days: 7

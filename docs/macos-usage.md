@@ -29,6 +29,8 @@
 
 ## 验证反馈
 
+项目提供 [macOS 原生 CI](https://github.com/MuZiJin701/wx-mini-video/actions/workflows/macos.yml)，分别验证 Intel 与 Apple Silicon 的原生测试、固定 ffmpeg 下载/合并、便携包及终端内启动。以对应提交的 Actions 结果为准；CI 不操作真实系统代理或安装证书，也不覆盖 Finder 双击、系统授权和真实微信验收。
+
 请分别在两种处理器上记录机型、macOS 版本、微信版本，以及首次双击、Terminal 授权、证书授权、图片/直链视频/直链音频/m3u8、网络切换和退出恢复的结果。验证完整解压后、移动目录后、中文及空格路径中的配置和 `downloads/` 均位于原便携目录。
 
 反馈错误摘要即可；不要发送私钥、Cookie、鉴权头或带签名的完整媒体 URL。签名、公证与编译成功均不代表真实微信嗅探已经通过。

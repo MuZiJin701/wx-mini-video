@@ -4,6 +4,9 @@
 
 ## 未发布
 
+- 新增 GitHub Actions 的 macOS 15 Intel / Apple Silicon 原生测试、静态检查、真实网络服务和钥匙串只读检查、受管 ffmpeg 下载及鉴权 m3u8 合并测试；检查通用 ZIP、执行权限和中文空格路径、移动目录后的终端内启动退出。CI 不替代首次系统授权与真实微信验收。
+- 修复 ffmpeg 日志脱敏测试使用 Windows 专用脚本导致无法在 macOS 运行的问题。
+
 ## v0.1.8 · 2026-10-20
 
 Windows 稳定包与 macOS 未签名测试包在同一 v0.1.8 Release 并列提供。macOS 附件由原独立预发布合并至本版，供用户真机验证；原预发布 Release 由本版替代，保留历史 Git 标签。v0.1.8 标签与 Windows 原附件不变，后补 Mac 附件的构建提交和 SHA-256 在发布页单独列出。

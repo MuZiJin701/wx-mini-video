@@ -107,6 +107,12 @@ git diff --check
 
 可靠性回归还覆盖独立证书生成及复用、私钥 ACL、显式配置失败、指纹匹配、迁移确认、退出重试、完整代理快照、同名资源隔离、实体校验续传和鉴权头来源隔离。机器已安装 ffmpeg 时，测试会生成短音频分片并以本机 HTTP 服务验证预取与 ffmpeg 两种鉴权 m3u8 合并；未安装时跳过这一实际合并用例，仍执行播放列表入口测试，不自动下载 ffmpeg。
 
+GitHub Actions 的 [macOS 工作流](.github/workflows/macos.yml) 在 `macos-15-intel` 与 `macos-15` 上分别核对 amd64 / arm64 原生环境，运行全量测试、`go vet`、通用包构建及 `python3 build/verify-macos.py`。推送 main、PR 或手动 `workflow_dispatch` 触发；测试包保存为 7 天 Actions 附件，不自动替换 Release。
+
+工作流另设置 `WX_MINI_VIDEO_MACOS_INTEGRATION=1`，运行 `go test -v -count=1 -timeout=10m -run '^TestDarwin' ./pkg/system ./pkg/certificate ./internal/minidownload`：真实调用 `route`、`networksetup` 和 `security` 读取网络服务及钥匙串，检查临时私钥权限，下载并校验固定版本 ffmpeg，实际执行鉴权 m3u8 合并。网络服务和信任库只读，不安装证书或更改代理；代理写入/恢复仍由替身测试覆盖。普通测试不启用该变量，不额外下载 ffmpeg。
+
+打包检查在含中文与空格的临时目录解压应用，通过伪终端进入 AppID 输入界面后退出，并移动目录后复测；不选择目标或启动代理。它不能验证 Finder 双击、下载隔离与 App Translocation、Terminal 自动化授权、证书/管理员弹窗、真实微信流量或 macOS 13 兼容性，以上仍需人工验收。
+
 ## 分发
 
 Windows 稳定包与 macOS 未签名测试包在同一 v0.1.8 Release 并列提供，各自标注平台状态。macOS 在仓库根目录执行 `go run ./build/macos`，产物为 `dist/wx-mini-video-macos-universal-unsigned.zip`；通用 `.app` 同时包含 amd64 与 arm64，包内仅包含应用、外部配置和说明，保留执行权限，不含 ffmpeg 或运行数据。
