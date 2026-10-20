@@ -109,6 +109,10 @@ git diff --check
 
 ## 分发
 
+Windows 稳定包与 macOS 预览包分别管理。macOS 在仓库根目录执行 `go run ./build/macos`，产物为 `dist/wx-mini-video-macos-universal-unsigned.zip`；通用 `.app` 同时包含 amd64 与 arm64，包内仅包含应用、外部配置和说明，保留执行权限，不含 ffmpeg 或运行数据。
+
+未签名 Mac 包通过独立 Pre-release 供用户验证，既有 Windows 稳定 Release 和标签保留。正式 Mac 公开发布仍须完成 `build/sign-macos.sh` 的 Developer ID 签名、公证及双架构真机验收。上传前确认两种薄 Mach-O 的 `vcs.revision` 均等于预览标签的目标提交、`vcs.modified=false`；上传后核对附件 SHA-256 及 Pre-release 标记，确认 Windows Latest Release 未变化。当前基础版本号见 `main.go`，具体预览记录见 CHANGELOG。
+
 ```powershell
 cmd /c build\build.bat windows
 ```
@@ -119,7 +123,7 @@ cmd /c build\build.bat windows
 
 ## 真实 PC 微信验收
 
-当前只确认过管理员 Windows Terminal 中显示正常；完整 UAC/Terminal 重启链路、真实微信音频及请求来源覆盖仍待人工验收。其他操作系统未作为验收目标。
+当前只确认过管理员 Windows Terminal 中显示正常；完整 UAC/Terminal 重启链路、真实微信音频及请求来源覆盖仍待人工验收。macOS 已列为后续真机验收目标，当前尚未验收，检查项见 [macOS 测试版说明](docs/macos-usage.md)。
 
 1. 双击启动并同意 UAC，确认进入管理员 Terminal；已在管理员 Terminal 中不重复开窗。检查取消 UAC、无 Terminal、中文/空格路径和显式配置文件。发现两个小程序，确认 AppID 去重，未选择前无媒体候选或缓存。
 2. 分别用手动输入和发现选择目标，补填名称后重新加载图片、直链视频、直链音频和 m3u8。检查分类、标题、后缀、原文件保存和 m3u8 输出；核对 Referer 与目标一致，记录来源缺失的覆盖限制，不放宽过滤。
