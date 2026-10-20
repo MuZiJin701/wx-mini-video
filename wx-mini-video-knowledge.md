@@ -109,9 +109,9 @@ git diff --check
 
 ## 分发
 
-Windows 稳定包与 macOS 预览包分别管理。macOS 在仓库根目录执行 `go run ./build/macos`，产物为 `dist/wx-mini-video-macos-universal-unsigned.zip`；通用 `.app` 同时包含 amd64 与 arm64，包内仅包含应用、外部配置和说明，保留执行权限，不含 ffmpeg 或运行数据。
+Windows 稳定包与 macOS 未签名测试包在同一 v0.1.8 Release 并列提供，各自标注平台状态。macOS 在仓库根目录执行 `go run ./build/macos`，产物为 `dist/wx-mini-video-macos-universal-unsigned.zip`；通用 `.app` 同时包含 amd64 与 arm64，包内仅包含应用、外部配置和说明，保留执行权限，不含 ffmpeg 或运行数据。
 
-未签名 Mac 包通过独立 Pre-release 供用户验证，既有 Windows 稳定 Release 和标签保留。正式 Mac 公开发布仍须完成 `build/sign-macos.sh` 的 Developer ID 签名、公证及双架构真机验收。上传前确认两种薄 Mach-O 的 `vcs.revision` 均等于预览标签的目标提交、`vcs.modified=false`；上传后核对附件 SHA-256 及 Pre-release 标记，确认 Windows Latest Release 未变化。当前基础版本号见 `main.go`，具体预览记录见 CHANGELOG。
+共用 Release 入口不改变 Mac 的测试状态；正式 Mac 支持仍须完成 `build/sign-macos.sh` 的 Developer ID 签名、公证及双架构真机验收。后补附件不移动既有 v0.1.8 标签，也不替换 Windows 原附件；发布说明须按平台记录各自的实际构建提交与 SHA-256，不能将 Mac 构建来源写成原 Windows 标签提交。上传前确认两种薄 Mach-O 的 `vcs.revision` 均等于发布说明中的 Mac 构建提交、`vcs.modified=false`；上传后下载核对 SHA-256，确认 v0.1.8 仍为 Latest、两平台附件均存在且 Windows 原附件未变化。当前基础版本号见 `main.go`，版本历史见 CHANGELOG。
 
 ```powershell
 cmd /c build\build.bat windows

@@ -4,7 +4,7 @@
 
 ## 目标与支持范围
 
-当前验证入口为独立的 [macOS 预发布版本](https://github.com/MuZiJin701/wx-mini-video/releases/tag/v0.1.8-macos-preview.1)，仅提供未签名测试包，不替代 Windows 稳定版或表示已达到正式 macOS 发布门槛。
+按用户要求，Windows 稳定包与 Mac 未签名测试包在同一 [v0.1.8 Release](https://github.com/MuZiJin701/wx-mini-video/releases/tag/v0.1.8) 并列提供，分别标明状态、构建提交和 SHA-256。共用发布入口不表示 Mac 已达到正式发布门槛。
 
 - 在 Mac 本机运行，嗅探同一台 Mac 上微信小程序的媒体，保留现有目标选择、小程序发现、图片、直链视频、直链音频和 m3u8 媒体下载流程。
 - 首版面向普通用户公开发布，同时支持 Apple Silicon 和 Intel Mac。

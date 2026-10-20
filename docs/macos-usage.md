@@ -2,7 +2,7 @@
 
 适用目标：macOS 13 及以上，Apple Silicon 与 Intel 共用一个 ZIP。保留 Windows 版的终端界面、目标 AppID 严格过滤、图片、直链视频、直链音频及 m3u8 下载流程。
 
-[下载 v0.1.8-macos-preview.1 预览版](https://github.com/MuZiJin701/wx-mini-video/releases/tag/v0.1.8-macos-preview.1)。此版本基于 v0.1.8，应用内基础版本号仍为 v0.1.8，具体构建提交与 SHA-256 见该预发布说明。Windows 稳定版继续从项目的 Latest Release 获取。
+[下载 v0.1.8 Mac 通用 ZIP](https://github.com/MuZiJin701/wx-mini-video/releases/download/v0.1.8/wx-mini-video-macos-universal-unsigned.zip)。Windows 与 Mac 包在同一 [v0.1.8 Release](https://github.com/MuZiJin701/wx-mini-video/releases/tag/v0.1.8) 并列提供，平台状态分别标注。应用内版本号为 v0.1.8，Mac 附件的具体构建提交与 SHA-256 见发布说明。
 
 文件名为 `wx-mini-video-macos-universal-unsigned.zip` 的包是本地构建的未签名测试包，仅供用户验证，不表示已通过 Developer ID 签名、公证或真实 Mac 微信验收。正式公开发布包使用不含 `unsigned` 的文件名，并须先完成签名、公证和双架构验收。
 

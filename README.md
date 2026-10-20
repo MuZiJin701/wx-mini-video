@@ -4,7 +4,14 @@
 
 [下载最新版](https://github.com/MuZiJin701/wx-mini-video/releases/latest) · [English](https://github.com/MuZiJin701/wx-mini-video/blob/main/README.en.md)
 
-macOS 13+ 的 Apple Silicon 与 Intel 用户可下载 [macOS 预览版](https://github.com/MuZiJin701/wx-mini-video/releases/tag/v0.1.8-macos-preview.1)，完整解压后双击 `.app`，媒体保存在解压目录的 `downloads/`。当前为未签名测试包，签名、公证和真实 Mac 微信验收尚未完成；首次打开可能需要系统允许或移动应用的引导。详见 [macOS 测试版说明](https://github.com/MuZiJin701/wx-mini-video/blob/main/docs/macos-usage.md)。下面的开始步骤适用于 Windows。
+Windows 与 macOS 包在同一个 [v0.1.8 Release](https://github.com/MuZiJin701/wx-mini-video/releases/tag/v0.1.8) 中并列提供：
+
+| 平台 | 下载 | 状态 |
+| --- | --- | --- |
+| Windows amd64 | [Windows ZIP](https://github.com/MuZiJin701/wx-mini-video/releases/download/v0.1.8/wx-mini-video-windows-amd64.zip) | 稳定版 |
+| macOS 13+ · Apple Silicon / Intel | [Mac 通用 ZIP](https://github.com/MuZiJin701/wx-mini-video/releases/download/v0.1.8/wx-mini-video-macos-universal-unsigned.zip) | 未签名测试版 |
+
+Mac 包完整解压后双击 `.app`，媒体保存在解压目录的 `downloads/`。签名、公证和真实 Mac 微信验收尚未完成；首次打开可能需要系统允许或移动应用的引导。详见 [macOS 测试版说明](https://github.com/MuZiJin701/wx-mini-video/blob/main/docs/macos-usage.md)。下面的开始步骤适用于 Windows。
 
 ## 开始使用
 
