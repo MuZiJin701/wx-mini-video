@@ -79,7 +79,7 @@ def main():
         portable = pathlib.Path(directory) / "wx-mini-video-macos"
         executable = portable / executable_name
         assert executable.stat().st_mode & 0o777 == 0o755
-        subprocess.run(["/usr/bin/lipo", "-verify_arch", "x86_64", "arm64", str(executable)], check=True)
+        subprocess.run(["/usr/bin/lipo", str(executable), "-verify_arch", "x86_64", "arm64"], check=True)
         subprocess.run(["/usr/bin/plutil", "-lint", str(portable / "wx-mini-video.app/Contents/Info.plist")], check=True)
         check_tui(executable, directory)
         moved = portable.with_name("移动后的便携目录")
