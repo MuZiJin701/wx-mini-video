@@ -17,7 +17,11 @@ Windows 优先的单二进制 Go TUI，使用 Bubble Tea 和 Echo 代理适配�
 
 ### 启动与代理
 
-`PrepareConsole` 在配置、证书、代理初始化前检查实际管理员权限，未提权时通过 `ShellExecuteW` 的 `runas` 请求 UAC。随后优先使用已安装的 `wt.exe`；已在管理员 Terminal 中则沿用当前窗口，找不到 Terminal 时保留原控制台。取消或失败停止启动并显示 Unicode 对话框。重启保留工作目录、参数和 `WX_MINI_VIDEO_CONFIG`；内部标记限制重启次数，不能代替权限检查。取舍见 [ADR 0004](docs/adr/0004-windows-terminal-startup.md)。
+macOS 平台实现、便携通用测试包与后续签名/公证入口见 [macOS 测试版说明](docs/macos-usage.md)，需求与待验收范围见 [macOS 版本需求](docs/macos-requirements.md)。在仓库根目录运行 `go run ./build/macos`，生成同一 ZIP 中的双架构 `.app`、外部配置与说明，保留可执行权限，不打包下载数据或 ffmpeg。当前仅提供未签名测试包；用户要求先完成本地适配，真实 Mac 微信验收后续进行。
+
+macOS 通过普通用户进程调用系统授权提示管理活动网络服务的 HTTP/HTTPS 代理，捕获原地址与开关后设置，退出恢复；PAC、SOCKS、认证代理或活动 VPN 默认路由冲突时拒绝覆盖。每两秒检查活动默认路由接口，变化后停止嗅探、恢复代理，按 `r` 重启；同一接口内热点切换不保证识别。私钥使用用户 `Library/Application Support` 下的受限持久目录，信任安装到当前用户默认钥匙串；签名、公证及系统授权的实际行为均须在 Mac 验收。
+
+Windows 的 `PrepareConsole` 在配置、证书、代理初始化前检查实际管理员权限，未提权时通过 `ShellExecuteW` 的 `runas` 请求 UAC。随后优先使用已安装的 `wt.exe`；已在管理员 Terminal 中则沿用当前窗口，找不到 Terminal 时保留原控制台。取消或失败停止启动并显示 Unicode 对话框。重启保留工作目录、参数和 `WX_MINI_VIDEO_CONFIG`；内部标记限制重启次数，不能代替权限检查。取舍见 [ADR 0004](docs/adr/0004-windows-terminal-startup.md)。
 
 输入界面尚未启动代理；进入发现或确认目标后才启动。服务先绑定监听端口，再检查和安装证书、设置系统代理；启动失败关闭已创建的代理并恢复已捕获的系统代理快照。没有快照时不改动系统代理，恢复失败会保留状态供再次清理，并将错误返回调用方。
 
@@ -41,12 +45,12 @@ Windows 优先的单二进制 Go TUI，使用 Bubble Tea 和 Echo 代理适配�
 | 配置 | 默认值 | 含义 |
 | --- | --- | --- |
 | `download.dir` | 空 | 配置目录下的 `downloads/`；普通发布包即 exe 旁。显式相对路径按当前工作目录解析，建议使用绝对路径。 |
-| `download.ffmpeg` | 空 | 使用受管 ffmpeg；也可指定本地 exe 完整路径。旧值 `ffmpeg` 视为空，不查找系统 PATH。 |
+| `download.ffmpeg` | 空 | 使用受管 ffmpeg；也可指定本地可执行文件完整路径。旧值 `ffmpeg` 视为空，不查找系统 PATH。 |
 | `download.mode` | `auto` | 媒体播放列表分片数 ≥20 时并发预取，否则由 ffmpeg 经本机入口获取；`prefetch` 强制预取媒体分片，`remote-ffmpeg` 由 ffmpeg 获取。主播放列表始终由 ffmpeg 选择子播放列表。 |
 | `download.segmentConcurrency` | `6` | 预取分片并发数 |
 | `download.segmentRetries` | `3` | 分片失败重试次数 |
 | `download.keepSegments` | `false` | 合并成功后是否保留分片缓存 |
-| `proxy.system` | `true` | 设置并恢复 Windows 系统代理 |
+| `proxy.system` | `true` | 设置并恢复 Windows 或 macOS 系统代理（macOS 待真机验收） |
 | `proxy.hostname`、`proxy.port` | `127.0.0.1`、`2023` | 本地监听地址 |
 | `proxy.skipInstallRootCert` | `false` | 跳过根证书检查和自动安装；不替代证书信任配置 |
 | `proxy.upstreamProxy` | 空 | 上游代理地址 |
@@ -56,7 +60,7 @@ Windows 优先的单二进制 Go TUI，使用 Bubble Tea 和 Echo 代理适配�
 
 下载目录也保存缓存、日志、仅含公开证书的 `WxMiniVideoRoot.cer` 和受管 ffmpeg，私钥单独保存于本机用户目录。移动便携目录时一并保留 `downloads/`；使用外部配置或显式目录时需另行保留该目录。取舍见 [ADR 0002](docs/adr/0002-portable-runtime-data.md) 和 [ADR 0005](docs/adr/0005-local-ca-lifecycle.md)。
 
-首次下载 m3u8 时才准备 ffmpeg：显式路径优先，否则使用下载目录中的受管版本，缺失时下载固定版本并校验 SHA-256。短暂网络或 HTTP 5xx 错误最多尝试 3 次。版本和摘要在 `internal/minidownload/ffmpeg.go`，更新时需同时修改。取舍见 [ADR 0001](docs/adr/0001-managed-ffmpeg.md)。
+macOS 受管 ffmpeg 使用 Martin Riedl 的 9.0.2，按 amd64/arm64 分别固定 URL 和 SHA-256，文件名为 `ffmpeg`；Windows 来源保持原样。首次下载 m3u8 时才准备 ffmpeg：显式路径优先，否则使用下载目录中的受管版本，缺失时下载固定版本并校验 SHA-256。短暂网络或 HTTP 5xx 错误最多尝试 3 次。版本和摘要在 `internal/minidownload/ffmpeg.go`，更新时需同时修改。取舍见 [ADR 0001](docs/adr/0001-managed-ffmpeg.md)。
 
 ## 证书风险与清理
 

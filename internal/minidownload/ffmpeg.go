@@ -20,10 +20,29 @@ const (
 	ffmpegDownloadAttempts = 3
 )
 
-var (
-	managedFFmpegURL    = "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-08-11-13-11/ffmpeg-n8.1.2-34-g9b6c8969e0-win64-gpl-8.1.zip"
-	managedFFmpegSHA256 = "05eedc113542be39af5d0f78f0b1093bafb89c98cecf25b77e8644670293107f"
-)
+var managedFFmpegURL, managedFFmpegSHA256 = ffmpegSourceForPlatform(runtime.GOOS, runtime.GOARCH)
+
+func ffmpegSourceForPlatform(goos, arch string) (string, string) {
+	if goos == "windows" {
+		return "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-08-11-13-11/ffmpeg-n8.1.2-34-g9b6c8969e0-win64-gpl-8.1.zip", "05eedc113542be39af5d0f78f0b1093bafb89c98cecf25b77e8644670293107f"
+	}
+	if goos == "darwin" {
+		switch arch {
+		case "amd64":
+			return "https://ffmpeg.martin-riedl.de/download/macos/amd64/1789931006_9.0.2/ffmpeg.zip", "7c6b4125b191cbf773832dc51f424cf2b6bb7da43007d1e066f95909e47cacd4"
+		case "arm64":
+			return "https://ffmpeg.martin-riedl.de/download/macos/arm64/1789931890_9.0.2/ffmpeg.zip", "c8ed4c4e6978a03c485edbfe4e0a5dc2380f8a30bba5150531b31b094492d924"
+		}
+	}
+	return "", ""
+}
+
+func managedFFmpegName() string {
+	if runtime.GOOS == "windows" {
+		return "ffmpeg.exe"
+	}
+	return "ffmpeg"
+}
 
 type FFmpegState struct {
 	State   string
@@ -50,7 +69,7 @@ func EnsureFFmpeg(ctx context.Context, targetDir string, onProgress func(FFmpegS
 		return path, nil
 	}
 
-	if !canAutoInstallFFmpeg(runtime.GOOS) {
+	if !canAutoInstallFFmpeg(runtime.GOOS) || managedFFmpegURL == "" {
 		err := fmt.Errorf("未找到 ffmpeg，请先安装 ffmpeg 或在配置中设置 download.ffmpeg")
 		emit(FFmpegState{State: "error", Error: err})
 		return "", err
@@ -61,7 +80,7 @@ func EnsureFFmpeg(ctx context.Context, targetDir string, onProgress func(FFmpegS
 		return "", managedFFmpegError(fmt.Errorf("创建目录失败: %w", err))
 	}
 
-	localPath := filepath.Join(targetDir, "ffmpeg.exe")
+	localPath := filepath.Join(targetDir, managedFFmpegName())
 	zipPath := filepath.Join(targetDir, "ffmpeg_temp.zip")
 	if err := downloadFFmpegArchive(ctx, zipPath, emit); err != nil {
 		return "", managedFFmpegError(err)
@@ -156,11 +175,11 @@ func managedFFmpegError(err error) error {
 	if strings.Contains(err.Error(), "download.ffmpeg") {
 		return err
 	}
-	return fmt.Errorf("%w；可配置 download.ffmpeg 为本地 ffmpeg.exe", err)
+	return fmt.Errorf("%w；可配置 download.ffmpeg 为本地 ffmpeg 可执行文件的完整路径", err)
 }
 
 func ManagedFFmpegPath(targetDir string) string {
-	path := filepath.Join(targetDir, "ffmpeg.exe")
+	path := filepath.Join(targetDir, managedFFmpegName())
 	if _, err := os.Stat(path); err != nil {
 		return ""
 	}
@@ -215,8 +234,11 @@ func extractFFmpegExe(zipPath string, localPath string) error {
 	defer zr.Close()
 
 	for _, file := range zr.File {
-		if strings.ToLower(filepath.Base(file.Name)) != "ffmpeg.exe" {
+		if strings.ToLower(filepath.Base(file.Name)) != managedFFmpegName() {
 			continue
+		}
+		if file.Mode()&os.ModeSymlink != 0 {
+			return fmt.Errorf("拒绝解压符号链接形式的 ffmpeg")
 		}
 		src, err := file.Open()
 		if err != nil {
@@ -224,26 +246,28 @@ func extractFFmpegExe(zipPath string, localPath string) error {
 		}
 		defer src.Close()
 
-		dst, err := os.Create(localPath)
+		dst, err := os.CreateTemp(filepath.Dir(localPath), ".ffmpeg-install-*")
 		if err != nil {
 			return fmt.Errorf("写入 ffmpeg 失败: %w", err)
 		}
+		defer os.Remove(dst.Name())
 		if _, err := io.Copy(dst, src); err != nil {
 			dst.Close()
-			os.Remove(localPath)
 			return fmt.Errorf("解压 ffmpeg 失败: %w", err)
 		}
 		if err := dst.Close(); err != nil {
-			os.Remove(localPath)
 			return fmt.Errorf("写入 ffmpeg 失败: %w", err)
 		}
-		return nil
+		if err := os.Chmod(dst.Name(), 0o755); err != nil {
+			return err
+		}
+		return os.Rename(dst.Name(), localPath)
 	}
-	return fmt.Errorf("压缩包中未找到 ffmpeg.exe")
+	return fmt.Errorf("压缩包中未找到 %s", managedFFmpegName())
 }
 
 func canAutoInstallFFmpeg(goos string) bool {
-	return goos == "windows"
+	return goos == "windows" || goos == "darwin"
 }
 
 type ffmpegProgressReader struct {

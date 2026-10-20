@@ -10,6 +10,7 @@ type ProxySnapshot struct {
 	Enabled   bool
 	HasServer bool
 	Server    string
+	Mac       *MacProxySnapshot
 }
 
 type HardwarePort struct {

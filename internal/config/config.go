@@ -43,7 +43,7 @@ const EnvConfigPath = "WX_MINI_VIDEO_CONFIG"
 
 func New(ver string, mode string) *Config {
 	exe, _ := os.Executable()
-	exeDir := filepath.Dir(exe)
+	exeDir := portableConfigDirectory(filepath.Dir(exe))
 	baseDir := exeDir
 	filename := "wx-mini-video.yaml"
 	configPath := ""
@@ -74,6 +74,13 @@ func New(ver string, mode string) *Config {
 	}
 	viper.SetConfigFile(configPath)
 	return &Config{RootDir: baseDir, Filename: filename, FullPath: configPath, Existing: existing, Version: ver, Mode: mode}
+}
+
+func portableConfigDirectory(exeDir string) string {
+	if filepath.Base(exeDir) == "MacOS" && filepath.Base(filepath.Dir(exeDir)) == "Contents" && strings.HasSuffix(filepath.Base(filepath.Dir(filepath.Dir(exeDir))), ".app") {
+		return filepath.Dir(filepath.Dir(filepath.Dir(exeDir)))
+	}
+	return exeDir
 }
 
 func configCandidates(exeDir string) []string {
@@ -174,12 +181,23 @@ func LoadCertFiles() (*certificate.CertFileAndKeyFile, error) {
 		}
 		return certificate.Parse(certBytes, keyBytes)
 	}
-	localDir, err := os.UserCacheDir()
+	localDir, err := certificateBaseDir(runtime.GOOS)
 	if err != nil {
 		return nil, err
 	}
 	return certificate.LoadOrCreate(filepath.Join(localDir, "wx-mini-video", "certificates"))
 }
+func certificateBaseDir(goos string) (string, error) {
+	if goos == "darwin" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", err
+		}
+		return filepath.Join(home, "Library", "Application Support"), nil
+	}
+	return os.UserCacheDir()
+}
+
 func (c *Config) GetDebugInfo() map[string]string {
 	return map[string]string{
 		"base_dir":      c.RootDir,

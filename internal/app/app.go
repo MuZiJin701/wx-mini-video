@@ -109,7 +109,7 @@ func (r *Runtime) Start() error {
 	server.Interceptor.AddPostPlugin(interceptor.CreateMiniProgramInterceptorPlugin(r.Settings.Target, r.Store, r.Settings.DownloadDir))
 	if err := server.Start(); err != nil {
 		if certPath != "" {
-			return fmt.Errorf("%w；如证书自动安装失败，请用管理员权限重新运行，或手动安装证书文件: %s", err, certPath)
+			return fmt.Errorf("%w；如证书自动安装失败，请按系统授权提示处理，或手动安装公开证书文件: %s", err, certPath)
 		}
 		return err
 	}
@@ -129,6 +129,15 @@ func (r *Runtime) Stop() error {
 		r.proxyServer = nil
 	}
 	return err
+}
+
+func (r *Runtime) CheckNetwork() error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.proxyServer == nil {
+		return nil
+	}
+	return r.proxyServer.Interceptor.CheckNetwork()
 }
 
 func (r *Runtime) Candidates() []miniprogram.Candidate {

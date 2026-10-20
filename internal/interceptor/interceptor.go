@@ -71,8 +71,12 @@ func (c *Interceptor) Start() (err error) {
 			if err := certificate.InstallCertificate(c.Cert.Cert); err != nil {
 				return fmt.Errorf("安装证书失败: %v", err)
 			}
-			if installed, err := certificate.CheckHasCertificate(thumbprint); err != nil || !installed {
-				return fmt.Errorf("根证书安装后未能确认信任: %v", err)
+			installed, err := certificate.CheckHasCertificate(thumbprint)
+			if err != nil {
+				return fmt.Errorf("根证书安装后未能确认信任: %w", err)
+			}
+			if !installed {
+				return fmt.Errorf("根证书已添加但未能确认信任，请在系统证书管理中核对指纹并允许信任后重试")
 			}
 		}
 	}
@@ -84,8 +88,16 @@ func (c *Interceptor) Start() (err error) {
 		if isOwnProxySnapshot(snapshot, c.Settings.ProxyServerHostname, strconv.Itoa(c.Settings.ProxyServerPort)) {
 			snapshot = &system.ProxySnapshot{Enabled: false}
 		}
+		device := ""
+		if snapshot.Mac != nil {
+			if err := snapshot.Mac.Prepare(c.Settings.ProxyServerHostname, strconv.Itoa(c.Settings.ProxyServerPort)); err != nil {
+				return err
+			}
+			device = snapshot.Mac.Service
+		}
 		c.proxyState = snapshot
 		if err := enableSystemProxy(system.ProxySettings{
+			Device:   device,
 			Hostname: c.Settings.ProxyServerHostname,
 			Port:     strconv.Itoa(c.Settings.ProxyServerPort),
 		}); err != nil {
@@ -93,6 +105,13 @@ func (c *Interceptor) Start() (err error) {
 		}
 	}
 	return client.Start(c.Settings.ProxyServerPort)
+}
+
+func (c *Interceptor) CheckNetwork() error {
+	if c.proxyState != nil && c.proxyState.Mac != nil {
+		return c.proxyState.Mac.CheckNetwork()
+	}
+	return nil
 }
 
 func (c *Interceptor) Stop() error {

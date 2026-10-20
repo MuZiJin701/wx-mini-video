@@ -14,21 +14,35 @@ import (
 	"testing"
 )
 
-func TestCanAutoInstallFFmpegOnlyOnWindows(t *testing.T) {
+func TestCanAutoInstallFFmpegOnSupportedPlatforms(t *testing.T) {
 	if !canAutoInstallFFmpeg("windows") {
 		t.Fatal("windows should support automatic ffmpeg install")
 	}
-	if canAutoInstallFFmpeg("darwin") {
-		t.Fatal("darwin should not download windows ffmpeg.exe")
+	if !canAutoInstallFFmpeg("darwin") {
+		t.Fatal("darwin should support native automatic ffmpeg install")
 	}
 	if canAutoInstallFFmpeg("linux") {
 		t.Fatal("linux should not download windows ffmpeg.exe")
 	}
 }
 
+func TestMacFFmpegSourcesArePinnedAndArchitectureSpecific(t *testing.T) {
+	intelURL, intelSHA := ffmpegSourceForPlatform("darwin", "amd64")
+	armURL, armSHA := ffmpegSourceForPlatform("darwin", "arm64")
+	if !strings.Contains(intelURL, "/macos/amd64/") || !strings.Contains(armURL, "/macos/arm64/") || strings.Contains(armURL, "latest") {
+		t.Fatal("incorrect or floating Mac sources")
+	}
+	if len(intelSHA) != 64 || len(armSHA) != 64 || intelSHA == armSHA {
+		t.Fatal("missing independent archive checksums")
+	}
+	if url, _ := ffmpegSourceForPlatform("darwin", "386"); url != "" {
+		t.Fatal("unsupported architecture would download the wrong executable")
+	}
+}
+
 func TestManagedFFmpegPathRequiresVerifiedMarker(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "ffmpeg.exe")
+	path := filepath.Join(dir, managedFFmpegName())
 	if err := os.WriteFile(path, []byte("ffmpeg"), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -80,7 +94,7 @@ func TestEnsureFFmpegRetriesServerFailure(t *testing.T) {
 	if requests != 2 {
 		t.Fatalf("requests = %d, want 2", requests)
 	}
-	if got := filepath.Base(path); got != "ffmpeg.exe" {
+	if got := filepath.Base(path); got != managedFFmpegName() {
 		t.Fatalf("ffmpeg path = %q", path)
 	}
 }
@@ -157,7 +171,7 @@ func testFFmpegArchive(t *testing.T) ([]byte, string) {
 	t.Helper()
 	var out bytes.Buffer
 	zw := zip.NewWriter(&out)
-	entry, err := zw.Create("bin/ffmpeg.exe")
+	entry, err := zw.Create("bin/" + managedFFmpegName())
 	if err != nil {
 		t.Fatal(err)
 	}

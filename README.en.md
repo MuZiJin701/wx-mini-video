@@ -4,6 +4,8 @@ Save images, direct videos, direct audio, and m3u8 media loaded by desktop WeCha
 
 [Download latest](https://github.com/MuZiJin701/wx-mini-video/releases/latest) · [简体中文](https://github.com/MuZiJin701/wx-mini-video/blob/main/README.md)
 
+A portable universal macOS test build is now available from source, saving media to `downloads/` beside the extracted app. Developer ID signing, notarization, and real Mac WeChat acceptance remain pending. See the [macOS test build instructions (Chinese)](https://github.com/MuZiJin701/wx-mini-video/blob/main/docs/macos-usage.md). The steps below apply to Windows.
+
 ## Get started
 
 1. Download `wx-mini-video-windows-amd64.zip`, **extract the whole archive**, and double-click `wx-mini-video.exe`.

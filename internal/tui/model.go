@@ -8,6 +8,7 @@ import (
 	"path"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"sort"
 	"strings"
 	"time"
@@ -66,6 +67,8 @@ type model struct {
 	legacyWarning string
 	stopErr       error
 	stopping      bool
+	networkGen    int
+	networkPause  bool
 }
 
 type category string
@@ -126,6 +129,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.stopping {
 			return m, nil
 		}
+		if m.networkPause {
+			return m, nil
+		}
 		if m.legacyPrompt {
 			switch v.String() {
 			case "y":
@@ -175,6 +181,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.selected++
 			}
 		case "r":
+			if m.startErr != nil && !m.downloading {
+				return m.ensureProxy()
+			}
 			m.refresh()
 			m.addLog("已刷新候选资源")
 		case "c":
@@ -246,6 +255,32 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.addLog("代理启动失败: " + v.err.Error())
 		} else {
 			m.addLog(fmt.Sprintf("代理已启动: %s (耗时 %s)", m.runtime.ProxyAddr(), v.duration.Round(time.Millisecond)))
+			if runtime.GOOS == "darwin" && m.runtime.Settings.ProxySystem {
+				m.networkGen++
+				return m, watchNetwork(m.runtime, m.networkGen)
+			}
+		}
+	case networkMsg:
+		if v.generation != m.networkGen || !m.started || m.stopping {
+			return m, nil
+		}
+		if v.err == nil {
+			return m, watchNetwork(m.runtime, m.networkGen)
+		}
+		m.started = false
+		m.networkPause = true
+		m.startErr = v.err
+		m.networkGen++
+		return m, func() tea.Msg { return networkStoppedMsg{err: m.runtime.Stop()} }
+	case networkStoppedMsg:
+		m.networkPause = false
+		if m.stopping {
+			return m, m.stopProxy
+		}
+		if v.err != nil {
+			m.stopErr = v.err
+		} else {
+			m.addLog("网络已变化，已恢复原代理；按 r 重新启动代理")
 		}
 	case legacyCleanupMsg:
 		m.starting = false
@@ -291,6 +326,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) View() string {
+	if m.networkPause {
+		return "网络已变化，正在停止嗅探并恢复原代理...\n"
+	}
 	if m.stopErr != nil {
 		return errorStyle.Render("退出未完成：恢复系统代理或关闭代理失败") + "\n\n" +
 			lipgloss.NewStyle().Width(max(30, m.width-2)).Render(m.stopErr.Error()) +
@@ -349,7 +387,7 @@ func (m model) viewContent() string {
 	b.WriteString("\n")
 
 	if m.startErr != nil {
-		b.WriteString(errorStyle.Render(fitLine("代理未启动: "+m.startErr.Error(), m.width-1)))
+		b.WriteString(errorStyle.Render(fitLine("代理未启动: "+m.startErr.Error()+"；按 r 重试", m.width-1)))
 		b.WriteString("\n")
 	} else if m.started {
 		b.WriteString(okStyle.Render(fitLine("代理运行中。建议先按 c 清空，再打开目标图片或播放目标视频或音频，以便识别最新候选。", m.width-1)))

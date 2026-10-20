@@ -4,6 +4,8 @@
 
 [下载最新版](https://github.com/MuZiJin701/wx-mini-video/releases/latest) · [English](https://github.com/MuZiJin701/wx-mini-video/blob/main/README.en.md)
 
+macOS 已增加双架构便携测试版构建入口，媒体同样保存在解压目录的 `downloads/`；签名、公证和真实 Mac 微信验收尚未完成。构建与测试步骤见 [macOS 测试版说明](https://github.com/MuZiJin701/wx-mini-video/blob/main/docs/macos-usage.md)。下面的开始步骤适用于 Windows。
+
 ## 开始使用
 
 1. 下载 `wx-mini-video-windows-amd64.zip`，**完整解压**后双击 `wx-mini-video.exe`。

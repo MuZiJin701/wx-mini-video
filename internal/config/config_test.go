@@ -113,3 +113,21 @@ func TestSettingsKeepsExplicitDownloadDirectory(t *testing.T) {
 		t.Fatalf("DownloadDir = %q, want explicit directory", got)
 	}
 }
+
+func TestMacBundleKeepsConfigAndDownloadsOutsideSignedApplication(t *testing.T) {
+	root := t.TempDir()
+	bin := filepath.Join(root, "wx-mini-video.app", "Contents", "MacOS")
+	if got := portableConfigDirectory(bin); got != root {
+		t.Fatalf("portable root = %q, want %q", got, root)
+	}
+	if got := resolveDownloadDir("", portableConfigDirectory(bin)); got != filepath.Join(root, "downloads") {
+		t.Fatal("downloads would modify the signed application")
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, err := certificateBaseDir("darwin"); err != nil || got != filepath.Join(home, "Library", "Application Support") {
+		t.Fatalf("CA directory = %q, %v", got, err)
+	}
+}
