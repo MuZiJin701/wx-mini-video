@@ -150,7 +150,9 @@ func macUninstallCertificate(fingerprint string) error {
 			if keychain == userKeychain {
 				_, err = macCertificateCommand(args[0], args[1:]...)
 			} else {
-				err = macCertificateAdmin([][]string{args})
+				err = macWithPublicCertificate(public, func(path string) error {
+					return macCertificateAdmin([][]string{{"/usr/bin/security", "remove-trusted-cert", "-d", path}, args})
+				})
 			}
 			if err != nil {
 				return err
