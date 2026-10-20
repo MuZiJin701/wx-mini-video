@@ -4,20 +4,20 @@
 
 ## 未发布
 
-- 新增 GitHub Actions 的 macOS 15 Intel / Apple Silicon 原生测试、静态检查、真实网络服务和钥匙串只读检查、受管 ffmpeg 下载及鉴权 m3u8 合并测试；检查通用 ZIP、执行权限和中文空格路径、移动目录后的终端内启动退出。CI 不替代首次系统授权与真实微信验收。
-- 修复 ffmpeg 日志脱敏测试使用 Windows 专用脚本导致无法在 macOS 运行的问题。
-
 ## v0.1.8 · 2026-10-20
 
 Windows 稳定包与 macOS 未签名测试包在同一 v0.1.8 Release 并列提供。macOS 附件由原独立预发布合并至本版，供用户真机验证；原预发布 Release 由本版替代，保留历史 Git 标签。v0.1.8 标签与 Windows 原附件不变，后补 Mac 附件的构建提交和 SHA-256 在发布页单独列出。
 
 ### macOS 测试版
 
+- Release 的 Mac 附件更新为 [双架构原生 CI 通过](https://github.com/MuZiJin701/wx-mini-video/actions/runs/39391500773)的原始通用 ZIP，构建提交为 `94e28d2`；按附件实际字节核对 SHA-256，不重新打包。Windows 原附件与 Git 标签保留。
+- 新增 GitHub Actions 的 macOS 15 Intel / Apple Silicon 原生测试、静态检查、真实网络服务和钥匙串只读检查、受管 ffmpeg 下载及鉴权 m3u8 合并测试；检查通用 ZIP、执行权限和中文空格路径、移动目录后的终端内启动退出。CI 不替代首次系统授权与真实微信验收。
+- 修复 ffmpeg 日志脱敏测试使用 Windows 专用脚本导致无法在 macOS 运行的问题；首次 CI 的 `lipo` 参数顺序错误已修正，该验证脚本不包含在用户下载包中。
 - 新增 macOS 13+ 的 Apple Silicon / Intel 适配与单一便携 ZIP 构建入口，保留 TUI 和解压目录下的 `downloads/`；首次运行保护可能需要按引导移动应用。
 - 新增 macOS 当前网络服务的代理捕获、冲突拒绝、退出恢复及接口切换后暂停/重启流程；独立根证书使用用户钥匙串信任及持久受限存储。
 - 新增两种 Mac 架构的固定 ffmpeg 下载源、SHA-256 校验和执行权限设置；提供正式签名、公证脚本，当前仅生成未签名测试包，真实 Mac 与微信验收待用户验证。
 
-验证：Go 全量测试、`go vet`、两种 Darwin 架构的交叉构建与静态检查、通用 Mach-O 与 ZIP 执行权限检查，以及 Windows 三文件打包检查。签名、公证、macOS 首次启动和真实微信验收未执行，不能据此宣称正式 macOS 支持。
+验证：Go 全量测试、`go vet`、macOS 15 两种架构的原生 CI、交叉构建、通用 Mach-O 与 ZIP 执行权限检查，以及 Windows 三文件打包检查。CI 验证固定 ffmpeg 的实际下载与鉴权合并，并在伪终端检查 AppID 输入界面及退出。签名、公证、Finder 双击、系统授权、macOS 13 和真实微信验收未执行，不能据此宣称正式 macOS 支持。
 
 ### Windows 稳定版
 

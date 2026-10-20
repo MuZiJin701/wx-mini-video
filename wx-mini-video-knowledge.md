@@ -109,6 +109,8 @@ git diff --check
 
 GitHub Actions 的 [macOS 工作流](.github/workflows/macos.yml) 在 `macos-15-intel` 与 `macos-15` 上分别核对 amd64 / arm64 原生环境，运行全量测试、`go vet`、通用包构建及 `python3 build/verify-macos.py`。推送 main、PR 或手动 `workflow_dispatch` 触发；测试包保存为 7 天 Actions 附件，不自动替换 Release。
 
+Mac Release 更新时，下载通过验证的 Actions 原始通用 ZIP，不重新构建或重新压缩；核对两种架构任务产物的 ZIP 摘要及包内可执行文件构建来源，再上传并回下载复核。若两份产物不一致，先查明差异，不能据其中一个任务通过就声称同一附件已通过双架构验证。替换前备份旧附件与说明，发布页同步更新 Mac 构建提交、CI 链接和 SHA-256。
+
 工作流另设置 `WX_MINI_VIDEO_MACOS_INTEGRATION=1`，运行 `go test -v -count=1 -timeout=10m -run '^TestDarwin' ./pkg/system ./pkg/certificate ./internal/minidownload`：真实调用 `route`、`networksetup` 和 `security` 读取网络服务及钥匙串，检查临时私钥权限，下载并校验固定版本 ffmpeg，实际执行鉴权 m3u8 合并。网络服务和信任库只读，不安装证书或更改代理；代理写入/恢复仍由替身测试覆盖。普通测试不启用该变量，不额外下载 ffmpeg。
 
 打包检查在含中文与空格的临时目录解压应用，通过伪终端进入 AppID 输入界面后退出，并移动目录后复测；不选择目标或启动代理。它不能验证 Finder 双击、下载隔离与 App Translocation、Terminal 自动化授权、证书/管理员弹窗、真实微信流量或 macOS 13 兼容性，以上仍需人工验收。
