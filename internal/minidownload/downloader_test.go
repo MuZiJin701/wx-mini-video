@@ -49,6 +49,7 @@ func TestDownloadDirectResumesPartialAndWritesHistory(t *testing.T) {
 	var requests int
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requests++
+		w.Header().Set("ETag", `"original"`)
 		if r.Header.Get("Range") == "" {
 			w.Header().Set("Content-Length", strconv.Itoa(len(body)))
 			_, _ = w.Write(body[:half])
@@ -56,6 +57,9 @@ func TestDownloadDirectResumesPartialAndWritesHistory(t *testing.T) {
 		}
 		if got := r.Header.Get("Range"); got != "bytes="+strconv.Itoa(half)+"-" {
 			t.Fatalf("Range = %q, want resume from %d", got, half)
+		}
+		if r.Header.Get("If-Range") != `"original"` {
+			t.Error("resume did not validate the original entity")
 		}
 		w.Header().Set("Content-Range", fmt.Sprintf("bytes %d-%d/%d", half, len(body)-1, len(body)))
 		w.WriteHeader(http.StatusPartialContent)
@@ -75,7 +79,7 @@ func TestDownloadDirectResumesPartialAndWritesHistory(t *testing.T) {
 	if _, err := d.Download(context.Background(), candidate, ""); err == nil {
 		t.Fatal("first download should fail after the server closes the response early")
 	}
-	partPath := filepath.Join(d.Dir, "resume.mp4.part")
+	partPath := partialPath(filepath.Join(d.Dir, "resume.mp4"), candidate)
 	if got := fileSize(partPath); got != int64(half) {
 		t.Fatalf("partial size = %d, want %d", got, half)
 	}
@@ -197,19 +201,15 @@ func TestLocalizeM3U8ReusesExistingSegments(t *testing.T) {
 
 	d := New(t.TempDir())
 	d.Client = ts.Client()
-	dir := filepath.Join(d.Dir, ".segments", "reuse")
+	body := []byte("#EXTM3U\n#EXTINF:10.000,\n" + ts.URL + "/seg.ts\n")
+	dir := filepath.Join(d.Dir, ".segments", "reuse", miniprogram.CandidateID("", string(body)))
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(dir, "seg_000001.ts"), []byte("cached"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	body := []byte(`#EXTM3U
-#EXTINF:10.000,
-` + ts.URL + `/seg.ts
-`)
-
-	_, stats, err := d.localizeM3U8(context.Background(), "reuse", body, nil)
+	_, stats, err := d.localizeM3U8(context.Background(), "reuse", body, nil, ts.URL)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -239,7 +239,7 @@ func TestLocalizeM3U8ReportsFailedResources(t *testing.T) {
 ` + ts.URL + `/bad.ts
 `)
 
-	_, stats, err := d.localizeM3U8(context.Background(), "failed-stats", body, nil)
+	_, stats, err := d.localizeM3U8(context.Background(), "failed-stats", body, nil, ts.URL)
 	if err == nil {
 		t.Fatal("expected failed resource")
 	}
@@ -303,7 +303,7 @@ func TestLocalizeM3U8DownloadsSegmentsAndResources(t *testing.T) {
 	d.SegmentConcurrency = 2
 	d.SegmentRetries = 2
 
-	localPath, stats, err := d.localizeM3U8(context.Background(), "candidate", body, map[string]string{})
+	localPath, stats, err := d.localizeM3U8(context.Background(), "candidate", body, map[string]string{}, ts.URL)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -350,7 +350,7 @@ func TestLocalizeM3U8KeepsSegmentsOnPartialFailure(t *testing.T) {
 	d.SegmentConcurrency = 2
 	d.SegmentRetries = 1
 
-	_, stats, err := d.localizeM3U8(context.Background(), "failed", body, nil)
+	_, stats, err := d.localizeM3U8(context.Background(), "failed", body, nil, ts.URL)
 	if err == nil {
 		t.Fatal("expected partial failure")
 	}

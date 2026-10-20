@@ -59,13 +59,20 @@ func (c *Interceptor) Start() (err error) {
 		}
 	}()
 	if !c.Settings.ProxySkipInstallRootCert {
-		existing, err := certificate.CheckHasCertificate(c.Cert.Name)
+		thumbprint, err := certificate.Thumbprint(c.Cert.Cert)
+		if err != nil {
+			return err
+		}
+		existing, err := certificate.CheckHasCertificate(thumbprint)
 		if err != nil {
 			return fmt.Errorf("检查证书失败: %v", err)
 		}
 		if !existing {
 			if err := certificate.InstallCertificate(c.Cert.Cert); err != nil {
 				return fmt.Errorf("安装证书失败: %v", err)
+			}
+			if installed, err := certificate.CheckHasCertificate(thumbprint); err != nil || !installed {
+				return fmt.Errorf("根证书安装后未能确认信任: %v", err)
 			}
 		}
 	}

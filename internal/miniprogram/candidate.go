@@ -10,6 +10,7 @@ import (
 	"path"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -84,6 +85,13 @@ func (s *Store) add(candidate Candidate, generation *uint64, cache func() string
 	}
 	if existing, exists := s.items[candidate.ID]; exists {
 		changed := false
+		if candidate.Source == "response" {
+			existing.Source = candidate.Source
+			existing.Headers = candidate.Headers
+			existing.ContentType = candidate.ContentType
+			existing.ContentLength = candidate.ContentLength
+			changed = true
+		}
 		if candidate.CachedPath != "" {
 			existing.CachedPath = candidate.CachedPath
 			changed = true
@@ -100,7 +108,7 @@ func (s *Store) add(candidate Candidate, generation *uint64, cache func() string
 			existing.Title = candidate.Title
 			changed = true
 		}
-		if len(candidate.Headers) > 0 && len(existing.Headers) == 0 {
+		if len(candidate.Headers) > 0 && len(existing.Headers) == 0 && existing.Source != "response" {
 			existing.Headers = candidate.Headers
 			changed = true
 		}
@@ -157,6 +165,9 @@ func (s *Store) SetCachedPath(id, path string) {
 func (s *Store) Clear(appID string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if appID == "" || appID == s.target.AppID {
+		s.generation++
+	}
 	if appID == "" {
 		s.items = make(map[string]Candidate)
 		s.order = nil
@@ -283,6 +294,8 @@ func CleanHeaders(header http.Header) map[string]string {
 		"if-unmodified-since": {},
 		"keep-alive":          {},
 		"proxy-connection":    {},
+		"proxy-authorization": {},
+		"proxy-authenticate":  {},
 		"range":               {},
 		"transfer-encoding":   {},
 	}
@@ -301,6 +314,46 @@ func CleanHeaders(header http.Header) map[string]string {
 		return nil
 	}
 	return clean
+}
+
+// HeadersForURL 只在同源 URL 之间复用凭据，跨源只保留公开的请求元数据。
+func HeadersForURL(headers map[string]string, sourceURL, targetURL string) map[string]string {
+	source, err1 := url.Parse(sourceURL)
+	target, err2 := url.Parse(targetURL)
+	sameOrigin := err1 == nil && err2 == nil && source.Host != "" && target.Host != "" && strings.EqualFold(source.Scheme, target.Scheme) && strings.EqualFold(source.Host, target.Host)
+	out := make(map[string]string)
+	for key, value := range headers {
+		switch strings.ToLower(key) {
+		case "user-agent", "referer", "accept", "accept-language":
+			out[key] = value
+		default:
+			if sameOrigin {
+				out[key] = value
+			}
+		}
+	}
+	return out
+}
+
+var contentRangeRegexp = regexp.MustCompile(`^bytes ([0-9]+)-([0-9]+)/([0-9]+)$`)
+
+func ParseContentRange(value string) (start, end, total int64, ok bool) {
+	match := contentRangeRegexp.FindStringSubmatch(strings.TrimSpace(value))
+	if match == nil {
+		return
+	}
+	var err error
+	if start, err = strconv.ParseInt(match[1], 10, 64); err != nil {
+		return
+	}
+	if end, err = strconv.ParseInt(match[2], 10, 64); err != nil {
+		return
+	}
+	if total, err = strconv.ParseInt(match[3], 10, 64); err != nil {
+		return
+	}
+	ok = start >= 0 && end >= start && total > end
+	return
 }
 
 var mediaURLRegexp = regexp.MustCompile(`https?://[^\s"'<>\\]+`)

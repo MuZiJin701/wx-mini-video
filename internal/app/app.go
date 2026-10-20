@@ -45,7 +45,6 @@ func NewRuntime(cfg *config.Config) *Runtime {
 		Settings:   settings,
 		Store:      store,
 		Downloader: downloader,
-		cert:       config.LoadCertFiles(),
 	}
 	downloader.OnProgress = r.setProgress
 	return r
@@ -93,11 +92,21 @@ func (r *Runtime) Start() error {
 		}
 		r.proxyServer = nil
 	}
+	if r.cert == nil {
+		cert, err := config.LoadCertFiles()
+		if err != nil {
+			return fmt.Errorf("准备根证书失败: %w", err)
+		}
+		r.cert = cert
+	}
+	certPath, err := r.exportRootCert()
+	if err != nil {
+		return fmt.Errorf("导出公开根证书失败: %w", err)
+	}
 	interceptorCfg := interceptor.NewInterceptorSettings(r.Config, r.Settings, r.Store)
 	server := interceptor.NewInterceptorServer(interceptorCfg, r.cert)
 	r.proxyServer = server
 	server.Interceptor.AddPostPlugin(interceptor.CreateMiniProgramInterceptorPlugin(r.Settings.Target, r.Store, r.Settings.DownloadDir))
-	certPath := r.exportRootCert()
 	if err := server.Start(); err != nil {
 		if certPath != "" {
 			return fmt.Errorf("%w；如证书自动安装失败，请用管理员权限重新运行，或手动安装证书文件: %s", err, certPath)
@@ -245,16 +254,16 @@ func (r *Runtime) ProxyAddr() string {
 	return fmt.Sprintf("%s:%d", r.Settings.ProxyHostname, r.Settings.ProxyPort)
 }
 
-func (r *Runtime) exportRootCert() string {
+func (r *Runtime) exportRootCert() (string, error) {
 	if len(r.cert.Cert) == 0 || r.Settings.DownloadDir == "" {
-		return ""
+		return "", fmt.Errorf("证书或下载目录为空")
 	}
 	if err := os.MkdirAll(r.Settings.DownloadDir, 0o755); err != nil {
-		return ""
+		return "", err
 	}
 	path := filepath.Join(r.Settings.DownloadDir, "WxMiniVideoRoot.cer")
 	if err := os.WriteFile(path, r.cert.Cert, 0o644); err != nil {
-		return ""
+		return "", err
 	}
-	return path
+	return path, nil
 }

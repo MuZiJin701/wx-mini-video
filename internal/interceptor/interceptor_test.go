@@ -60,7 +60,7 @@ func TestStartRollsBackPartiallyEnabledProxy(t *testing.T) {
 	c := NewInterceptor(&InterceptorConfig{
 		ProxySetSystem: true, ProxySkipInstallRootCert: true,
 		ProxyServerHostname: "127.0.0.1", ProxyServerPort: 2023,
-	}, certificate.DefaultCertFiles)
+	}, testRootCertificate(t))
 	if err := c.Start(); !errors.Is(err, enableErr) || !errors.Is(err, rollbackErr) {
 		t.Fatalf("Start() = %v, want setup and rollback errors", err)
 	}
@@ -83,7 +83,7 @@ func TestStartLeavesSystemProxyAloneWithoutSnapshot(t *testing.T) {
 		t.Fatal("must not change system proxy without a captured snapshot")
 		return nil
 	}
-	c := NewInterceptor(&InterceptorConfig{ProxySetSystem: true, ProxySkipInstallRootCert: true}, certificate.DefaultCertFiles)
+	c := NewInterceptor(&InterceptorConfig{ProxySetSystem: true, ProxySkipInstallRootCert: true}, testRootCertificate(t))
 	if err := c.Start(); err == nil {
 		t.Fatal("Start succeeded without a proxy snapshot")
 	}
@@ -93,4 +93,13 @@ func TestStartLeavesSystemProxyAloneWithoutSnapshot(t *testing.T) {
 	if err := c.Stop(); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func testRootCertificate(t *testing.T) *certificate.CertFileAndKeyFile {
+	t.Helper()
+	cert, err := certificate.LoadOrCreate(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return cert
 }

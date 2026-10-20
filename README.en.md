@@ -7,10 +7,10 @@ Save images, direct videos, direct audio, and m3u8 media loaded by desktop WeCha
 ## Get started
 
 1. Download `wx-mini-video-windows-amd64.zip`, **extract the whole archive**, and double-click `wx-mini-video.exe`.
-2. Accept the administrator (UAC) prompt. The app prefers an installed Windows Terminal. Starting the proxy for the first time installs a local root certificate.
+2. Accept the administrator (UAC) prompt. The app prefers an installed Windows Terminal. Starting the proxy for the first time generates and installs a root certificate unique to the current Windows user on this computer. If an old shared root is detected, choose whether to remove it when prompted.
 3. **Choose a Mini Program**: enter its AppID if known; the name is optional. Otherwise press `Ctrl+D`, open the Mini Program in desktop WeChat, select its AppID with `↑/↓`, press `Enter` to fill in its name, then `Enter` again to confirm.
 4. **Reload the media**: once the proxy is running, reopen the image or replay the video or audio. Select a candidate with `↑/↓`, press `d` or `Enter` to download, and `o` to open the download folder. The list starts on Videos; press `1` for All or `5` for Audio.
-5. Press `q` when finished to restore the previous system proxy. On the AppID entry screen, use `Esc` or `Ctrl+C` to quit.
+5. Press `q` when finished to restore the previous system proxy. If restoration fails, the error screen stays open: press `r` to retry or `f` to explicitly force exit. On the AppID entry screen, use `Esc` or `Ctrl+C` to quit.
 
 Files are saved to `downloads/` beside the app by default. To upgrade, replace the exe and keep `wx-mini-video.yaml` and `downloads/`.
 
@@ -45,7 +45,7 @@ When the download finishes, press `o` to view the file:
 | `d`, `Enter` | Download the selection |
 | `Tab`, `Shift+Tab` | Switch categories |
 | `1/2/3/4/5` | All / Images / Videos / m3u8 / Audio |
-| `c` | Clear the list before capturing again |
+| `c` | Clear the list and discard earlier in-flight results; keep local files |
 | `s` | Return to target selection; blocked during downloads |
 | `i`, `l` | Toggle details and logs |
 | `o` | Open the download folder |
@@ -56,7 +56,8 @@ When the download finishes, press `o` to view the file:
 - Only one target is active at a time. Discovery collects no media; reload content after confirming a target. Switching clears the list and progress while keeping local files.
 - Media is accepted only when the request's source AppID exactly matches the target. Missing or invalid sources are excluded, including with manual AppID entry. Names are optional labels and do not affect filtering.
 - Images, direct videos, and direct audio are saved unchanged. m3u8 requires ffmpeg, which is downloaded and verified on first use and is not bundled. To use an existing executable, set `download.ffmpeg` to its full path.
-- **Certificate risk: the default root certificate currently uses a publicly available shared private key. Installation changes Windows system trust; quitting does not remove the certificate.** See [risks and certificate removal (Chinese)](https://github.com/MuZiJin701/wx-mini-video/blob/main/wx-mini-video-knowledge.md#证书风险与清理).
+- The root certificate and private key are generated and reused in a restricted local user directory and are not distributed with the app. A different computer or Windows user needs a new trust setup. Installation still changes Windows system trust; quitting does not remove the certificate. Old shared roots require separate removal. See [certificates and migration (Chinese)](https://github.com/MuZiJin701/wx-mini-video/blob/main/wx-mini-video-knowledge.md#证书风险与清理).
+- Partial direct downloads are isolated by resource and resumed only with server validators; otherwise they restart. Legacy `.part` files remain untouched and are not reused. Cross-origin media extracted from JSON receives no API credentials; replay the media to capture its own request if authentication is needed.
 
 ## Troubleshooting
 

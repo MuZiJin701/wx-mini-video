@@ -6,6 +6,18 @@ import (
 	"time"
 )
 
+func TestParseContentRangeValidatesCompleteEntityLength(t *testing.T) {
+	for _, raw := range []string{"bytes 0-2/*", "bytes 3-2/6", "bytes 0-6/6", "bytes -1-2/6", "bytes 0-2/9999999999999999999999999", "garbage"} {
+		if _, _, _, ok := ParseContentRange(raw); ok {
+			t.Fatalf("accepted invalid range %q", raw)
+		}
+	}
+	start, end, total, ok := ParseContentRange("bytes 3-5/6")
+	if !ok || start != 3 || end != 5 || total != 6 {
+		t.Fatal("valid range rejected")
+	}
+}
+
 func TestClassifyDetectsMedia(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -111,6 +123,7 @@ func TestCleanHeadersRemovesUnsafeReplayHeaders(t *testing.T) {
 	h.Set("User-Agent", "ua")
 	h.Set("Referer", "https://example.com")
 	h.Set("Cookie", "a=b")
+	h.Set("Proxy-Authorization", "proxy-secret")
 	h.Set("Host", "bad")
 	h.Set("Accept-Encoding", "gzip")
 	h.Set("If-None-Match", "etag")
@@ -122,6 +135,9 @@ func TestCleanHeadersRemovesUnsafeReplayHeaders(t *testing.T) {
 	}
 	if _, ok := got["Host"]; ok {
 		t.Fatalf("Host should be removed, got %#v", got)
+	}
+	if _, ok := got["Proxy-Authorization"]; ok {
+		t.Fatal("proxy credentials must not be replayed to media servers")
 	}
 	if _, ok := got["Accept-Encoding"]; ok {
 		t.Fatalf("Accept-Encoding should be removed, got %#v", got)

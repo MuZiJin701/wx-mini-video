@@ -1,8 +1,6 @@
 package config
 
 import (
-	"bytes"
-	"encoding/pem"
 	"errors"
 	"fmt"
 	"os"
@@ -159,67 +157,29 @@ func resolveDownloadDir(value, rootDir string) string {
 	return value
 }
 
-func LoadCertFiles() *certificate.CertFileAndKeyFile {
-	cert := certificate.DefaultCertFiles
-	var dirs []string
-	if home, err := os.UserHomeDir(); err == nil {
-		dirs = append(dirs, filepath.Join(home, ".mitmproxy"))
-	}
-	if runtime.GOOS == "windows" {
-		if appdata := os.Getenv("APPDATA"); appdata != "" {
-			dirs = append(dirs, filepath.Join(appdata, "mitmproxy"))
+func LoadCertFiles() (*certificate.CertFileAndKeyFile, error) {
+	certPath := strings.TrimSpace(viper.GetString("cert.file"))
+	keyPath := strings.TrimSpace(viper.GetString("cert.key"))
+	if certPath != "" || keyPath != "" {
+		if certPath == "" || keyPath == "" {
+			return nil, fmt.Errorf("cert.file 与 cert.key 必须一起配置")
 		}
-	}
-	for _, dir := range dirs {
-		certPath := filepath.Join(dir, "mitmproxy-ca-cert.pem")
-		keyPath := filepath.Join(dir, "mitmproxy-ca.pem")
-		if certBytes, err1 := os.ReadFile(certPath); err1 == nil {
-			if keyBytes, err2 := os.ReadFile(keyPath); err2 == nil {
-				return &certificate.CertFileAndKeyFile{Name: "mitmproxy", Cert: certBytes, PrivateKey: keyBytes}
-			}
+		certBytes, err := os.ReadFile(certPath)
+		if err != nil {
+			return nil, fmt.Errorf("读取 cert.file 失败: %w", err)
 		}
-		if keyBytes, err := os.ReadFile(keyPath); err == nil {
-			if loaded := splitMitmproxyKey(keyBytes); loaded != nil {
-				return loaded
-			}
+		keyBytes, err := os.ReadFile(keyPath)
+		if err != nil {
+			return nil, fmt.Errorf("读取 cert.key 失败: %w", err)
 		}
+		return certificate.Parse(certBytes, keyBytes)
 	}
-	certPath := viper.GetString("cert.file")
-	keyPath := viper.GetString("cert.key")
-	if certPath != "" && keyPath != "" {
-		if certBytes, err1 := os.ReadFile(certPath); err1 == nil {
-			if keyBytes, err2 := os.ReadFile(keyPath); err2 == nil {
-				cert = &certificate.CertFileAndKeyFile{Name: viper.GetString("cert.name"), Cert: certBytes, PrivateKey: keyBytes}
-			}
-		}
+	localDir, err := os.UserCacheDir()
+	if err != nil {
+		return nil, err
 	}
-	return cert
+	return certificate.LoadOrCreate(filepath.Join(localDir, "wx-mini-video", "certificates"))
 }
-
-func splitMitmproxyKey(keyBytes []byte) *certificate.CertFileAndKeyFile {
-	rest := keyBytes
-	var certBlocks [][]byte
-	var keyBlock []byte
-	for {
-		block, rem := pem.Decode(rest)
-		if block == nil {
-			break
-		}
-		rest = rem
-		if block.Type == "CERTIFICATE" {
-			if enc := pem.EncodeToMemory(block); enc != nil {
-				certBlocks = append(certBlocks, enc)
-			}
-		} else if strings.Contains(block.Type, "PRIVATE KEY") {
-			keyBlock = pem.EncodeToMemory(block)
-		}
-	}
-	if len(certBlocks) == 0 || len(keyBlock) == 0 {
-		return nil
-	}
-	return &certificate.CertFileAndKeyFile{Name: "mitmproxy", Cert: bytes.Join(certBlocks, []byte("")), PrivateKey: keyBlock}
-}
-
 func (c *Config) GetDebugInfo() map[string]string {
 	return map[string]string{
 		"base_dir":      c.RootDir,

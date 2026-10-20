@@ -18,11 +18,13 @@ import (
 	"wx_channel/internal/app"
 	"wx_channel/internal/minidownload"
 	"wx_channel/internal/miniprogram"
+	"wx_channel/pkg/certificate"
 )
 
 type startMsg struct {
 	err      error
 	duration time.Duration
+	legacy   bool
 }
 
 type tickMsg time.Time
@@ -35,30 +37,35 @@ type downloadMsg struct {
 type logMsg string
 
 type model struct {
-	runtime      *app.Runtime
-	candidates   []miniprogram.Candidate
-	selected     int
-	category     category
-	logs         []string
-	showLogs     bool
-	showDetails  bool
-	width        int
-	height       int
-	started      bool
-	starting     bool
-	startErr     error
-	downloading  bool
-	downloadPath string
-	progress     minidownload.Progress
-	logOffset    int
-	targetReady  bool
-	appIDInput   string
-	nameInput    string
-	inputFocus   int
-	inputErr     string
-	discovering  bool
-	programs     []miniprogram.Target
-	programIndex int
+	runtime       *app.Runtime
+	candidates    []miniprogram.Candidate
+	selected      int
+	category      category
+	logs          []string
+	showLogs      bool
+	showDetails   bool
+	width         int
+	height        int
+	started       bool
+	starting      bool
+	startErr      error
+	downloading   bool
+	downloadPath  string
+	progress      minidownload.Progress
+	logOffset     int
+	targetReady   bool
+	appIDInput    string
+	nameInput     string
+	inputFocus    int
+	inputErr      string
+	discovering   bool
+	programs      []miniprogram.Target
+	programIndex  int
+	legacyChecked bool
+	legacyPrompt  bool
+	legacyWarning string
+	stopErr       error
+	stopping      bool
 }
 
 type category string
@@ -107,6 +114,35 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = v.Width
 		m.height = v.Height
 	case tea.KeyMsg:
+		if m.stopErr != nil {
+			switch v.String() {
+			case "r":
+				return m.requestQuit()
+			case "f":
+				return m, tea.Quit
+			}
+			return m, nil
+		}
+		if m.stopping {
+			return m, nil
+		}
+		if m.legacyPrompt {
+			switch v.String() {
+			case "y":
+				m.legacyPrompt = false
+				m.starting = true
+				return m, removeLegacyRootCmd
+			case "n":
+				m.legacyPrompt = false
+				m.legacyChecked = true
+				m.legacyWarning = "旧共享根证书尚未清理，其系统信任风险仍然存在。"
+				m.starting = true
+				return m, m.startProxy
+			case "q", "ctrl+c", "esc":
+				return m.requestQuit()
+			}
+			return m, nil
+		}
 		if !m.targetReady {
 			if m.discovering {
 				return m.updateDiscovery(v)
@@ -115,7 +151,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		switch v.String() {
 		case "q", "ctrl+c":
-			return m, tea.Sequence(m.stopProxy, tea.Quit)
+			return m.requestQuit()
 		case "tab":
 			m.nextCategory(1)
 		case "shift+tab":
@@ -197,6 +233,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case startMsg:
 		m.starting = false
+		if m.stopping {
+			return m, m.stopProxy
+		}
+		if v.legacy {
+			m.legacyPrompt = true
+			return m, nil
+		}
 		m.started = v.err == nil
 		m.startErr = v.err
 		if v.err != nil {
@@ -204,6 +247,28 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.addLog(fmt.Sprintf("代理已启动: %s (耗时 %s)", m.runtime.ProxyAddr(), v.duration.Round(time.Millisecond)))
 		}
+	case legacyCleanupMsg:
+		m.starting = false
+		if m.stopping {
+			return m, m.stopProxy
+		}
+		m.legacyChecked = true
+		if v.err != nil {
+			m.legacyWarning = "旧共享根证书清理失败，系统信任风险仍然存在: " + v.err.Error()
+			m.addLog(m.legacyWarning)
+		} else {
+			m.addLog("旧共享根证书已按指纹清理")
+		}
+		m.starting = true
+		return m, m.startProxy
+	case stopMsg:
+		m.stopping = false
+		m.stopErr = v.err
+		if v.err == nil {
+			return m, tea.Quit
+		}
+		m.started = false
+		m.addLog("恢复系统代理或关闭代理失败: " + v.err.Error())
 	case tickMsg:
 		if m.discovering {
 			m.programs = m.runtime.Store.Programs()
@@ -226,6 +291,26 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) View() string {
+	if m.stopErr != nil {
+		return errorStyle.Render("退出未完成：恢复系统代理或关闭代理失败") + "\n\n" +
+			lipgloss.NewStyle().Width(max(30, m.width-2)).Render(m.stopErr.Error()) +
+			"\n\n系统代理可能仍指向本工具，网络可能不可用。\n按 r 重试恢复并退出；按 f 明确强制退出（需要自行恢复网络设置）。\n"
+	}
+	if m.stopping {
+		return "正在恢复系统代理并退出...\n"
+	}
+	if m.legacyPrompt {
+		return "检测到旧共享根证书（私钥公开）\n\n指纹: " + certificate.LegacyRootThumbprint +
+			"\n\n安装独立证书不会撤销旧证书的系统信任。\n将检查并清理本机与当前用户的根证书库。\n删除可能影响同样依赖此证书的其他代理工具。\n\n按 y 确认按上述指纹删除；按 n 保留并继续（风险仍在）；按 q 退出。\n"
+	}
+	prefix := ""
+	if m.legacyWarning != "" {
+		prefix = errorStyle.Render(m.legacyWarning) + "\n\n"
+	}
+	return prefix + m.viewContent()
+}
+
+func (m model) viewContent() string {
 	if !m.targetReady {
 		if m.discovering {
 			return m.renderDiscovery()
@@ -301,7 +386,7 @@ func (m model) View() string {
 func (m model) updateTargetInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "ctrl+c", "esc":
-		return m, tea.Sequence(m.stopProxy, tea.Quit)
+		return m.requestQuit()
 	case "ctrl+d":
 		m.runtime.SetTarget(miniprogram.Target{})
 		m.discovering = true
@@ -767,14 +852,20 @@ func (m model) appendLogFile(line string) {
 
 func (m model) startProxy() tea.Msg {
 	startedAt := time.Now()
+	if !m.legacyChecked {
+		legacy, err := legacyRootPresent()
+		if err != nil {
+			return startMsg{err: fmt.Errorf("检查旧共享根证书失败: %w", err)}
+		}
+		if legacy {
+			return startMsg{legacy: true}
+		}
+	}
 	return startMsg{err: m.runtime.Start(), duration: time.Since(startedAt)}
 }
 
 func (m model) stopProxy() tea.Msg {
-	if err := m.runtime.Stop(); err != nil {
-		return logMsg("关闭代理失败: " + err.Error())
-	}
-	return logMsg("代理已关闭")
+	return stopMsg{err: m.runtime.Stop()}
 }
 
 func tick() tea.Cmd {

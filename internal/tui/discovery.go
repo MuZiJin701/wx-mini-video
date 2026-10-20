@@ -21,7 +21,7 @@ func (m model) ensureProxy() (tea.Model, tea.Cmd) {
 func (m model) updateDiscovery(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "q", "ctrl+c", "esc":
-		return m, tea.Sequence(m.stopProxy, tea.Quit)
+		return m.requestQuit()
 	case "ctrl+d":
 		m.discovering = false
 		m.inputErr = ""

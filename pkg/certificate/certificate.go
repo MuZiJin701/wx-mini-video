@@ -1,14 +1,17 @@
 package certificate
 
 import (
-	_ "embed"
+	"crypto/rsa"
+	"crypto/sha1"
+	"crypto/tls"
+	"crypto/x509"
+	"encoding/hex"
+	"encoding/pem"
+	"errors"
+	"fmt"
+	"strings"
+	"time"
 )
-
-//go:embed certs/SunnyRoot.cer
-var cert_file []byte
-
-//go:embed certs/private.key
-var private_key_file []byte
 
 type CertFileAndKeyFile struct {
 	Name       string
@@ -16,10 +19,46 @@ type CertFileAndKeyFile struct {
 	PrivateKey []byte
 }
 
-var DefaultCertFiles = &CertFileAndKeyFile{
-	Name:       "SunnyNet",
-	Cert:       cert_file,
-	PrivateKey: private_key_file,
+const LegacyRootThumbprint = "D70CD039051F77C30673B8209FC15EFA650ED52C"
+
+var fetchCertificatesForCheck = fetchCertificates
+
+func Parse(certPEM, keyPEM []byte) (*CertFileAndKeyFile, error) {
+	pair, err := tls.X509KeyPair(certPEM, keyPEM)
+	if err != nil {
+		return nil, fmt.Errorf("证书与私钥无效或不匹配: %w", err)
+	}
+	root, err := x509.ParseCertificate(pair.Certificate[0])
+	if err != nil {
+		return nil, err
+	}
+	if !root.IsCA || !root.BasicConstraintsValid || root.KeyUsage&x509.KeyUsageCertSign == 0 {
+		return nil, fmt.Errorf("证书不具备 CA 签发能力")
+	}
+	if time.Now().Before(root.NotBefore) || time.Now().After(root.NotAfter) {
+		return nil, fmt.Errorf("根证书尚未生效或已经过期")
+	}
+	key, ok := pair.PrivateKey.(*rsa.PrivateKey)
+	if !ok {
+		return nil, fmt.Errorf("Echo 代理需要 RSA 根证书私钥")
+	}
+	var publicPEM []byte
+	for _, der := range pair.Certificate {
+		publicPEM = append(publicPEM, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})...)
+	}
+	return &CertFileAndKeyFile{Name: root.Subject.CommonName, Cert: publicPEM, PrivateKey: pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key)})}, nil
+}
+
+func Thumbprint(certPEM []byte) (string, error) {
+	block, _ := pem.Decode(certPEM)
+	if block == nil || block.Type != "CERTIFICATE" {
+		return "", fmt.Errorf("根证书不是有效的 PEM 证书")
+	}
+	if _, err := x509.ParseCertificate(block.Bytes); err != nil {
+		return "", err
+	}
+	sum := sha1.Sum(block.Bytes)
+	return strings.ToUpper(hex.EncodeToString(sum[:])), nil
 }
 
 type CertificateSubject struct {
@@ -46,14 +85,13 @@ func FetchCertificates() ([]Certificate, error) {
 	return fetchCertificates()
 }
 
-// 根据名称检查是否存在指定证书
-func CheckHasCertificate(cert_name string) (bool, error) {
-	certificates, err := fetchCertificates()
+func CheckHasCertificate(thumbprint string) (bool, error) {
+	certificates, err := fetchCertificatesForCheck()
 	if err != nil {
 		return false, err
 	}
 	for _, cert := range certificates {
-		if cert.Subject.CN == cert_name {
+		if strings.EqualFold(strings.ReplaceAll(cert.Thumbprint, " ", ""), thumbprint) {
 			return true, nil
 		}
 	}
@@ -65,7 +103,14 @@ func InstallCertificate(cert_data []byte) error {
 	return installCertificate(cert_data)
 }
 
-// 卸载指定证书
-func UninstallCertificate(name string) error {
-	return uninstallCertificate(name)
+func RemoveLegacyRoot() error {
+	cleanupErr := uninstallCertificate(LegacyRootThumbprint)
+	found, err := CheckHasCertificate(LegacyRootThumbprint)
+	if err != nil {
+		return errors.Join(cleanupErr, err)
+	}
+	if found {
+		return errors.Join(cleanupErr, fmt.Errorf("旧共享根证书删除后仍在信任库中"))
+	}
+	return nil
 }

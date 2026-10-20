@@ -1,10 +1,42 @@
 package config
 
 import (
+	"github.com/spf13/viper"
 	"os"
 	"path/filepath"
 	"testing"
+	"wx_channel/pkg/certificate"
 )
+
+func TestExplicitCertificatesNeverFallBackAndTakePriority(t *testing.T) {
+	viper.Reset()
+	t.Cleanup(viper.Reset)
+	cert, err := certificate.LoadOrCreate(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	certPath, keyPath := filepath.Join(dir, "custom.pem"), filepath.Join(dir, "custom.key")
+	if err := os.WriteFile(certPath, cert.Cert, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(keyPath, cert.PrivateKey, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	viper.Set("cert.file", certPath)
+	if _, err := LoadCertFiles(); err == nil {
+		t.Fatal("incomplete configuration silently fell back")
+	}
+	viper.Set("cert.key", filepath.Join(dir, "missing.key"))
+	if _, err := LoadCertFiles(); err == nil {
+		t.Fatal("missing explicit private key silently fell back")
+	}
+	viper.Set("cert.key", keyPath)
+	got, err := LoadCertFiles()
+	if err != nil || string(got.Cert) != string(cert.Cert) {
+		t.Fatalf("explicit root not selected: %v", err)
+	}
+}
 
 func TestSettingsReadsTargetFromConfig(t *testing.T) {
 	dir := t.TempDir()

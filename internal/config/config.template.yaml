@@ -20,4 +20,4 @@ target:
 cert:
   file: ""
   key: ""
-  name: "Echo"
+  name: "Echo" # 兼容旧配置；证书信任检查使用指纹，不使用名称

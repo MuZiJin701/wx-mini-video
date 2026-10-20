@@ -167,17 +167,24 @@ func read_reg_value(path string, name string) (string, error) {
 		}
 		return "", fmt.Errorf("读取系统代理失败，%v", outputText)
 	}
-	for _, line := range strings.Split(string(output), "\n") {
-		if !strings.Contains(line, name) {
+	return parseRegValue(string(output), name), nil
+}
+
+func parseRegValue(output, name string) string {
+	for _, line := range strings.Split(output, "\n") {
+		line = strings.TrimSpace(line)
+		fieldEnd := strings.IndexAny(line, " \t")
+		if fieldEnd < 0 || !strings.EqualFold(line[:fieldEnd], name) {
 			continue
 		}
-		fields := strings.Fields(line)
-		if len(fields) < 3 {
-			continue
+		rest := strings.TrimSpace(line[fieldEnd:])
+		typeEnd := strings.IndexAny(rest, " \t")
+		if typeEnd < 0 {
+			return ""
 		}
-		return fields[len(fields)-1], nil
+		return strings.TrimSpace(rest[typeEnd:])
 	}
-	return "", nil
+	return ""
 }
 
 func parse_reg_dword(value string) (int64, error) {

@@ -24,7 +24,7 @@ func fetchCertificates() ([]Certificate, error) {
 
 func fetchCertificatesWithPowerShell() ([]Certificate, error) {
 	// PowerShell 2.0 compatible command
-	cmd := "Get-ChildItem Cert:\\LocalMachine\\Root | ForEach-Object { $_.Thumbprint + \"###\" + $_.Subject }"
+	cmd := "$ErrorActionPreference='Stop'; Get-ChildItem Cert:\\LocalMachine\\Root, Cert:\\CurrentUser\\Root | ForEach-Object { $_.Thumbprint + \"###\" + $_.Subject }"
 	ps := exec.Command("powershell.exe", "-NoProfile", "-Command", cmd)
 	output, err2 := ps.CombinedOutput()
 	if err2 != nil {
@@ -55,12 +55,15 @@ func fetchCertificatesWithPowerShell() ([]Certificate, error) {
 }
 
 func fetchCertificatesWithCertutil() ([]Certificate, error) {
-	cmd := exec.Command("certutil", "-store", "Root")
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return nil, fmt.Errorf("certutil 获取证书失败，%v, %s\n", err.Error(), strings.TrimSpace(string(output)))
+	var certificates []Certificate
+	for _, args := range [][]string{{"-store", "Root"}, {"-user", "-store", "Root"}} {
+		output, err := exec.Command("certutil", args...).CombinedOutput()
+		if err != nil {
+			return nil, fmt.Errorf("certutil 获取证书失败: %w, %s", err, strings.TrimSpace(string(output)))
+		}
+		certificates = append(certificates, parseCertutilCertificates(string(output))...)
 	}
-	return parseCertutilCertificates(string(output)), nil
+	return certificates, nil
 }
 
 func parseCertificateSubject(subject string) CertificateSubject {
@@ -131,11 +134,12 @@ func parseCertutilCertificates(output string) []Certificate {
 }
 
 func installCertificate(cert_data []byte) error {
-	cert_file, err := os.CreateTemp("", "SunnyRoot.cer")
+	cert_file, err := os.CreateTemp("", "WxMiniVideoRoot-*.cer")
 	if err != nil {
 		return fmt.Errorf("没有创建证书的权限，%v\n", err.Error())
 	}
 	defer os.Remove(cert_file.Name())
+	defer cert_file.Close()
 	if _, err := cert_file.Write(cert_data); err != nil {
 		return fmt.Errorf("获取证书失败，%v\n", err.Error())
 	}
@@ -151,28 +155,18 @@ func installCertificate(cert_data []byte) error {
 	return nil
 }
 
-func uninstallCertificate(name string) error {
-	fmt.Println(name)
-	// Remove-Item "Cert:\LocalMachine\Root\D70CD039051F77C30673B8209FC15EFA650ED52C"
-	certificates, err := fetchCertificates()
-	if err != nil {
-		return err
+var runCertificateDelete = func(args ...string) ([]byte, error) { return exec.Command("certutil", args...).CombinedOutput() }
+
+func uninstallCertificate(thumbprint string) error {
+	if thumbprint != LegacyRootThumbprint {
+		return fmt.Errorf("只允许按固定指纹清理旧共享根证书")
 	}
-	var matched *Certificate
-	for _, cert := range certificates {
-		if cert.Subject.CN == name {
-			matched = &cert
-			break
+	var cleanupErr error
+	for _, args := range [][]string{{"-delstore", "Root", thumbprint}, {"-user", "-delstore", "Root", thumbprint}} {
+		output, err := runCertificateDelete(args...)
+		if err != nil {
+			cleanupErr = errors.Join(cleanupErr, fmt.Errorf("删除证书失败: %w, %s", err, strings.TrimSpace(string(output))))
 		}
 	}
-	if matched == nil {
-		return errors.New("没有找到要删除的证书")
-	}
-	cmd := fmt.Sprintf("Get-ChildItem Cert:\\LocalMachine\\Root\\%v | Remove-Item", matched.Thumbprint)
-	ps := exec.Command("powershell.exe", "-NoProfile", "-Command", cmd)
-	output, err2 := ps.CombinedOutput()
-	if err2 != nil {
-		return fmt.Errorf("删除证书时发生错误，%v\n", string(output))
-	}
-	return nil
+	return cleanupErr
 }

@@ -44,6 +44,15 @@ func CreateMiniProgramInterceptorPlugin(target miniprogram.Target, store *minipr
 			}
 			contentType := ctx.GetResponseHeader("Content-Type")
 			contentLength := parseContentLength(ctx.GetResponseHeader("Content-Length"))
+			if rawRange := ctx.GetResponseHeader("Content-Range"); rawRange != "" {
+				_, _, total, ok := miniprogram.ParseContentRange(rawRange)
+				contentLength = 0
+				if ok {
+					contentLength = total
+				}
+			} else if response := ctx.Res(); response != nil && response.StatusCode == http.StatusPartialContent {
+				contentLength = 0
+			}
 			kind, suffix := miniprogram.Classify(contentType, rawURL)
 			headers := miniprogram.CleanHeaders(req.Header)
 			sourceURL := rawURL
@@ -84,8 +93,7 @@ func CreateMiniProgramInterceptorPlugin(target miniprogram.Target, store *minipr
 					continue
 				}
 				candidate.SourceURL = sourceURL
-				candidate.ContentType = contentType
-				candidate.Headers = headers
+				candidate.Headers = miniprogram.HeadersForURL(headers, sourceURL, candidate.URL)
 				candidate.AppID = target.AppID
 				candidate.AppName = target.Name
 				_, _ = store.AddForTarget(generation, candidate, nil)
@@ -118,7 +126,7 @@ func cacheM3U8(body []byte, dir string, candidate miniprogram.Candidate) string 
 		return ""
 	}
 	localPath := filepath.Join(dir, candidate.ID+".m3u8")
-	if err := os.WriteFile(localPath, rewriteRelativeSegments(body, candidate.URL), 0o644); err != nil {
+	if err := os.WriteFile(localPath, body, 0o644); err != nil {
 		return ""
 	}
 	return localPath
@@ -154,32 +162,6 @@ func fetchM3U8HTTP(candidate miniprogram.Candidate) []byte {
 		return nil
 	}
 	return body
-}
-
-func rewriteRelativeSegments(body []byte, baseURL string) []byte {
-	base, err := url.Parse(baseURL)
-	if err != nil {
-		return body
-	}
-	lines := strings.Split(string(body), "\n")
-	var out strings.Builder
-	for _, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		if trimmed == "" || strings.HasPrefix(trimmed, "#") || strings.HasPrefix(trimmed, "http://") || strings.HasPrefix(trimmed, "https://") {
-			out.WriteString(line)
-			out.WriteString("\n")
-			continue
-		}
-		rel, err := url.Parse(trimmed)
-		if err != nil {
-			out.WriteString(line)
-			out.WriteString("\n")
-			continue
-		}
-		out.WriteString(base.ResolveReference(rel).String())
-		out.WriteString("\n")
-	}
-	return []byte(strings.TrimRight(out.String(), "\n"))
 }
 
 func parseContentLength(value string) int64 {

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 
@@ -28,10 +29,13 @@ func main() {
 		os.Exit(1)
 	}
 	runtime := app.NewRuntime(cfg)
-	defer runtime.Stop()
+	defer func() {
+		if err := runtime.Stop(); err != nil {
+			system.ShowStartupError(fmt.Errorf("恢复系统代理或关闭代理失败: %w", err))
+		}
+	}()
 	if err := tui.Run(runtime); err != nil {
-		fmt.Printf("运行失败: %v\n", err)
-		_ = runtime.Stop()
+		system.ShowStartupError(errors.Join(err, runtime.Stop()))
 		os.Exit(1)
 	}
 }
