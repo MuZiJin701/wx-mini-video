@@ -455,7 +455,8 @@ func TestMiniProgramPluginUnknownBinaryFallback(t *testing.T) {
 				t.Fatalf("candidates = %#v, want %d", got, tt.wantCount)
 			}
 			if tt.wantCount == 0 {
-				if ctx.reads != 0 {
+				// HTML/JS 页面需要读取正文做内联媒体扫描，其余被丢弃类型不应读取正文。
+				if ctx.reads != 0 && !strings.HasPrefix(tt.contentType, "text/html") {
 					t.Fatal("dropped unknown binary should not be buffered")
 				}
 				return

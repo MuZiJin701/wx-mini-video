@@ -60,6 +60,7 @@ func CreateMiniProgramInterceptorPlugin(target miniprogram.Target, store *minipr
 			headers := miniprogram.CleanHeaders(req.Header)
 			decision := ""
 			jsonCandidates := 0
+			scanCandidates := 0
 			confirmed := appID != "" && appID == target.AppID
 
 			switch {
@@ -103,6 +104,23 @@ func CreateMiniProgramInterceptorPlugin(target miniprogram.Target, store *minipr
 				} else {
 					decision = "drop:not-media"
 				}
+			case isScannablePage(contentType):
+				// H5/web-view 页面的播放器常把媒体地址内联在 HTML/JS 里，
+				// 播放前或命中缓存时不会产生媒体请求；扫描页面可稳定拿到候选。
+				if target.AppID == "" {
+					decision = "drop:no-target"
+					break
+				}
+				if !captureUnattributed {
+					decision = "drop:disabled"
+					break
+				}
+				scanCandidates = scanPageMedia(store, rawURL, contentLength, headers, ctx)
+				if scanCandidates > 0 {
+					decision = "admit-unattributed"
+				} else {
+					decision = "drop:not-media"
+				}
 			case confirmed:
 				// 未知二进制兜底：只有目标 AppID 匹配时才收未知文件，避免全量流量噪音。
 				fileDecision := tryUnknownBinaryCandidate(store, generation, target, appID, rawURL, status, contentType, contentLength, headers, ctx.GetResponseHeader("Content-Disposition"))
@@ -125,6 +143,7 @@ func CreateMiniProgramInterceptorPlugin(target miniprogram.Target, store *minipr
 				Kind:           domKind,
 				Decision:       decision,
 				JSONCandidates: jsonCandidates,
+				ScanCandidates: scanCandidates,
 			})
 		},
 	}
@@ -399,6 +418,7 @@ type debugResponse struct {
 	Kind           string
 	Decision       string
 	JSONCandidates int
+	ScanCandidates int
 }
 
 // newDebugLog 仅在 WX_MINI_VIDEO_DEBUG=1 时启用，日志写入下载目录。
@@ -434,6 +454,9 @@ func (l *debugLog) logResponse(entry debugResponse) {
 	}
 	if entry.JSONCandidates > 0 {
 		fields = append(fields, "json-candidates="+strconv.Itoa(entry.JSONCandidates))
+	}
+	if entry.ScanCandidates > 0 {
+		fields = append(fields, "scan-candidates="+strconv.Itoa(entry.ScanCandidates))
 	}
 	l.write(strings.Join(fields, " "))
 }
@@ -492,4 +515,52 @@ func refererForLog(header http.Header) string {
 		}
 	}
 	return ""
+}
+
+const pageScanMaxSize = 4 * 1024 * 1024
+
+// isScannablePage 判断响应是否为可扫描的页面或脚本。
+func isScannablePage(contentType string) bool {
+	lower := strings.ToLower(contentType)
+	return strings.Contains(lower, "html") || strings.Contains(lower, "javascript")
+}
+
+// looksLikeMiniProgramPage 只扫描明显来自小程序 web-view 页面或常见 H5 播放器的文档，
+// 避免把本机其他网页里的媒体地址也收进未归属列表。
+func looksLikeMiniProgramPage(body []byte) bool {
+	lower := strings.ToLower(string(body))
+	for _, marker := range []string{"miniprogram", "jweixin", "ckplayer", "<video"} {
+		if strings.Contains(lower, marker) {
+			return true
+		}
+	}
+	return false
+}
+
+// scanPageMedia 从 H5 页面/脚本中提取内联媒体地址并收入未归属列表。
+// 播放器常常在播放时才请求媒体，命中缓存时甚至不产生请求；扫描页面可稳定得到候选。
+func scanPageMedia(store *miniprogram.Store, pageURL string, contentLength int64, headers map[string]string, ctx proxy.Context) int {
+	if contentLength > pageScanMaxSize {
+		return 0
+	}
+	body := readProxyBody(ctx)
+	if len(body) == 0 || len(body) > pageScanMaxSize {
+		return 0
+	}
+	if !looksLikeMiniProgramPage(body) {
+		return 0
+	}
+	pageHeaders := make(map[string]string, len(headers)+1)
+	for key, value := range headers {
+		pageHeaders[key] = value
+	}
+	// 媒体是页面内播放器发起的，Referer 应为该页面本身，而不是页面的上游 Referer。
+	pageHeaders["Referer"] = pageURL
+	candidates := miniprogram.MediaURLsInText(string(body))
+	for _, candidate := range candidates {
+		candidate.Attribution = miniprogram.AttributionUnattributed
+		candidate.Headers = pageHeaders
+		_, _ = store.AddUnattributed(candidate)
+	}
+	return len(candidates)
 }

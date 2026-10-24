@@ -757,6 +757,8 @@ func candidateBasis(candidate miniprogram.Candidate) string {
 		return "未知二进制兜底（≥256KB）"
 	}
 	switch candidate.Source {
+	case "html":
+		return "H5 页面/脚本扫描（未播放验证）"
 	case "json":
 		if candidate.FieldPath != "" {
 			return "JSON 字段 " + candidate.FieldPath

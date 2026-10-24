@@ -476,6 +476,38 @@ func ParseContentRange(value string) (start, end, total int64, ok bool) {
 
 var mediaURLRegexp = regexp.MustCompile(`https?://[^\s"'<>\\]+`)
 
+// MediaURLsInText 从 H5 页面/脚本文本中提取绝对媒体 URL。
+// 只保留视频、m3u8 和音频，避免图片图标造成噪音；结果按 URL 排序便于测试与展示。
+func MediaURLsInText(text string) []Candidate {
+	if text == "" {
+		return nil
+	}
+	seen := make(map[string]Candidate)
+	for _, match := range mediaURLRegexp.FindAllString(text, -1) {
+		raw := strings.TrimRight(match, ".,);]}\"'")
+		if raw == "" {
+			continue
+		}
+		kind, suffix := Classify("", raw)
+		if kind != "video" && kind != "m3u8" && kind != "audio" {
+			continue
+		}
+		if _, exists := seen[raw]; exists {
+			continue
+		}
+		seen[raw] = Candidate{URL: raw, Source: "html", Kind: kind, Suffix: suffix}
+	}
+	if len(seen) == 0 {
+		return nil
+	}
+	out := make([]Candidate, 0, len(seen))
+	for _, candidate := range seen {
+		out = append(out, candidate)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].URL < out[j].URL })
+	return out
+}
+
 func ExtractMediaURLsFromJSON(body []byte) []Candidate {
 	var v any
 	if err := json.Unmarshal(body, &v); err != nil {
