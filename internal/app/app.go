@@ -72,10 +72,19 @@ func (r *Runtime) PreflightChecks() []string {
 		_ = ln.Close()
 		checks = append(checks, "自检通过: 代理端口可用 "+addr)
 	}
-	if r.HasFFmpeg() {
-		checks = append(checks, "自检通过: ffmpeg 可用")
-	} else {
-		checks = append(checks, "自检提示: 首次下载 m3u8 时会准备受管 ffmpeg")
+	switch _, source := r.locateFFmpeg(); source {
+	case ffmpegSourceConfigured:
+		checks = append(checks, "自检通过: ffmpeg 可用（已配置路径）")
+	case ffmpegSourceBundled:
+		checks = append(checks, "自检通过: ffmpeg 可用（随包）")
+	case ffmpegSourceManaged:
+		checks = append(checks, "自检通过: ffmpeg 可用（已下载）")
+	default:
+		if configured := configuredFFmpegPath(r.Settings.FFmpegPath); configured != "" {
+			checks = append(checks, "自检失败: 配置的 download.ffmpeg 不可用 "+configured)
+		} else {
+			checks = append(checks, "自检提示: 随包无 ffmpeg，首次下载 m3u8 时会联网准备受管 ffmpeg")
+		}
 	}
 	return checks
 }
@@ -106,7 +115,7 @@ func (r *Runtime) Start() error {
 	interceptorCfg := interceptor.NewInterceptorSettings(r.Config, r.Settings, r.Store)
 	server := interceptor.NewInterceptorServer(interceptorCfg, r.cert)
 	r.proxyServer = server
-	server.Interceptor.AddPostPlugin(interceptor.CreateMiniProgramInterceptorPlugin(r.Settings.Target, r.Store, r.Settings.DownloadDir))
+	server.Interceptor.AddPostPlugin(interceptor.CreateMiniProgramInterceptorPlugin(r.Settings.Target, r.Store, r.Settings.DownloadDir, !r.Settings.HideUnattributed))
 	if err := server.Start(); err != nil {
 		if certPath != "" {
 			return fmt.Errorf("%w；如证书自动安装失败，请按系统授权提示处理，或手动安装公开证书文件: %s", err, certPath)
@@ -200,38 +209,71 @@ func (r *Runtime) SetTarget(target miniprogram.Target) {
 	r.mu.Unlock()
 }
 
+const (
+	ffmpegSourceConfigured = "configured"
+	ffmpegSourceBundled    = "bundled"
+	ffmpegSourceManaged    = "managed"
+)
+
+// bundledFFmpegPath 与 managedFFmpegPath 是测试注入点，默认使用真实随包/受管位置。
+var (
+	bundledFFmpegPath = minidownload.BundledFFmpegPath
+	managedFFmpegPath = minidownload.ManagedFFmpegPath
+)
+
 func (r *Runtime) HasFFmpeg() bool {
-	path := configuredFFmpegPath(r.Settings.FFmpegPath)
-	if path != "" {
-		if _, err := os.Stat(path); err == nil {
-			r.Downloader.FFmpegPath = path
-			return true
-		}
+	path, _ := r.locateFFmpeg()
+	if path == "" {
 		return false
 	}
-	if path = minidownload.ManagedFFmpegPath(r.Settings.DownloadDir); path != "" {
-		r.Downloader.FFmpegPath = path
-		return true
+	r.Downloader.FFmpegPath = path
+	return true
+}
+
+// locateFFmpeg 按 显式配置 > 随包 ffmpeg > 受管下载 的优先级定位 ffmpeg，不修改下载器状态。
+func (r *Runtime) locateFFmpeg() (string, string) {
+	if path := configuredFFmpegPath(r.Settings.FFmpegPath); path != "" {
+		if _, err := os.Stat(path); err == nil {
+			return path, ffmpegSourceConfigured
+		}
+		return "", ""
 	}
-	return false
+	if path := bundledFFmpegPath(); path != "" {
+		return path, ffmpegSourceBundled
+	}
+	if path := managedFFmpegPath(r.Settings.DownloadDir); path != "" {
+		return path, ffmpegSourceManaged
+	}
+	return "", ""
 }
 
 func (r *Runtime) EnsureFFmpeg(ctx context.Context, onProgress func(minidownload.FFmpegState)) error {
 	r.ffmpegMu.Lock()
 	defer r.ffmpegMu.Unlock()
+	if path := configuredFFmpegPath(r.Settings.FFmpegPath); path != "" {
+		if _, err := os.Stat(path); err != nil {
+			return fmt.Errorf("配置的 download.ffmpeg 不可用: %s；请修正该路径或留空以使用随包或受管 ffmpeg", path)
+		}
+		if onProgress != nil {
+			onProgress(minidownload.FFmpegState{State: "found", Path: path})
+		}
+		r.mu.Lock()
+		r.Downloader.FFmpegPath = path
+		r.mu.Unlock()
+		return nil
+	}
+	if path := bundledFFmpegPath(); path != "" {
+		if onProgress != nil {
+			onProgress(minidownload.FFmpegState{State: "found", Path: path})
+		}
+		r.mu.Lock()
+		r.Downloader.FFmpegPath = path
+		r.mu.Unlock()
+		return nil
+	}
 	dir := r.Settings.DownloadDir
 	if dir == "" {
 		dir = "."
-	}
-	if path := configuredFFmpegPath(r.Settings.FFmpegPath); path != "" {
-		if _, err := os.Stat(path); err == nil {
-			if onProgress != nil {
-				onProgress(minidownload.FFmpegState{State: "found", Path: path})
-			}
-			r.Downloader.FFmpegPath = path
-			return nil
-		}
-		return fmt.Errorf("配置的 download.ffmpeg 不可用: %s；请修正该路径或留空以下载受管 ffmpeg", path)
 	}
 	path, err := minidownload.EnsureFFmpeg(ctx, dir, onProgress)
 	if err != nil {

@@ -1,6 +1,9 @@
 package tui
 
 import (
+	"net/http"
+	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 
@@ -96,15 +99,19 @@ func TestAudioCategorySelectsAndStartsDownload(t *testing.T) {
 	if !next.(model).downloading || cmd == nil {
 		t.Fatal("Enter should start the selected audio download")
 	}
-	// Existing keys remain stable; Tab from m3u8 enters audio and wraps to all.
+	// Existing keys remain stable; Tab from m3u8 enters audio, then unattributed, then wraps to all.
 	m, _ = targetKey(m, tea.KeyRunes, "4")
 	m, _ = targetKey(m, tea.KeyTab, "")
 	if m.category != categoryAudio {
 		t.Fatal("Tab from m3u8 should enter audio")
 	}
 	m, _ = targetKey(m, tea.KeyTab, "")
+	if m.category != categoryOther {
+		t.Fatal("Tab from audio should enter unattributed")
+	}
+	m, _ = targetKey(m, tea.KeyTab, "")
 	if len(m.filteredCandidates()) != 2 {
-		t.Fatal("Tab from audio should show all media")
+		t.Fatal("Tab from unattributed should show all media")
 	}
 }
 
@@ -263,5 +270,140 @@ func TestCandidateListLineTruncatesLongResource(t *testing.T) {
 	}
 	if len([]rune(got)) > 60 {
 		t.Fatalf("candidateListLine() was not truncated enough: %q", got)
+	}
+}
+
+func TestOtherCategoryShowsOnlyUnattributedWithMarkers(t *testing.T) {
+	confirmed := miniprogram.Candidate{
+		Kind: "video", URL: "https://cdn.example.com/target.mp4",
+		Attribution: miniprogram.AttributionConfirmed, SourceAppID: "wx123",
+	}
+	unattributed := miniprogram.Candidate{
+		Kind: "video", URL: "https://h5.example.com/lesson.mp4", Source: "response",
+		Attribution: miniprogram.AttributionUnattributed,
+	}
+	m := model{
+		runtime: targetRuntime(t), targetReady: true, started: true,
+		candidates:      []miniprogram.Candidate{confirmed},
+		otherCandidates: []miniprogram.Candidate{unattributed},
+		category:        categoryVideo,
+		width:           140, height: 30,
+	}
+	if got := m.filteredCandidates(); len(got) != 1 || got[0].URL != confirmed.URL {
+		t.Fatalf("video category = %#v, want only the confirmed candidate", got)
+	}
+
+	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("6")})
+	m = next.(model)
+	if m.category != categoryOther {
+		t.Fatalf("6 should select unattributed category, got %q", m.category)
+	}
+	if got := m.filteredCandidates(); len(got) != 1 || got[0].URL != unattributed.URL {
+		t.Fatalf("unattributed category = %#v, want only the H5 candidate", got)
+	}
+	view := m.View()
+	for _, want := range []string{"6 未归属(1)", "?"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("View() = %q, want %q", view, want)
+		}
+	}
+
+	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("1")})
+	all := next.(model)
+	if got := all.filteredCandidates(); len(got) != 1 || got[0].URL != confirmed.URL {
+		t.Fatalf("all category = %#v, want only target candidates", got)
+	}
+	if view := all.View(); !strings.Contains(view, "✓") {
+		t.Fatalf("confirmed candidate should be marked with ✓: %q", view)
+	}
+
+	m.showDetails = true
+	details := strings.Join(m.selectedCandidateDetails(), "\n")
+	for _, want := range []string{"来源未确认", "来源 AppID", "响应类型/URL 推断，来源未知"} {
+		if !strings.Contains(details, want) {
+			t.Fatalf("details = %q, want %q", details, want)
+		}
+	}
+}
+
+func TestCandidateBasisExplainsProvisionalAndFileCandidates(t *testing.T) {
+	if got := candidateBasis(miniprogram.Candidate{Provisional: true}); got != "字段名推断（低置信）" {
+		t.Fatalf("provisional basis = %q", got)
+	}
+	if got := candidateBasis(miniprogram.Candidate{Kind: "file"}); got != "未知二进制兜底（≥256KB）" {
+		t.Fatalf("file basis = %q", got)
+	}
+	if got := kindDisplay("file"); got != "文件" {
+		t.Fatalf("kindDisplay(file) = %q", got)
+	}
+}
+
+func TestTickRefreshLoadsUnattributedCandidates(t *testing.T) {
+	runtime := targetRuntime(t)
+	runtime.Store.AddUnattributed(miniprogram.Candidate{
+		Kind: "video", URL: "https://h5.example.com/lesson.mp4",
+		Attribution: miniprogram.AttributionUnattributed,
+	})
+	m := model{runtime: runtime, targetReady: true, started: true}
+	next, _ := m.Update(tickMsg{})
+	got := next.(model)
+	if len(got.otherCandidates) != 1 || len(m.candidates) != 0 {
+		t.Fatalf("refresh candidates=%#v other=%#v", got.candidates, got.otherCandidates)
+	}
+	if len(got.filteredCandidates()) != 0 {
+		t.Fatal("default video category must not mix in unattributed candidates")
+	}
+}
+
+func TestClearKeyClearsUnattributedList(t *testing.T) {
+	runtime := targetRuntime(t)
+	runtime.SetTarget(miniprogram.Target{AppID: "wx123"})
+	runtime.Store.AddUnattributed(miniprogram.Candidate{
+		Kind: "video", URL: "https://h5.example.com/lesson.mp4",
+		Attribution: miniprogram.AttributionUnattributed,
+	})
+	m := model{
+		runtime: runtime, targetReady: true, started: true,
+		otherCandidates: runtime.Store.Unattributed(),
+		width:           100, height: 24,
+	}
+	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("c")})
+	got := next.(model)
+	if len(got.otherCandidates) != 0 || len(runtime.Store.Unattributed()) != 0 {
+		t.Fatalf("clear key kept unattributed candidates: %#v", got.otherCandidates)
+	}
+}
+
+func TestDownloadOtherCandidateReplaysCapturedHeaders(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Referer") != "https://course.example.com/learn/1" {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		w.Header().Set("Content-Type", "video/mp4")
+		_, _ = w.Write([]byte("media-bytes"))
+	}))
+	defer server.Close()
+
+	dir := t.TempDir()
+	runtime := &app.Runtime{
+		Settings:   config.AppSettings{DownloadDir: dir},
+		Downloader: minidownload.New(dir),
+	}
+	candidate := miniprogram.Candidate{
+		Kind:        "video",
+		Suffix:      ".mp4",
+		URL:         server.URL + "/lesson.mp4",
+		Attribution: miniprogram.AttributionUnattributed,
+		Headers:     map[string]string{"Referer": "https://course.example.com/learn/1"},
+	}
+	msg := downloadCmd(runtime, candidate)()
+	result, ok := msg.(downloadMsg)
+	if !ok || result.err != nil {
+		t.Fatalf("download msg = %#v, want success", msg)
+	}
+	data, err := os.ReadFile(result.path)
+	if err != nil || string(data) != "media-bytes" {
+		t.Fatalf("downloaded file = %q, %v", data, err)
 	}
 }

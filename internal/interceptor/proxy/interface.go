@@ -42,6 +42,7 @@ type contextImpl struct {
 	impl any
 }
 type ContextReq struct {
+	Method  string
 	URL     *ContextURL
 	Body    io.Reader
 	Header  http.Header

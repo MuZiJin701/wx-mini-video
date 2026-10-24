@@ -26,14 +26,17 @@ require (
 	github.com/charmbracelet/bubbletea v1.3.4
 	github.com/charmbracelet/lipgloss v1.1.0
 	github.com/ltaoo/echo v0.11.1
+	github.com/mattn/go-isatty v0.0.20
 	github.com/rs/zerolog v1.31.0
 	github.com/spf13/viper v1.17.0
+	golang.org/x/sys v0.31.0
 )
 
 require golang.org/x/exp v0.0.0-20240613232115-7f521ea00fb8 // indirect
 
 // Downgrade golang.org/x/* to versions compatible with Go 1.20
 replace (
+	github.com/ltaoo/echo => ./third_party/echo
 	golang.org/x/exp => golang.org/x/exp v0.0.0-20230905200255-921286631fa9
 	golang.org/x/image => golang.org/x/image v0.14.0
 	golang.org/x/net => golang.org/x/net v0.17.0
@@ -61,7 +64,6 @@ require (
 	github.com/lucasb-eyer/go-colorful v1.2.0 // indirect
 	github.com/magiconair/properties v1.8.7 // indirect
 	github.com/mattn/go-colorable v0.1.13 // indirect
-	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/mattn/go-localereader v0.0.1 // indirect
 	github.com/mattn/go-runewidth v0.0.16 // indirect
 	github.com/mdlayher/netlink v1.7.2 // indirect
@@ -92,7 +94,6 @@ require (
 	go4.org/netipx v0.0.0-20231129151722-fdeea329fbba // indirect
 	golang.org/x/net v0.38.0 // indirect
 	golang.org/x/sync v0.12.0 // indirect
-	golang.org/x/sys v0.31.0 // indirect
 	golang.org/x/text v0.23.0 // indirect
 	golang.org/x/time v0.7.0 // indirect
 	gopkg.in/ini.v1 v1.67.0 // indirect

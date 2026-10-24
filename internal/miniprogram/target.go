@@ -2,6 +2,8 @@ package miniprogram
 
 import "strings"
 
+// SetTarget 切换目标：清空目标候选并让在途旧响应失效，但按 ADR 0008 保留
+// 与目标无关的未归属列表，避免用户切换目标后丢失 H5 视频。
 func (s *Store) SetTarget(target Target) {
 	target.AppID = strings.TrimSpace(target.AppID)
 	target.Name = strings.TrimSpace(target.Name)

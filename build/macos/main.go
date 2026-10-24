@@ -3,15 +3,29 @@ package main
 import (
 	"archive/zip"
 	"bytes"
+	"crypto/sha256"
 	"debug/macho"
 	"encoding/binary"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strings"
+	"time"
+
+	"wx_channel/internal/minidownload"
+)
+
+const (
+	ffmpegCacheDirName  = "ffmpeg-cache"
+	ffmpegDownloadAgent = "wx-mini-video-macos-builder"
+	// ffmpegDownloadTimeout 限制整份 ffmpeg ZIP 的下载时间，避免 CI 卡住。
+	ffmpegDownloadTimeout = 30 * time.Minute
 )
 
 func main() {
@@ -89,11 +103,172 @@ func build() error {
 			return err
 		}
 	}
+	if err := prepareBundledFFmpeg(root, dist); err != nil {
+		return err
+	}
 	zipPath := filepath.Join(root, "dist", "wx-mini-video-macos-universal-unsigned.zip")
 	if err := writePackage(dist, zipPath); err != nil {
 		return err
 	}
 	fmt.Printf("已构建未签名测试包: %s\n正式公开发布前须在 Mac 上完成签名、公证和真机验收。\n", zipPath)
+	return nil
+}
+
+// prepareBundledFFmpeg 下载并校验两份 Martin Riedl 9.0.2 原始构建，解出 .app 之外的
+// ffmpeg/ffmpeg-<arch>，同时放入 GPLv3 全文与第三方声明。不做 lipo 合并。
+func prepareBundledFFmpeg(root, dist string) error {
+	outputDir := filepath.Join(dist, "ffmpeg")
+	if err := os.MkdirAll(outputDir, 0o755); err != nil {
+		return err
+	}
+	cacheDir := filepath.Join(root, "dist", ffmpegCacheDirName)
+	for _, arch := range []string{"amd64", "arm64"} {
+		sources := minidownload.FFmpegSourcesForPlatform("darwin", arch)
+		if len(sources) == 0 {
+			return fmt.Errorf("缺少 darwin/%s 的 ffmpeg 下载源", arch)
+		}
+		source := sources[0]
+		archivePath := filepath.Join(cacheDir, "martin-riedl-9.0.2-"+arch+".zip")
+		if err := ensureFFmpegArchive(source, archivePath); err != nil {
+			return fmt.Errorf("准备 darwin/%s ffmpeg: %w", arch, err)
+		}
+		binaryPath := filepath.Join(outputDir, "ffmpeg-"+arch)
+		if err := extractFFmpegBinary(archivePath, binaryPath, arch); err != nil {
+			return fmt.Errorf("解出 darwin/%s ffmpeg: %w", arch, err)
+		}
+		fmt.Printf("已准备随包 ffmpeg: %s\n", binaryPath)
+	}
+	license, err := os.ReadFile(filepath.Join(root, "build", "licenses", "GPLv3.txt"))
+	if err != nil {
+		return fmt.Errorf("读取 GPLv3 全文失败: %w", err)
+	}
+	if err := os.WriteFile(filepath.Join(outputDir, "LICENSE.txt"), license, 0o644); err != nil {
+		return err
+	}
+	notices, err := os.ReadFile(filepath.Join(root, "THIRD-PARTY-NOTICES.md"))
+	if err != nil {
+		return fmt.Errorf("读取第三方声明失败: %w", err)
+	}
+	return os.WriteFile(filepath.Join(dist, "THIRD-PARTY-NOTICES.md"), notices, 0o644)
+}
+
+// ensureFFmpegArchive 复用已校验的缓存压缩包，否则下载并按固定 SHA-256 校验。
+func ensureFFmpegArchive(source minidownload.FFmpegSource, path string) error {
+	if err := verifyArchiveSHA256(path, source.SHA256); err == nil {
+		fmt.Printf("复用已校验 ffmpeg 压缩包: %s\n", path)
+		return nil
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	client := &http.Client{Timeout: ffmpegDownloadTimeout}
+	request, err := http.NewRequest(http.MethodGet, source.URL, nil)
+	if err != nil {
+		return fmt.Errorf("创建下载请求失败: %w", err)
+	}
+	request.Header.Set("User-Agent", ffmpegDownloadAgent)
+	response, err := client.Do(request)
+	if err != nil {
+		return fmt.Errorf("下载 %s 失败: %w", source.URL, err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		return fmt.Errorf("下载 %s 失败: HTTP %s", source.URL, response.Status)
+	}
+	partial := path + ".part"
+	file, err := os.Create(partial)
+	if err != nil {
+		return err
+	}
+	_, copyErr := io.Copy(file, response.Body)
+	closeErr := file.Close()
+	if copyErr != nil || closeErr != nil {
+		_ = os.Remove(partial)
+		return fmt.Errorf("下载 %s 失败: %w", source.URL, errors.Join(copyErr, closeErr))
+	}
+	if err := verifyArchiveSHA256(partial, source.SHA256); err != nil {
+		_ = os.Remove(partial)
+		return fmt.Errorf("下载的 ffmpeg 校验失败: %w", err)
+	}
+	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+		_ = os.Remove(partial)
+		return err
+	}
+	return os.Rename(partial, path)
+}
+
+func verifyArchiveSHA256(path, expected string) error {
+	file, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	hash := sha256.New()
+	if _, err := io.Copy(hash, file); err != nil {
+		return err
+	}
+	actual := hex.EncodeToString(hash.Sum(nil))
+	if !strings.EqualFold(actual, expected) {
+		return fmt.Errorf("SHA-256 不匹配: 得到 %s", actual)
+	}
+	return nil
+}
+
+// extractFFmpegBinary 从 Martin Riedl ZIP 解出原始 ffmpeg 二进制并核对架构，不合并架构。
+func extractFFmpegBinary(archivePath, outputPath, arch string) error {
+	reader, err := zip.OpenReader(archivePath)
+	if err != nil {
+		return fmt.Errorf("打开 ffmpeg 压缩包失败: %w", err)
+	}
+	defer reader.Close()
+	for _, file := range reader.File {
+		if filepath.Base(file.Name) != "ffmpeg" {
+			continue
+		}
+		if file.Mode()&os.ModeSymlink != 0 {
+			return fmt.Errorf("拒绝解压符号链接形式的 ffmpeg")
+		}
+		source, err := file.Open()
+		if err != nil {
+			return fmt.Errorf("解压 ffmpeg 失败: %w", err)
+		}
+		defer source.Close()
+		temp, err := os.CreateTemp(filepath.Dir(outputPath), ".ffmpeg-*")
+		if err != nil {
+			return fmt.Errorf("写入 ffmpeg 失败: %w", err)
+		}
+		defer os.Remove(temp.Name())
+		if _, err := io.Copy(temp, source); err != nil {
+			temp.Close()
+			return fmt.Errorf("解压 ffmpeg 失败: %w", err)
+		}
+		if err := temp.Close(); err != nil {
+			return fmt.Errorf("写入 ffmpeg 失败: %w", err)
+		}
+		if err := os.Chmod(temp.Name(), 0o755); err != nil {
+			return err
+		}
+		if err := verifyThinMachO(temp.Name(), arch); err != nil {
+			return err
+		}
+		return os.Rename(temp.Name(), outputPath)
+	}
+	return fmt.Errorf("压缩包中未找到 ffmpeg")
+}
+
+func verifyThinMachO(path, arch string) error {
+	expected := map[string]macho.Cpu{"amd64": macho.CpuAmd64, "arm64": macho.CpuArm64}[arch]
+	file, err := macho.Open(path)
+	if err != nil {
+		return fmt.Errorf("ffmpeg 不是可执行 Mach-O: %w", err)
+	}
+	defer file.Close()
+	if file.Type != macho.TypeExec {
+		return fmt.Errorf("ffmpeg 不是可执行 Mach-O")
+	}
+	if file.Cpu != expected {
+		return fmt.Errorf("ffmpeg 架构为 %v，期望 %v", file.Cpu, expected)
+	}
 	return nil
 }
 
@@ -147,24 +322,33 @@ func writePackage(root, path string) (err error) {
 	defer func() { err = errors.Join(err, file.Close()) }()
 	archive := zip.NewWriter(file)
 	// An allowlist keeps existing downloads, private keys and local files out of builds.
-	for _, name := range []string{"README.md", "wx-mini-video.yaml", "wx-mini-video.app/Contents/Info.plist", "wx-mini-video.app/Contents/MacOS/wx-mini-video"} {
-		data, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(name)))
+	entries := []struct {
+		name string
+		mode os.FileMode
+	}{
+		{"README.md", 0o644},
+		{"wx-mini-video.yaml", 0o644},
+		{"THIRD-PARTY-NOTICES.md", 0o644},
+		{"wx-mini-video.app/Contents/Info.plist", 0o644},
+		{"wx-mini-video.app/Contents/MacOS/wx-mini-video", 0o755},
+		{"ffmpeg/ffmpeg-amd64", 0o755},
+		{"ffmpeg/ffmpeg-arm64", 0o755},
+		{"ffmpeg/LICENSE.txt", 0o644},
+	}
+	for _, entry := range entries {
+		data, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(entry.name)))
 		if err != nil {
 			archive.Close()
 			return err
 		}
-		header := &zip.FileHeader{Name: "wx-mini-video-macos/" + name, Method: zip.Deflate}
-		mode := os.FileMode(0o644)
-		if name == "wx-mini-video.app/Contents/MacOS/wx-mini-video" {
-			mode = 0o755
-		}
-		header.SetMode(mode)
-		entry, err := archive.CreateHeader(header)
+		header := &zip.FileHeader{Name: "wx-mini-video-macos/" + entry.name, Method: zip.Deflate}
+		header.SetMode(entry.mode)
+		writer, err := archive.CreateHeader(header)
 		if err != nil {
 			archive.Close()
 			return err
 		}
-		if _, err := io.Copy(entry, bytes.NewReader(data)); err != nil {
+		if _, err := io.Copy(writer, bytes.NewReader(data)); err != nil {
 			archive.Close()
 			return err
 		}

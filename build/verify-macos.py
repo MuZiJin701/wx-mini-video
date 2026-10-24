@@ -49,31 +49,54 @@ def check_tui(executable, cwd):
         os.close(slave)
 
 
+def assert_thin_mach_o(binary, cpu, label):
+    magic, actual_cpu = struct.unpack_from("<II", binary)
+    assert magic == 0xFEEDFACF, f"{label} 不是 64 位 Mach-O（可能被改成通用包）"
+    assert actual_cpu == cpu, f"{label} cputype = {actual_cpu:#x}，期望 {cpu:#x}"
+
+
 def main():
     root = pathlib.Path.cwd()
     archive = root / "dist/wx-mini-video-macos-universal-unsigned.zip"
     prefix = "wx-mini-video-macos/"
     executable_name = "wx-mini-video.app/Contents/MacOS/wx-mini-video"
+    ffmpeg_arches = (("amd64", 0x01000007), ("arm64", 0x0100000C))
+    expected = {prefix + name for name in (
+        "README.md", "wx-mini-video.yaml", "THIRD-PARTY-NOTICES.md",
+        "wx-mini-video.app/Contents/Info.plist", executable_name,
+        "ffmpeg/ffmpeg-amd64", "ffmpeg/ffmpeg-arm64", "ffmpeg/LICENSE.txt",
+    )}
     with zipfile.ZipFile(archive) as package:
-        expected = {prefix + name for name in (
-            "README.md", "wx-mini-video.yaml", "wx-mini-video.app/Contents/Info.plist", executable_name,
-        )}
-        assert len(package.infolist()) == 4 and set(package.namelist()) == expected
+        assert len(package.infolist()) == len(expected), package.namelist()
+        assert set(package.namelist()) == expected, package.namelist()
         assert package.read(prefix + "README.md") == (root / "docs/macos-usage.md").read_bytes()
         assert package.read(prefix + "wx-mini-video.yaml") == (root / "internal/config/config.template.yaml").read_bytes()
+        assert package.read(prefix + "ffmpeg/LICENSE.txt") == (root / "build/licenses/GPLv3.txt").read_bytes()
+        assert package.read(prefix + "THIRD-PARTY-NOTICES.md") == (root / "THIRD-PARTY-NOTICES.md").read_bytes()
         assert (package.getinfo(prefix + executable_name).external_attr >> 16) & 0o777 == 0o755
         plist = plistlib.loads(package.read(prefix + "wx-mini-video.app/Contents/Info.plist"))
         assert plist["LSMinimumSystemVersion"] == "13.0"
         binary = package.read(prefix + executable_name)
         assert struct.unpack_from(">II", binary) == (0xCAFEBABE, 2)
         commit = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
-        for index, (arch, cpu) in enumerate((("amd64", 0x01000007), ("arm64", 0x0100000C))):
+        for index, (arch, cpu) in enumerate(ffmpeg_arches):
             actual_cpu, _, offset, size, align = struct.unpack_from(">IIIII", binary, 8 + 20 * index)
             thin = root / ("dist/wx-mini-video-darwin-" + arch)
             assert actual_cpu == cpu and align == 14 and offset % (1 << align) == 0
             assert binary[offset:offset + size] == thin.read_bytes()
             metadata = subprocess.check_output(["go", "version", "-m", str(thin)], text=True)
             assert "vcs.revision=" + commit in metadata and "vcs.modified=false" in metadata
+        # 随包 ffmpeg 必须是两份原始单架构 Mach-O，逐字节等于已校验的固定 ZIP 内容。
+        for arch, cpu in ffmpeg_arches:
+            name = prefix + "ffmpeg/ffmpeg-" + arch
+            ffmpeg_binary = package.read(name)
+            assert (package.getinfo(name).external_attr >> 16) & 0o777 == 0o755, name
+            assert_thin_mach_o(ffmpeg_binary, cpu, name)
+            cached = root / f"dist/ffmpeg-cache/martin-riedl-9.0.2-{arch}.zip"
+            with zipfile.ZipFile(cached) as source:
+                assert ffmpeg_binary == source.read("ffmpeg"), f"{name} 与固定构建不一致（不得 lipo）"
+            assert len(ffmpeg_binary) > 10 * 1024 * 1024, name
+        assert package.read(prefix + "ffmpeg/ffmpeg-amd64") != package.read(prefix + "ffmpeg/ffmpeg-arm64")
     with tempfile.TemporaryDirectory(prefix="wx-mini-video 测试 ") as directory:
         subprocess.run(["/usr/bin/ditto", "-x", "-k", str(archive), directory], check=True)
         portable = pathlib.Path(directory) / "wx-mini-video-macos"
@@ -81,11 +104,16 @@ def main():
         assert executable.stat().st_mode & 0o777 == 0o755
         subprocess.run(["/usr/bin/lipo", str(executable), "-verify_arch", "x86_64", "arm64"], check=True)
         subprocess.run(["/usr/bin/plutil", "-lint", str(portable / "wx-mini-video.app/Contents/Info.plist")], check=True)
+        for arch, lipo_arch in (("amd64", "x86_64"), ("arm64", "arm64")):
+            ffmpeg_path = portable / f"ffmpeg/ffmpeg-{arch}"
+            assert ffmpeg_path.stat().st_mode & 0o777 == 0o755, ffmpeg_path
+            subprocess.run(["/usr/bin/lipo", str(ffmpeg_path), "-verify_arch", lipo_arch], check=True)
+        assert (portable / "ffmpeg/LICENSE.txt").read_bytes() == (root / "build/licenses/GPLv3.txt").read_bytes()
         check_tui(executable, directory)
         moved = portable.with_name("移动后的便携目录")
         portable.rename(moved)
         check_tui(moved / executable_name, directory)
-    print("已通过 ZIP、双架构、构建来源、权限、中文空格路径和移动目录后的 TUI 启动/退出检查")
+    print("已通过 ZIP、双架构、随包 ffmpeg、许可、构建来源、权限、中文空格路径和移动目录后的 TUI 启动/退出检查")
 
 
 if __name__ == "__main__":

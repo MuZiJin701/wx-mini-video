@@ -3,17 +3,42 @@ package main
 import (
 	"archive/zip"
 	"bytes"
+	"crypto/sha256"
 	"debug/macho"
 	"encoding/binary"
+	"encoding/hex"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
+
+	"wx_channel/internal/minidownload"
 )
 
 func thinMachO(cpu macho.Cpu, subtype uint32) []byte {
 	var data bytes.Buffer
 	_ = binary.Write(&data, binary.LittleEndian, []uint32{macho.Magic64, uint32(cpu), subtype, uint32(macho.TypeExec), 0, 0, 0, 0})
 	return data.Bytes()
+}
+
+func ffmpegZip(t *testing.T, content []byte) ([]byte, string) {
+	t.Helper()
+	var archive bytes.Buffer
+	writer := zip.NewWriter(&archive)
+	entry, err := writer.Create("ffmpeg")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := entry.Write(content); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	sum := sha256.Sum256(archive.Bytes())
+	return archive.Bytes(), hex.EncodeToString(sum[:])
 }
 
 func TestUniversalMachOPreservesBothArchitectures(t *testing.T) {
@@ -42,7 +67,16 @@ func TestUniversalMachOPreservesBothArchitectures(t *testing.T) {
 
 func TestPackagePreservesExecutableModeAndExcludesRuntimeData(t *testing.T) {
 	root := t.TempDir()
-	for _, name := range []string{"README.md", "wx-mini-video.yaml", "wx-mini-video.app/Contents/Info.plist", "wx-mini-video.app/Contents/MacOS/wx-mini-video", "downloads/private.pem"} {
+	executables := []string{
+		"wx-mini-video.app/Contents/MacOS/wx-mini-video",
+		"ffmpeg/ffmpeg-amd64",
+		"ffmpeg/ffmpeg-arm64",
+	}
+	documents := []string{
+		"README.md", "wx-mini-video.yaml", "THIRD-PARTY-NOTICES.md",
+		"wx-mini-video.app/Contents/Info.plist", "ffmpeg/LICENSE.txt",
+	}
+	for _, name := range append(append([]string{}, executables...), append(append([]string{}, documents...), "downloads/private.pem")...) {
 		path := filepath.Join(root, filepath.FromSlash(name))
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 			t.Fatal(err)
@@ -60,12 +94,105 @@ func TestPackagePreservesExecutableModeAndExcludesRuntimeData(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer archive.Close()
-	if len(archive.File) != 4 {
+	if len(archive.File) != len(executables)+len(documents) {
 		t.Fatalf("unexpected package contents: %d", len(archive.File))
 	}
+	modes := make(map[string]os.FileMode, len(archive.File))
 	for _, file := range archive.File {
-		if filepath.Base(file.Name) == "wx-mini-video" && file.Mode().Perm() != 0o755 {
-			t.Fatal("ZIP lost executable permissions")
+		name := file.Name
+		modes[name] = file.Mode().Perm()
+	}
+	for _, name := range executables {
+		if got := modes["wx-mini-video-macos/"+name]; got != 0o755 {
+			t.Fatalf("ZIP lost executable permissions for %s: %v", name, got)
 		}
+	}
+	for _, name := range documents {
+		if got := modes["wx-mini-video-macos/"+name]; got != 0o644 {
+			t.Fatalf("ZIP mode for %s = %v, want 0644", name, got)
+		}
+	}
+	if _, ok := modes["wx-mini-video-macos/downloads/private.pem"]; ok {
+		t.Fatal("package included runtime data")
+	}
+}
+
+func TestExtractFFmpegBinaryKeepsThinArchitecture(t *testing.T) {
+	root := t.TempDir()
+	arm := thinMachO(macho.CpuArm64, 0)
+	archivePath := filepath.Join(root, "arm64.zip")
+	archive, _ := ffmpegZip(t, arm)
+	if err := os.WriteFile(archivePath, archive, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	outputPath := filepath.Join(root, "ffmpeg-arm64")
+	if err := extractFFmpegBinary(archivePath, outputPath, "arm64"); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(outputPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(data, arm) {
+		t.Fatal("extracted ffmpeg changed (lipo or reinterpretation must not happen)")
+	}
+	info, err := os.Stat(outputPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Windows 不以权限位表达可执行，0766/0755 的执行位断言只在类 Unix 主机成立。
+	if runtime.GOOS != "windows" && info.Mode().Perm() != 0o755 {
+		t.Fatalf("extracted ffmpeg mode = %v, want 0755", info.Mode().Perm())
+	}
+	if err := extractFFmpegBinary(archivePath, filepath.Join(root, "wrong"), "amd64"); err == nil {
+		t.Fatal("accepted mismatched architecture")
+	}
+}
+
+func TestEnsureFFmpegArchiveDownloadsVerifiesAndReuses(t *testing.T) {
+	archive, sum := ffmpegZip(t, thinMachO(macho.CpuAmd64, 3))
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		if r.UserAgent() != ffmpegDownloadAgent {
+			t.Errorf("User-Agent = %q, want %q", r.UserAgent(), ffmpegDownloadAgent)
+		}
+		_, _ = w.Write(archive)
+	}))
+	defer server.Close()
+	source := minidownload.FFmpegSource{URL: server.URL, SHA256: sum}
+	path := filepath.Join(t.TempDir(), "ffmpeg-cache", "martin-9.0.2-amd64.zip")
+	if err := ensureFFmpegArchive(source, path); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(data, archive) || requests != 1 {
+		t.Fatalf("cache file or request count incorrect: requests=%d", requests)
+	}
+	server.Close()
+	if err := ensureFFmpegArchive(source, path); err != nil {
+		t.Fatalf("cached archive was not reused: %v", err)
+	}
+	if requests != 1 {
+		t.Fatalf("cache reuse performed another request: %d", requests)
+	}
+}
+
+func TestEnsureFFmpegArchiveRejectsChecksumMismatch(t *testing.T) {
+	archive, _ := ffmpegZip(t, thinMachO(macho.CpuArm64, 0))
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write(archive)
+	}))
+	defer server.Close()
+	source := minidownload.FFmpegSource{URL: server.URL, SHA256: "invalid-checksum"}
+	path := filepath.Join(t.TempDir(), "martin-9.0.2-arm64.zip")
+	if err := ensureFFmpegArchive(source, path); err == nil {
+		t.Fatal("accepted archive with mismatched checksum")
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("unverified archive left behind: %v", err)
 	}
 }

@@ -2,6 +2,7 @@ package minidownload
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -240,6 +241,163 @@ func mediaLine(playlist string) string {
 		}
 	}
 	return ""
+}
+
+func writeSegmentDone(t *testing.T, path, rawURL string, size int64) {
+	t.Helper()
+	data, err := json.Marshal(segmentMetadata{URL: rawURL, Size: size, CompletedAt: time.Now().UTC()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(segmentDonePath(path), data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestLocalizeM3U8RedownloadsSegmentWithoutCompletionMetadata(t *testing.T) {
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		_, _ = w.Write([]byte("fresh"))
+	}))
+	defer server.Close()
+	d := New(t.TempDir())
+	d.Client = server.Client()
+	body := []byte("#EXTM3U\n#EXTINF:1,\n" + server.URL + "/seg.ts\n")
+	dir := filepath.Join(d.Dir, ".segments", "legacy", miniprogram.CandidateID("", string(body)))
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	outputPath := filepath.Join(dir, "seg_000001.ts")
+	if err := os.WriteFile(outputPath, []byte("stale"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, stats, err := d.localizeM3U8(context.Background(), "legacy", body, nil, server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if requests != 1 {
+		t.Fatalf("requests = %d, want legacy file without metadata re-downloaded", requests)
+	}
+	if stats.Reused != 0 {
+		t.Fatalf("stats.Reused = %d, want 0 for a file without metadata", stats.Reused)
+	}
+	data, err := os.ReadFile(outputPath)
+	if err != nil || string(data) != "fresh" {
+		t.Fatalf("segment = %q, %v; want fresh download", data, err)
+	}
+}
+
+func TestLocalizeM3U8IgnoresTruncatedPartialFile(t *testing.T) {
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		_, _ = w.Write([]byte("fresh"))
+	}))
+	defer server.Close()
+	d := New(t.TempDir())
+	d.Client = server.Client()
+	body := []byte("#EXTM3U\n#EXTINF:1,\n" + server.URL + "/seg.ts\n")
+	dir := filepath.Join(d.Dir, ".segments", "truncated", miniprogram.CandidateID("", string(body)))
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	outputPath := filepath.Join(dir, "seg_000001.ts")
+	if err := os.WriteFile(segmentPartPath(outputPath), []byte("trunc"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, stats, err := d.localizeM3U8(context.Background(), "truncated", body, nil, server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if requests != 1 || stats.Reused != 0 {
+		t.Fatalf("requests = %d, reused = %d; want truncated .part ignored", requests, stats.Reused)
+	}
+	data, err := os.ReadFile(outputPath)
+	if err != nil || string(data) != "fresh" {
+		t.Fatalf("segment = %q, %v; want fresh download", data, err)
+	}
+	if fileExists(segmentPartPath(outputPath)) {
+		t.Fatal("truncated .part file survived the retry")
+	}
+}
+
+func TestLocalizeM3U8RedownloadsWhenCompletionMetadataDoesNotMatch(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("fresh"))
+	}))
+	defer server.Close()
+	segmentURL := server.URL + "/seg.ts"
+	body := []byte("#EXTM3U\n#EXTINF:1,\n" + segmentURL + "\n")
+	cases := []struct {
+		name string
+		meta segmentMetadata
+	}{
+		{name: "url", meta: segmentMetadata{URL: "https://other.example/seg.ts", Size: 5}},
+		{name: "size", meta: segmentMetadata{URL: segmentURL, Size: 6}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			d := New(t.TempDir())
+			d.Client = server.Client()
+			dir := filepath.Join(d.Dir, ".segments", "metadata", miniprogram.CandidateID("", string(body)))
+			if err := os.MkdirAll(dir, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			outputPath := filepath.Join(dir, "seg_000001.ts")
+			if err := os.WriteFile(outputPath, []byte("stale"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			data, err := json.Marshal(tc.meta)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(segmentDonePath(outputPath), data, 0o600); err != nil {
+				t.Fatal(err)
+			}
+
+			_, stats, err := d.localizeM3U8(context.Background(), "metadata", body, nil, server.URL)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if stats.Reused != 0 {
+				t.Fatalf("stats.Reused = %d, want metadata mismatch re-downloaded", stats.Reused)
+			}
+			got, err := os.ReadFile(outputPath)
+			if err != nil || string(got) != "fresh" {
+				t.Fatalf("segment = %q, %v; want fresh download", got, err)
+			}
+		})
+	}
+}
+
+func TestLocalizeM3U8RejectsContentLengthMismatch(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Length", "10")
+		_, _ = w.Write([]byte("abc"))
+	}))
+	defer server.Close()
+	d := New(t.TempDir())
+	d.Client = server.Client()
+	d.SegmentRetries = 1
+	body := []byte("#EXTM3U\n#EXTINF:1,\n" + server.URL + "/short.ts\n")
+
+	_, stats, err := d.localizeM3U8(context.Background(), "short", body, nil, server.URL)
+	if err == nil {
+		t.Fatal("accepted a segment shorter than its Content-Length")
+	}
+	if !strings.Contains(err.Error(), "Content-Length") {
+		t.Fatalf("error = %v, want Content-Length mismatch", err)
+	}
+	outputPath := filepath.Join(stats.Dir, "seg_000001.ts")
+	if fileExists(outputPath) {
+		t.Fatal("truncated segment was promoted to the final file")
+	}
+	if fileExists(segmentPartPath(outputPath)) {
+		t.Fatal("truncated segment left a .part file behind")
+	}
 }
 
 func TestAuthenticatedHLSWithRealFFmpeg(t *testing.T) {

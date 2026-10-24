@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -212,9 +213,11 @@ func TestLocalizeM3U8ReusesExistingSegments(t *testing.T) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "seg_000001.ts"), []byte("cached"), 0o644); err != nil {
+	cached := filepath.Join(dir, "seg_000001.ts")
+	if err := os.WriteFile(cached, []byte("cached"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	writeSegmentDone(t, cached, ts.URL+"/seg.ts", int64(len("cached")))
 	_, stats, err := d.localizeM3U8(context.Background(), "reuse", body, nil, ts.URL)
 	if err != nil {
 		t.Fatal(err)
@@ -336,8 +339,10 @@ func TestLocalizeM3U8DownloadsSegmentsAndResources(t *testing.T) {
 }
 
 func TestLocalizeM3U8KeepsSegmentsOnPartialFailure(t *testing.T) {
+	var failing atomic.Bool
+	failing.Store(true)
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/bad.ts" {
+		if r.URL.Path == "/bad.ts" && failing.Load() {
 			http.Error(w, "bad", http.StatusNotFound)
 			return
 		}
@@ -360,8 +365,25 @@ func TestLocalizeM3U8KeepsSegmentsOnPartialFailure(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected partial failure")
 	}
-	if _, statErr := os.Stat(filepath.Join(stats.Dir, "seg_000001.ts")); statErr != nil {
+	completed := filepath.Join(stats.Dir, "seg_000001.ts")
+	if _, statErr := os.Stat(completed); statErr != nil {
 		t.Fatalf("expected successful segment kept for retry/debugging: %v", statErr)
+	}
+	if !segmentComplete(completed, ts.URL+"/ok.ts") {
+		t.Fatal("completed segment was kept without reusable metadata")
+	}
+	failedPath := filepath.Join(stats.Dir, "seg_000002.ts")
+	if fileExists(failedPath) || fileExists(segmentPartPath(failedPath)) {
+		t.Fatal("failed segment left a final or partial file behind")
+	}
+
+	failing.Store(false)
+	_, retried, err := d.localizeM3U8(context.Background(), "failed", body, nil, ts.URL)
+	if err != nil {
+		t.Fatalf("retry after partial failure: %v", err)
+	}
+	if retried.Reused != 1 || retried.Completed != 2 {
+		t.Fatalf("retry stats = %+v, want one reused and two completed resources", retried)
 	}
 }
 

@@ -23,10 +23,20 @@ type Target struct {
 	LinkPrefix string `json:"link_prefix"`
 }
 
+const (
+	// AttributionConfirmed 表示候选来自等于目标 AppID 的 page-frame Referer。
+	AttributionConfirmed = "confirmed"
+	// AttributionUnattributed 表示候选无法归入当前目标 AppID，只进入未归属列表。
+	AttributionUnattributed = "unattributed"
+)
+
 type Candidate struct {
 	ID            string            `json:"id"`
 	AppID         string            `json:"app_id"`
 	AppName       string            `json:"app_name"`
+	SourceAppID   string            `json:"source_app_id,omitempty"`
+	Attribution   string            `json:"attribution,omitempty"`
+	Provisional   bool              `json:"provisional,omitempty"`
 	Title         string            `json:"title,omitempty"`
 	URL           string            `json:"url"`
 	SourceURL     string            `json:"source_url"`
@@ -41,19 +51,26 @@ type Candidate struct {
 	CreatedAt     time.Time         `json:"created_at"`
 }
 
+// unattributedLimit 限制未归属列表的容量，避免长时间嗅探后无限增长。
+const unattributedLimit = 500
+
 type Store struct {
-	mu               sync.RWMutex
-	items            map[string]Candidate
-	order            []string
-	target           Target
-	generation       uint64
-	programs         []Target
-	OnCandidateAdded func(Candidate)
+	mu                sync.RWMutex
+	items             map[string]Candidate
+	order             []string
+	unattributed      map[string]Candidate
+	unattributedOrder []string
+	target            Target
+	generation        uint64
+	programs          []Target
+	OnCandidateAdded  func(Candidate)
 }
 
 func NewStore() *Store {
 	return &Store{
-		items: make(map[string]Candidate),
+		items:             make(map[string]Candidate),
+		unattributed:      make(map[string]Candidate),
+		unattributedOrder: nil,
 	}
 }
 
@@ -63,6 +80,101 @@ func (s *Store) Add(candidate Candidate) (Candidate, bool) {
 
 func (s *Store) AddForTarget(generation uint64, candidate Candidate, cache func() string) (Candidate, bool) {
 	return s.add(candidate, &generation, cache)
+}
+
+// AddUnattributed 把无法归入当前目标 AppID 的媒体放入未归属列表。
+// 该列表与目标和代次无关：切换目标不会清空它；重复 URL 会合并最新请求头，
+// 便于用最近一次真实响应的 Referer/Cookie 下载防盗链资源；超过上限时丢弃最旧条目。
+func (s *Store) AddUnattributed(candidate Candidate) (Candidate, bool) {
+	if candidate.URL == "" {
+		return candidate, false
+	}
+	if candidate.ID == "" {
+		// 未归属列表按 URL 归一去重：同一媒体由不同 H5 来源重复请求时只保留一条。
+		candidate.ID = CandidateID("", candidate.URL)
+	}
+	if candidate.Attribution == "" {
+		candidate.Attribution = AttributionUnattributed
+	}
+	if candidate.CreatedAt.IsZero() {
+		candidate.CreatedAt = time.Now()
+	}
+	s.mu.Lock()
+	if existing, exists := s.unattributed[candidate.ID]; exists {
+		changed := false
+		if candidate.Source != "" && candidate.Source != existing.Source {
+			existing.Source = candidate.Source
+			changed = true
+		}
+		if len(candidate.Headers) > 0 {
+			existing.Headers = candidate.Headers
+			changed = true
+		}
+		if candidate.ContentType != "" && candidate.ContentType != existing.ContentType {
+			existing.ContentType = candidate.ContentType
+			changed = true
+		}
+		if candidate.ContentLength > 0 && candidate.ContentLength != existing.ContentLength {
+			existing.ContentLength = candidate.ContentLength
+			changed = true
+		}
+		if candidate.SourceAppID != "" && candidate.SourceAppID != existing.SourceAppID {
+			existing.SourceAppID = candidate.SourceAppID
+			changed = true
+		}
+		if candidate.Kind != "" && candidate.Kind != existing.Kind {
+			existing.Kind = candidate.Kind
+			changed = true
+		}
+		if candidate.Suffix != "" && existing.Suffix == "" {
+			existing.Suffix = candidate.Suffix
+			changed = true
+		}
+		if candidate.Title != "" && existing.Title == "" {
+			existing.Title = candidate.Title
+			changed = true
+		}
+		if candidate.FieldPath != "" && existing.FieldPath == "" {
+			existing.FieldPath = candidate.FieldPath
+			changed = true
+		}
+		if changed {
+			s.unattributed[candidate.ID] = existing
+		}
+		s.mu.Unlock()
+		return existing, changed
+	}
+	s.unattributed[candidate.ID] = candidate
+	s.unattributedOrder = append(s.unattributedOrder, candidate.ID)
+	for len(s.unattributedOrder) > unattributedLimit {
+		delete(s.unattributed, s.unattributedOrder[0])
+		s.unattributedOrder = s.unattributedOrder[1:]
+	}
+	s.mu.Unlock()
+	return candidate, true
+}
+
+// Unattributed 返回未归属列表的副本，按首次出现顺序排列。
+func (s *Store) Unattributed() []Candidate {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if len(s.unattributedOrder) == 0 {
+		return nil
+	}
+	out := make([]Candidate, 0, len(s.unattributedOrder))
+	for _, id := range s.unattributedOrder {
+		if item, ok := s.unattributed[id]; ok {
+			out = append(out, item)
+		}
+	}
+	return out
+}
+
+func (s *Store) ClearUnattributed() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.unattributed = make(map[string]Candidate)
+	s.unattributedOrder = nil
 }
 
 func (s *Store) add(candidate Candidate, generation *uint64, cache func() string) (Candidate, bool) {
@@ -162,13 +274,19 @@ func (s *Store) SetCachedPath(id, path string) {
 	s.items[id] = item
 }
 
+// Clear 按“清空列表”语义工作：清空目标候选的同时清空未归属列表，并让在途响应失效。
+// 切换目标请用 SetTarget：它只清空目标候选，保留与目标无关的未归属列表。
 func (s *Store) Clear(appID string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if appID == "" || appID == s.target.AppID {
+	clearAll := appID == ""
+	clearUnattributed := clearAll || appID == s.target.AppID
+	if clearUnattributed {
 		s.generation++
+		s.unattributed = make(map[string]Candidate)
+		s.unattributedOrder = nil
 	}
-	if appID == "" {
+	if clearAll {
 		s.items = make(map[string]Candidate)
 		s.order = nil
 		return
@@ -378,47 +496,214 @@ func ExtractMediaURLsFromJSON(body []byte) []Candidate {
 	return out
 }
 
+type jsonTokenField struct {
+	Key   string
+	Value string
+}
+
 func walkJSON(fieldPath string, v any, nearbyTitle string, seen map[string]Candidate) {
 	switch value := v.(type) {
 	case map[string]any:
 		if title := jsonObjectTitle(value); title != "" {
 			nearbyTitle = title
 		}
+		tokens := jsonTokenFields(value)
 		for k, child := range value {
 			nextPath := k
 			if fieldPath != "" {
 				nextPath = fieldPath + "." + k
 			}
+			if text, ok := child.(string); ok {
+				walkJSONString(nextPath, text, nearbyTitle, tokens, seen)
+				continue
+			}
 			walkJSON(nextPath, child, nearbyTitle, seen)
 		}
 	case []any:
-		for i, child := range value {
-			nextPath := fieldPath + "[]"
-			if fieldPath == "" {
-				nextPath = "[]"
-			}
-			_ = i
+		nextPath := fieldPath + "[]"
+		if fieldPath == "" {
+			nextPath = "[]"
+		}
+		for _, child := range value {
 			walkJSON(nextPath, child, nearbyTitle, seen)
 		}
 	case string:
-		key := strings.ToLower(fieldPath)
-		fieldLooksRelevant := looksLikeMediaField(key)
-		for _, match := range mediaURLRegexp.FindAllString(value, -1) {
-			kind, suffix := Classify("", strings.TrimRight(match, ".,);]"))
-			if kind == "" || !fieldLooksRelevant && kind == "segment" {
+		walkJSONString(fieldPath, value, nearbyTitle, nil, seen)
+	}
+}
+
+// jsonTokenFields 收集同一对象内形如 "urlToken"/"token"/"playToken"/"authKey"
+// 且以 ? 或 & 开头的相邻 token 字段，用于拼接到 URL 字段上。
+func jsonTokenFields(value map[string]any) []jsonTokenField {
+	var tokens []jsonTokenField
+	for key, raw := range value {
+		text, ok := raw.(string)
+		if !ok {
+			continue
+		}
+		text = strings.TrimSpace(text)
+		if text == "" || (text[0] != '?' && text[0] != '&') {
+			continue
+		}
+		if !looksLikeJSONTokenField(key) {
+			continue
+		}
+		tokens = append(tokens, jsonTokenField{Key: key, Value: text})
+	}
+	sort.Slice(tokens, func(i, j int) bool { return tokens[i].Key < tokens[j].Key })
+	return tokens
+}
+
+func looksLikeJSONTokenField(key string) bool {
+	compact := compactJSONKey(key)
+	for _, token := range []string{"token", "authkey", "signature", "sign", "auth"} {
+		if strings.Contains(compact, token) {
+			return true
+		}
+	}
+	return false
+}
+
+func looksLikeJSONURLField(key string) bool {
+	compact := compactJSONKey(key)
+	if compact == "src" || strings.HasSuffix(compact, "src") {
+		return true
+	}
+	for _, token := range []string{"url", "uri", "link"} {
+		if strings.Contains(compact, token) {
+			return true
+		}
+	}
+	return false
+}
+
+func compactJSONKey(key string) string {
+	key = strings.ToLower(key)
+	return strings.NewReplacer("_", "", "-", "").Replace(key)
+}
+
+// matchJSONToken 为 URL 字段挑选同一对象内可拼接的 token。
+// 优先按字段名配对（playUrl + playUrlToken），其次把唯一的 token 拼给明显的 URL 字段。
+func matchJSONToken(fieldKey string, tokens []jsonTokenField) (string, bool) {
+	if len(tokens) == 0 || !looksLikeJSONURLField(fieldKey) {
+		return "", false
+	}
+	compact := compactJSONKey(fieldKey)
+	for _, token := range tokens {
+		compactToken := compactJSONKey(token.Key)
+		if compactToken == compact+"token" || strings.HasPrefix(compactToken, compact) {
+			return token.Value, true
+		}
+	}
+	if len(tokens) == 1 && (compact == "url" || compact == "src" || strings.HasSuffix(compact, "url") || strings.HasSuffix(compact, "src")) {
+		return tokens[0].Value, true
+	}
+	return "", false
+}
+
+// appendJSONToken 把 ?xxx / &xxx 风格的 token 拼到 URL 上，保证只有一个查询分隔符。
+func appendJSONToken(rawURL, token string) string {
+	switch {
+	case strings.HasPrefix(token, "?"):
+		if strings.Contains(rawURL, "?") {
+			return rawURL + "&" + strings.TrimPrefix(token, "?")
+		}
+		return rawURL + token
+	case strings.HasPrefix(token, "&"):
+		if strings.Contains(rawURL, "?") {
+			return rawURL + token
+		}
+		return rawURL + "?" + strings.TrimPrefix(token, "&")
+	default:
+		return rawURL
+	}
+}
+
+func walkJSONString(fieldPath, value, nearbyTitle string, tokens []jsonTokenField, seen map[string]Candidate) {
+	key := strings.ToLower(fieldPath)
+	for _, match := range mediaURLRegexp.FindAllString(value, -1) {
+		rawURL := strings.TrimRight(match, ".,);]")
+		urls := []string{rawURL}
+		if token, ok := matchJSONToken(jsonFieldKey(fieldPath), tokens); ok {
+			if combined := appendJSONToken(rawURL, token); combined != rawURL {
+				urls = []string{combined}
+			}
+		}
+		for _, urlValue := range urls {
+			kind, suffix := Classify("", urlValue)
+			provisional := false
+			if kind == "" {
+				// 无扩展名时只用强相关字段名做低置信推断，避免把普通链接当媒体。
+				kind, suffix = provisionalMediaKind(key, urlValue)
+				if kind == "" {
+					continue
+				}
+				provisional = true
+			}
+			// JSON 提取同样排除分片，分片由 m3u8 下载流程处理。
+			if kind == "segment" {
 				continue
 			}
-			urlValue := strings.TrimRight(match, ".,);]")
 			seen[urlValue+"|"+fieldPath] = Candidate{
-				URL:       urlValue,
-				Title:     nearbyTitle,
-				Source:    "json",
-				FieldPath: fieldPath,
-				Kind:      kind,
-				Suffix:    suffix,
+				URL:         urlValue,
+				Title:       nearbyTitle,
+				Source:      "json",
+				FieldPath:   fieldPath,
+				Kind:        kind,
+				Suffix:      suffix,
+				Provisional: provisional,
 			}
 		}
 	}
+}
+
+// jsonFieldKey 取字段路径最后一段，用于相邻 token 字段配对。
+func jsonFieldKey(fieldPath string) string {
+	if idx := strings.LastIndex(fieldPath, "."); idx >= 0 {
+		return fieldPath[idx+1:]
+	}
+	return fieldPath
+}
+
+// provisionalMediaKind 在地址无扩展名但字段名强相关时给出低置信类型。
+func provisionalMediaKind(fieldPath, rawURL string) (string, string) {
+	if !looksLikeStrongMediaField(fieldPath) || looksLikeImageField(fieldPath) {
+		return "", ""
+	}
+	if strings.Contains(fieldPath, "m3u8") || strings.Contains(fieldPath, "hls") || strings.Contains(fieldPath, "stream") {
+		return "m3u8", ".m3u8"
+	}
+	if u, err := url.Parse(rawURL); err == nil {
+		pathLower := strings.ToLower(u.Path)
+		if strings.Contains(pathLower, "m3u8") || strings.Contains(pathLower, "playlist") || strings.Contains(pathLower, "manifest") {
+			return "m3u8", ".m3u8"
+		}
+	}
+	return "video", ".mp4"
+}
+
+func looksLikeStrongMediaField(key string) bool {
+	if key == "" {
+		return false
+	}
+	for _, token := range []string{"video", "play", "stream", "media", "m3u8"} {
+		if strings.Contains(key, token) {
+			return true
+		}
+	}
+	return false
+}
+
+func looksLikeImageField(key string) bool {
+	for _, token := range []string{
+		"cover", "poster", "avatar", "thumb", "banner", "logo",
+		"image", "img", "pic", "photo",
+	} {
+		if strings.Contains(key, token) {
+			return true
+		}
+	}
+	return false
 }
 
 func jsonObjectTitle(value map[string]any) string {
@@ -449,20 +734,4 @@ func jsonObjectTitle(value map[string]any) string {
 		}
 	}
 	return best
-}
-
-func looksLikeMediaField(key string) bool {
-	if key == "" {
-		return false
-	}
-	for _, token := range []string{
-		"url", "src", "m3u8", "mp4", "media", "video",
-		"image", "img", "pic", "photo", "cover", "poster",
-		"avatar", "thumb", "thumbnail", "banner", "logo",
-	} {
-		if strings.Contains(key, token) {
-			return true
-		}
-	}
-	return false
 }

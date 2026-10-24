@@ -546,6 +546,59 @@ type segmentStats struct {
 	Elapsed   time.Duration
 }
 
+// segmentMetadata records that a localized m3u8 resource finished downloading.
+// It is written only after the bytes are renamed into place, so a truncated
+// file left behind by an interrupted run can never pass for a finished one.
+type segmentMetadata struct {
+	URL         string    `json:"url"`
+	Size        int64     `json:"size"`
+	CompletedAt time.Time `json:"completed_at"`
+}
+
+func segmentPartPath(path string) string {
+	return path + ".part"
+}
+
+func segmentDonePath(path string) string {
+	return path + ".done"
+}
+
+// segmentComplete reports whether path holds the fully downloaded body of
+// rawURL. Reuse requires the sidecar metadata, a matching source URL, and a
+// matching file size; legacy files without metadata are always re-downloaded.
+func segmentComplete(path, rawURL string) bool {
+	info, err := os.Stat(path)
+	if err != nil || !info.Mode().IsRegular() {
+		return false
+	}
+	data, err := os.ReadFile(segmentDonePath(path))
+	if err != nil {
+		return false
+	}
+	var meta segmentMetadata
+	if err := json.Unmarshal(data, &meta); err != nil {
+		return false
+	}
+	return meta.URL == rawURL && meta.Size == info.Size()
+}
+
+func writeSegmentMetadata(path, rawURL string, size int64) error {
+	data, err := json.Marshal(segmentMetadata{URL: rawURL, Size: size, CompletedAt: time.Now().UTC()})
+	if err != nil {
+		return err
+	}
+	metaPath := segmentDonePath(path)
+	tempPath := metaPath + ".tmp"
+	if err := os.WriteFile(tempPath, data, 0o600); err != nil {
+		return err
+	}
+	if err := os.Rename(tempPath, metaPath); err != nil {
+		_ = os.Remove(tempPath)
+		return err
+	}
+	return nil
+}
+
 type m3u8Resource struct {
 	URL       string
 	LocalName string
@@ -591,13 +644,18 @@ func (d *Downloader) localizeM3U8(ctx context.Context, candidateID string, body 
 			defer wg.Done()
 			for resource := range jobs {
 				outputPath := filepath.Join(dir, resource.LocalName)
-				if fileSize(outputPath) > 0 {
+				if segmentComplete(outputPath, resource.URL) {
+					size := fileSize(outputPath)
 					currentDone := int(atomic.AddInt32(&completed, 1))
 					currentReused := int(atomic.AddInt32(&reused, 1))
-					currentBytes := atomic.AddInt64(&downloadedBytes, fileSize(outputPath))
+					currentBytes := atomic.AddInt64(&downloadedBytes, size)
 					d.emit(Progress{Status: "segments", Completed: currentDone, Items: len(resources), Reused: currentReused, Downloaded: currentBytes, StartedAt: startedAt})
 					continue
 				}
+				// Any file that is not proven complete must not be reused: drop
+				// stale bytes and half-written metadata before re-downloading.
+				_ = os.Remove(outputPath)
+				_ = os.Remove(segmentDonePath(outputPath))
 				if err := d.downloadResourceWithRetry(ctx, resource.URL, outputPath, miniprogram.HeadersForURL(headers, sourceURL, resource.URL), retries); err != nil {
 					currentFailed := int(atomic.AddInt32(&failed, 1))
 					d.emit(Progress{Status: "segments", Completed: int(atomic.LoadInt32(&completed)), Items: len(resources), Failed: currentFailed, Reused: int(atomic.LoadInt32(&reused)), Downloaded: atomic.LoadInt64(&downloadedBytes), StartedAt: startedAt})
@@ -724,6 +782,7 @@ func (d *Downloader) downloadResourceWithRetry(ctx context.Context, rawURL, outp
 }
 
 func (d *Downloader) downloadResource(ctx context.Context, rawURL, outputPath string, headers map[string]string) error {
+	partPath := segmentPartPath(outputPath)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
 	if err != nil {
 		return err
@@ -739,16 +798,36 @@ func (d *Downloader) downloadResource(ctx context.Context, rawURL, outputPath st
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return fmt.Errorf("HTTP %s", resp.Status)
 	}
-	file, err := os.Create(outputPath)
+	file, err := os.Create(partPath)
 	if err != nil {
 		return err
 	}
-	if _, err := io.Copy(file, resp.Body); err != nil {
-		file.Close()
-		os.Remove(outputPath)
+	written, copyErr := io.Copy(file, resp.Body)
+	closeErr := file.Close()
+	if copyErr != nil {
+		_ = os.Remove(partPath)
+		if resp.ContentLength >= 0 && written != resp.ContentLength {
+			return fmt.Errorf("分片正文长度与 Content-Length 不符: 收到 %d 字节，声明 %d 字节: %w", written, resp.ContentLength, copyErr)
+		}
+		return copyErr
+	}
+	if closeErr != nil {
+		_ = os.Remove(partPath)
+		return closeErr
+	}
+	if resp.ContentLength >= 0 && written != resp.ContentLength {
+		_ = os.Remove(partPath)
+		return fmt.Errorf("分片正文长度与 Content-Length 不符: 收到 %d 字节，声明 %d 字节", written, resp.ContentLength)
+	}
+	if err := os.Rename(partPath, outputPath); err != nil {
+		_ = os.Remove(partPath)
 		return err
 	}
-	return file.Close()
+	if err := writeSegmentMetadata(outputPath, rawURL, written); err != nil {
+		_ = os.Remove(outputPath)
+		return err
+	}
+	return nil
 }
 
 func (d *Downloader) cacheM3U8FromURL(ctx context.Context, candidate miniprogram.Candidate) (string, error) {

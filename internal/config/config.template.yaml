@@ -6,6 +6,9 @@ download:
   keepSegments: false
   mode: "auto"
 
+capture:
+  showUnattributed: true # 是否收集并显示来源未确认的媒体（按 6 查看）
+
 proxy:
   system: true
   hostname: "127.0.0.1"

@@ -38,37 +38,38 @@ type downloadMsg struct {
 type logMsg string
 
 type model struct {
-	runtime       *app.Runtime
-	candidates    []miniprogram.Candidate
-	selected      int
-	category      category
-	logs          []string
-	showLogs      bool
-	showDetails   bool
-	width         int
-	height        int
-	started       bool
-	starting      bool
-	startErr      error
-	downloading   bool
-	downloadPath  string
-	progress      minidownload.Progress
-	logOffset     int
-	targetReady   bool
-	appIDInput    string
-	nameInput     string
-	inputFocus    int
-	inputErr      string
-	discovering   bool
-	programs      []miniprogram.Target
-	programIndex  int
-	legacyChecked bool
-	legacyPrompt  bool
-	legacyWarning string
-	stopErr       error
-	stopping      bool
-	networkGen    int
-	networkPause  bool
+	runtime         *app.Runtime
+	candidates      []miniprogram.Candidate
+	otherCandidates []miniprogram.Candidate
+	selected        int
+	category        category
+	logs            []string
+	showLogs        bool
+	showDetails     bool
+	width           int
+	height          int
+	started         bool
+	starting        bool
+	startErr        error
+	downloading     bool
+	downloadPath    string
+	progress        minidownload.Progress
+	logOffset       int
+	targetReady     bool
+	appIDInput      string
+	nameInput       string
+	inputFocus      int
+	inputErr        string
+	discovering     bool
+	programs        []miniprogram.Target
+	programIndex    int
+	legacyChecked   bool
+	legacyPrompt    bool
+	legacyWarning   string
+	stopErr         error
+	stopping        bool
+	networkGen      int
+	networkPause    bool
 }
 
 type category string
@@ -79,9 +80,10 @@ const (
 	categoryVideo category = "video"
 	categoryM3U8  category = "m3u8"
 	categoryAudio category = "audio"
+	categoryOther category = "other"
 )
 
-var categories = []category{categoryAll, categoryImage, categoryVideo, categoryM3U8, categoryAudio}
+var categories = []category{categoryAll, categoryImage, categoryVideo, categoryM3U8, categoryAudio, categoryOther}
 
 var (
 	titleStyle    = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("42"))
@@ -172,6 +174,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.setCategory(categoryM3U8)
 		case "5":
 			m.setCategory(categoryAudio)
+		case "6":
+			m.setCategory(categoryOther)
 		case "up", "k":
 			if m.selected > 0 {
 				m.selected--
@@ -190,9 +194,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.runtime.ClearCandidates()
 			m.runtime.ClearProgress()
 			m.candidates = nil
+			m.otherCandidates = nil
 			m.selected = 0
 			m.progress = minidownload.Progress{}
-			m.addLog("已清空候选资源")
+			m.addLog("已清空候选资源（含未归属列表）")
 		case "s":
 			if m.downloading {
 				m.showLogs = true
@@ -209,7 +214,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.progress = minidownload.Progress{}
 			m.downloadPath = ""
 			m.showDetails = false
-			m.addLog("请选择目标，确认后重新打开图片或播放视频或音频")
+			m.addLog("请选择目标，确认后重新打开图片或播放视频或音频；未归属列表会保留")
 		case "l":
 			m.showLogs = !m.showLogs
 		case "i":
@@ -390,14 +395,14 @@ func (m model) viewContent() string {
 		b.WriteString(errorStyle.Render(fitLine("代理未启动: "+m.startErr.Error()+"；按 r 重试", m.width-1)))
 		b.WriteString("\n")
 	} else if m.started {
-		b.WriteString(okStyle.Render(fitLine("代理运行中。建议先按 c 清空，再打开目标图片或播放目标视频或音频，以便识别最新候选。", m.width-1)))
+		b.WriteString(okStyle.Render(fitLine("代理运行中。建议先按 c 清空，再打开目标图片或播放目标视频或音频；来源不明的媒体会进入 6 未归属。", m.width-1)))
 		b.WriteString("\n")
 	} else {
 		b.WriteString(mutedStyle.Render(fitLine("代理启动中...", m.width-1)))
 		b.WriteString("\n")
 	}
 
-	shortcuts := "快捷键: s 切换目标  Tab 分类  1/2/3/4/5 全部/图片/视频/m3u8/音频  ↑/↓ 选择  i 详情  d/Enter 下载  c 清空  l 日志  q 退出"
+	shortcuts := "快捷键: s 切换目标  Tab 分类  1/2/3/4/5/6 全部/图片/视频/m3u8/音频/未归属  ↑/↓ 选择  i 详情  d/Enter 下载  c 清空  l 日志  q 退出"
 	b.WriteString(mutedStyle.Render(fitLine(shortcuts, m.width-1)))
 	b.WriteString("\n")
 	b.WriteString(m.renderCategoryTabs())
@@ -460,7 +465,7 @@ func (m model) updateTargetInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.runtime.SetTarget(miniprogram.Target{AppID: m.appIDInput, Name: m.nameInput})
 		m.targetReady = true
 		m.inputErr = ""
-		m.addLog("已选定目标，请重新打开图片或播放视频或音频；来源不明的媒体会被过滤")
+		m.addLog("已选定目标，请重新打开图片或播放视频或音频；来源不明的媒体会进入未归属列表")
 		return m.ensureProxy()
 	default:
 		if len(msg.Runes) == 0 {
@@ -486,7 +491,7 @@ func (m model) renderTargetInput() string {
 	b.WriteString(titleStyle.Render("微信小程序媒体下载"))
 	b.WriteString("\n\n")
 	b.WriteString("输入目标 AppID，或按 Ctrl+D 自动发现小程序。名称可选。\n")
-	b.WriteString("只收集来源 AppID 匹配的媒体；来源不明的媒体会被过滤。\n")
+	b.WriteString("目标 AppID 匹配的媒体进入 1-5 分类；来源不明的媒体进入 6 未归属列表，下载时使用其真实请求头。\n")
 	b.WriteString("查找 AppID：手机微信打开小程序 → 右上角 … → 小程序介绍 → 更多资料。\n\n")
 	b.WriteString(renderInputLine("AppID", m.appIDInput, m.inputFocus == 0, width))
 	b.WriteString("\n")
@@ -534,11 +539,14 @@ func (m model) renderCandidates(maxLines int) string {
 	if maxLines <= 0 {
 		return ""
 	}
-	if len(m.candidates) == 0 {
-		return mutedStyle.Render(fitLine("暂无当前分类候选。按 1 查看全部、5 查看音频；重新打开或播放目标媒体，来源不明的媒体会被过滤。", m.width-1)) + "\n"
+	if m.activeCategory() == categoryOther && !m.showUnattributedEnabled() {
+		return mutedStyle.Render(fitLine("未归属列表已在配置 capture.showUnattributed 中关闭；改为 true 后重启。", m.width-1)) + "\n"
+	}
+	if len(m.candidates) == 0 && len(m.otherCandidates) == 0 {
+		return mutedStyle.Render(fitLine("暂无候选资源。按 1 查看全部、6 查看未归属；重新打开或播放目标媒体。", m.width-1)) + "\n"
 	}
 	if len(visibleCandidates) == 0 {
-		return mutedStyle.Render(fitLine(fmt.Sprintf("当前分类暂无资源。已嗅探 %d 个资源，按 1 查看全部、5 查看音频，或 Tab 切换分类。", len(m.candidates)), m.width-1)) + "\n"
+		return mutedStyle.Render(fitLine(fmt.Sprintf("当前分类暂无资源。已嗅探 %d 个目标资源、%d 个未归属资源，按 1 查看全部、5 查看音频、6 查看未归属，或 Tab 切换分类。", len(m.candidates), len(m.otherCandidates)), m.width-1)) + "\n"
 	}
 
 	visible := maxLines
@@ -659,8 +667,9 @@ func candidateListLine(candidate miniprogram.Candidate, width int) string {
 	if source == "" {
 		source = "-"
 	}
-	prefix := fmt.Sprintf("  %s %-4s %-8s %-5s %-4s ",
+	prefix := fmt.Sprintf("  %s %s %-4s %-8s %-5s %-4s ",
 		candidate.CreatedAt.Format("15:04:05"),
+		attributionMarker(candidate),
 		kindDisplay(candidate.Kind),
 		formatBytes(candidate.ContentLength),
 		cache,
@@ -699,6 +708,9 @@ func renderCandidateDetails(candidate miniprogram.Candidate, width int) []string
 	lines := []string{mutedStyle.Render("选中资源详情")}
 	lines = appendDetailLines(lines, "标题", candidate.Title, width)
 	lines = appendDetailLines(lines, "类型/来源", kindDisplay(candidate.Kind)+" / "+sourceDisplay(candidate.Source), width)
+	lines = appendDetailLines(lines, "归属", attributionDisplay(candidate), width)
+	lines = appendDetailLines(lines, "来源 AppID", candidate.SourceAppID, width)
+	lines = appendDetailLines(lines, "判定依据", candidateBasis(candidate), width)
 	lines = appendDetailLines(lines, "URL", candidate.URL, width)
 	lines = appendDetailLines(lines, "来源 URL", candidate.SourceURL, width)
 	lines = appendDetailLines(lines, "请求头", headerSummary(candidate.Headers), width)
@@ -707,6 +719,53 @@ func renderCandidateDetails(candidate miniprogram.Candidate, width int) []string
 		cachePath = "未缓存"
 	}
 	return appendDetailLines(lines, "本地缓存", cachePath, width)
+}
+
+// attributionMarker 在列表中标记来源可信度：✓ 来源已确认，? 来源未确认。
+func attributionMarker(candidate miniprogram.Candidate) string {
+	switch candidate.Attribution {
+	case miniprogram.AttributionConfirmed:
+		return "✓"
+	case miniprogram.AttributionUnattributed:
+		return "?"
+	default:
+		return "-"
+	}
+}
+
+func attributionDisplay(candidate miniprogram.Candidate) string {
+	switch candidate.Attribution {
+	case miniprogram.AttributionConfirmed:
+		return "来源已确认"
+	case miniprogram.AttributionUnattributed:
+		return "来源未确认"
+	default:
+		return "-"
+	}
+}
+
+// candidateBasis 解释候选是如何被识别的，帮助用户判断未归属资源是否可信。
+func candidateBasis(candidate miniprogram.Candidate) string {
+	if candidate.Provisional {
+		return "字段名推断（低置信）"
+	}
+	if candidate.Kind == "file" {
+		return "未知二进制兜底（≥256KB）"
+	}
+	switch candidate.Source {
+	case "json":
+		if candidate.FieldPath != "" {
+			return "JSON 字段 " + candidate.FieldPath
+		}
+		return "JSON 字段"
+	case "response":
+		if candidate.Attribution == miniprogram.AttributionUnattributed {
+			return "响应类型/URL 推断，来源未知"
+		}
+		return "响应类型/URL 推断"
+	default:
+		return "-"
+	}
 }
 
 func appendDetailLines(lines []string, label, value string, width int) []string {
@@ -781,6 +840,11 @@ func (m *model) refresh() {
 	prevLen := len(m.filteredCandidates())
 	prevSelected := m.selected
 	m.candidates = m.runtime.Candidates()
+	if m.runtime.Store != nil && m.showUnattributedEnabled() {
+		m.otherCandidates = m.runtime.Store.Unattributed()
+	} else {
+		m.otherCandidates = nil
+	}
 	visible := m.filteredCandidates()
 	if len(visible) > prevLen && (prevLen == 0 || prevSelected == prevLen-1) {
 		m.selected = len(visible) - 1
@@ -801,8 +865,20 @@ func (m model) activeCategory() category {
 	return m.category
 }
 
+// showUnattributedEnabled 报告未归属媒体列表是否启用；关闭时既不收集也不展示。
+func (m model) showUnattributedEnabled() bool {
+	if m.runtime == nil {
+		return true
+	}
+	return !m.runtime.Settings.HideUnattributed
+}
+
 func (m model) filteredCandidates() []miniprogram.Candidate {
 	active := m.activeCategory()
+	// 未归属列表独立展示；1-5 分类只显示目标候选，避免两类候选混在一起。
+	if active == categoryOther {
+		return m.otherCandidates
+	}
 	if active == categoryAll {
 		return m.candidates
 	}
@@ -841,11 +917,7 @@ func (m model) renderCategoryTabs() string {
 	for i, item := range categories {
 		label := fmt.Sprintf("%d %s", i+1, categoryDisplay(item))
 		count := m.categoryCount(item)
-		if item != categoryAll {
-			label = fmt.Sprintf("%s(%d)", label, count)
-		} else {
-			label = fmt.Sprintf("%s(%d)", label, len(m.candidates))
-		}
+		label = fmt.Sprintf("%s(%d)", label, count)
 		if item == m.activeCategory() {
 			parts = append(parts, selectedStyle.Render(" "+label+" "))
 			continue
@@ -856,6 +928,12 @@ func (m model) renderCategoryTabs() string {
 }
 
 func (m model) categoryCount(item category) int {
+	if item == categoryAll {
+		return len(m.candidates)
+	}
+	if item == categoryOther {
+		return len(m.otherCandidates)
+	}
 	count := 0
 	for _, candidate := range m.candidates {
 		if candidate.Kind == string(item) {
@@ -970,6 +1048,8 @@ func categoryDisplay(value category) string {
 		return "m3u8"
 	case categoryAudio:
 		return "音频"
+	case categoryOther:
+		return "未归属"
 	default:
 		return string(value)
 	}
@@ -985,6 +1065,8 @@ func kindDisplay(kind string) string {
 		return "音频"
 	case "m3u8":
 		return "m3u8"
+	case "file":
+		return "文件"
 	default:
 		return kind
 	}

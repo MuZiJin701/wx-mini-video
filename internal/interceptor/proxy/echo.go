@@ -83,6 +83,7 @@ func toEchoTarget(t *TargetConfig) *echo.TargetConfig {
 func (ctx *EchoContext) Req() *ContextReq {
 	c := ctx.impl
 	return &ContextReq{
+		Method: c.Req.Method,
 		URL: &ContextURL{
 			Scheme:   c.Req.URL.Scheme,
 			Host:     c.Req.URL.Host,

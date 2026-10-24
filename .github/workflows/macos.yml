@@ -44,6 +44,11 @@ jobs:
         env:
           WX_MINI_VIDEO_MACOS_INTEGRATION: '1'
         run: go test -v -count=1 -timeout=10m -run '^TestDarwin' ./pkg/system ./pkg/certificate ./internal/minidownload
+      - name: 缓存固定版本 ffmpeg ZIP
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: dist/ffmpeg-cache
+          key: ffmpeg-cache-macos-martin-riedl-9.0.2
       - name: 构建并验证通用便携包
         run: |
           go run ./build/macos
