@@ -19,7 +19,7 @@
 - 修复 v0.1.4 起严格 Referer 门禁导致的视频漏检：H5/web-view、原生播放器与 CDN 请求常不带小程序 page-frame Referer，以前会被直接丢弃。现在这类媒体进入独立的**未归属媒体**列表（按 `6` 查看），下载时沿用真实媒体响应的 Referer/Cookie；目标候选仍严格要求来源匹配（`✓` / `?` 标记）。
 - 增加未知二进制兜底：目标 AppID 已匹配但 `Content-Type` 为 `application/octet-stream` 等未知类型且大小达到阈值时，作为“未知文件”候选显示，不自动缓存或下载。
 - JSON 识别增强：支持相邻字段拼接（如 `url` + `urlToken`）与无后缀但字段名强相关的媒体地址；未归属候选不写播放列表缓存。
-- 新增 `WX_MINI_VIDEO_DEBUG=1` 诊断日志，记录归属判断与丢弃原因，URL query 与 Cookie 值不落盘。
+- 新增诊断日志：`--debug` 启动参数（会随 UAC/Terminal 重启转发）或 `WX_MINI_VIDEO_DEBUG=1` 环境变量启用，记录归属判断与丢弃原因，URL query 与 Cookie 值不落盘。
 - 新增 `capture.showUnattributed` 配置（默认 `true`），可关闭未归属媒体列表（关闭后既不收集也不展示）。
 - 决策记录见 [ADR 0008](docs/adr/0008-target-attribution.md)，修订 ADR 0003。
 

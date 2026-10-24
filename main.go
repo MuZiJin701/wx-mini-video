@@ -23,6 +23,10 @@ func main() {
 	if relaunched {
 		return
 	}
+	if wantsDebug(os.Args[1:]) {
+		// 参数在 UAC/终端重启时会被转发；显式设置环境变量供嗅探插件读取。
+		_ = os.Setenv("WX_MINI_VIDEO_DEBUG", "1")
+	}
 	cfg := config.New(AppVer, Mode)
 	if err := cfg.LoadConfig(); err != nil {
 		fmt.Printf("加载配置失败: %v\n", err)
@@ -38,4 +42,16 @@ func main() {
 		system.ShowStartupError(errors.Join(err, runtime.Stop()))
 		os.Exit(1)
 	}
+}
+
+// wantsDebug 识别 --debug / -debug；该参数会随 UAC 与 Terminal 重启转发，
+// 避免依赖环境变量在提权后的继承行为。
+func wantsDebug(args []string) bool {
+	for _, arg := range args {
+		switch arg {
+		case "--debug", "-debug":
+			return true
+		}
+	}
+	return false
 }

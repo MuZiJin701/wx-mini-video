@@ -80,7 +80,7 @@ Mac 包完整解压后双击 `.app`，媒体保存在解压目录的 `downloads/
 | 异常退出后网络不通 | 重开程序，按 `Ctrl+D`，等到显示“代理运行中”后按 `q`。仅停在输入界面再退出不会恢复代理。 |
 | 证书安装失败 | 确认同意 UAC；仍失败时见[证书排障](https://github.com/MuZiJin701/wx-mini-video/blob/main/wx-mini-video-knowledge.md#排障)。 |
 | m3u8 下载或合并失败 | 完整包请确认 `ffmpeg/` 未被隔离或删除，必要时重新解压；精简包会自动下载受管 ffmpeg，也可在配置中指定 `download.ffmpeg`。错误会给出 ffmpeg 日志路径，更多处理见[排障](https://github.com/MuZiJin701/wx-mini-video/blob/main/wx-mini-video-knowledge.md#排障)。 |
-| 需要排查嗅探问题 | 设置环境变量 `WX_MINI_VIDEO_DEBUG=1` 后重启，诊断日志写入下载目录的 `wx-mini-video-debug.log`；分享前检查其中是否包含敏感信息。 |
+| 需要排查嗅探问题 | 用 `wx-mini-video.exe --debug` 启动（或双击包内 `start-debug.cmd`），诊断日志写入下载目录的 `wx-mini-video-debug.log`；分享前检查其中是否包含敏感信息。 |
 
 [维护指南：配置、构建与验收](https://github.com/MuZiJin701/wx-mini-video/blob/main/wx-mini-video-knowledge.md) · [版本记录](https://github.com/MuZiJin701/wx-mini-video/blob/main/CHANGELOG.md)
 

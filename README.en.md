@@ -80,7 +80,7 @@ When the download finishes, press `o` to view the file:
 | Network fails after an abnormal exit | Restart the app, press `Ctrl+D`, wait until the proxy is running, then press `q`. Quitting directly from the entry screen does not restore the proxy. |
 | Certificate installation fails | Check that you accepted UAC; see [certificate troubleshooting (Chinese)](https://github.com/MuZiJin701/wx-mini-video/blob/main/wx-mini-video-knowledge.md#排障). |
 | m3u8 download or merge fails | In the full package, make sure `ffmpeg/` was not quarantined or deleted and re-extract if needed; the slim package downloads a managed ffmpeg automatically, or set `download.ffmpeg`. The error includes the ffmpeg log path; see [troubleshooting (Chinese)](https://github.com/MuZiJin701/wx-mini-video/blob/main/wx-mini-video-knowledge.md#排障). |
-| Need to debug sniffing | Set `WX_MINI_VIDEO_DEBUG=1` and restart; diagnostic logs are written to `wx-mini-video-debug.log` in the download folder. Check for sensitive information before sharing. |
+| Need to debug sniffing | Run `wx-mini-video.exe --debug` (or the bundled `start-debug.cmd`); diagnostic logs are written to `wx-mini-video-debug.log` in the download folder. Check for sensitive information before sharing. |
 
 [Maintenance: configuration, builds, and acceptance checks (Chinese)](https://github.com/MuZiJin701/wx-mini-video/blob/main/wx-mini-video-knowledge.md) · [Changelog (Chinese)](https://github.com/MuZiJin701/wx-mini-video/blob/main/CHANGELOG.md)
 
