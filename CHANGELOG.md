@@ -2,7 +2,31 @@
 
 使用说明见 [README.md](README.md)，英文说明见 [README.en.md](README.en.md)，构建与发布流程见 [wx-mini-video-knowledge.md](wx-mini-video-knowledge.md)。
 
-## 未发布
+## 未发布（计划 v0.1.9）
+
+本版默认分发**完整包**：Windows 包内附带 `ffmpeg\ffmpeg.exe`，macOS 通用包在 `.app` 外附带双架构 `ffmpeg/`，完整解压后 m3u8 无需联网准备。同时修复自动下载源、恢复 H5/web-view 视频嗅探，并处理检查报告中的资源回收与分片完整性问题。
+
+### ffmpeg 与分发
+
+- Windows 完整包内置 gyan 9.0.2 essentials（GPLv3，已实测可运行）；macOS 内置 Martin Riedl 9.0.2 的 amd64/arm64 原始二进制，不做 lipo 合并，运行时按处理器选择。查找优先级为显式 `download.ffmpeg` > 随包 ffmpeg > 受管下载。
+- 修复 v0.1.8 Windows 受管下载地址 404：来源改为候选列表（gyan 9.0.2 首选、BtbN 2026-09-30 月末 8.1 LGPL 备用），下载增加 User-Agent、超时与换源；旧 marker 自动失效并重新获取，不阻断启动。
+- `build.bat windows` 默认构建完整包并联网校验 ffmpeg 摘要；新增 `windows-slim` 保留三文件精简包。macOS 构建同步下载并校验双架构 ffmpeg。两个包的校验脚本与 CI 缓存同步更新。
+- 新增 `THIRD-PARTY-NOTICES.md` 与 `build/licenses/GPLv3.txt`，分别标识项目代码（MIT + Commons Clause）与随包 ffmpeg（GPLv3），并提供 GPLv3 §6 要求的源码获取说明。
+- 决策记录见 [ADR 0007](docs/adr/0007-bundled-ffmpeg.md)，修订 ADR 0001。
+
+### 媒体嗅探
+
+- 修复 v0.1.4 起严格 Referer 门禁导致的视频漏检：H5/web-view、原生播放器与 CDN 请求常不带小程序 page-frame Referer，以前会被直接丢弃。现在这类媒体进入独立的**未归属媒体**列表（按 `6` 查看），下载时沿用真实媒体响应的 Referer/Cookie；目标候选仍严格要求来源匹配（`✓` / `?` 标记）。
+- 增加未知二进制兜底：目标 AppID 已匹配但 `Content-Type` 为 `application/octet-stream` 等未知类型且大小达到阈值时，作为“未知文件”候选显示，不自动缓存或下载。
+- JSON 识别增强：支持相邻字段拼接（如 `url` + `urlToken`）与无后缀但字段名强相关的媒体地址；未归属候选不写播放列表缓存。
+- 新增 `WX_MINI_VIDEO_DEBUG=1` 诊断日志，记录归属判断与丢弃原因，URL query 与 Cookie 值不落盘。
+- 新增 `capture.showUnattributed` 配置（默认 `true`），可关闭未归属媒体列表（关闭后既不收集也不展示）。
+- 决策记录见 [ADR 0008](docs/adr/0008-target-attribution.md)，修订 ADR 0003。
+
+### 稳定性
+
+- 修复代理资源泄漏：vendored patch `third_party/echo`，`Close()` 时关闭每个被 MITM 主机的 listener 并释放证书缓存，避免长时间运行时 FD/协程增长。
+- 修复 m3u8 分片静默损坏：分片改为 `.part` + 长度校验 + 原子 rename + `.done` 元数据复用判定；中断/截断分片不再被当作完成，旧版本无 `.done` 的缓存视为不可复用。
 
 ## v0.1.8 · 2026-10-20
 

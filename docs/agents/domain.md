@@ -25,7 +25,11 @@
 │   ├── 0001-managed-ffmpeg.md
 │   ├── 0002-portable-runtime-data.md
 │   ├── 0003-target-appid-filtering.md
-│   └── 0004-windows-terminal-startup.md
+│   ├── 0004-windows-terminal-startup.md
+│   ├── 0005-local-ca-lifecycle.md
+│   ├── 0006-macos-portable-distribution.md
+│   ├── 0007-bundled-ffmpeg.md
+│   └── 0008-target-attribution.md
 └── wx-mini-video-knowledge.md
 ```
 
