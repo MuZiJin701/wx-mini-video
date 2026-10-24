@@ -241,7 +241,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if !m.downloading && len(visible) > 0 {
 				candidate := visible[m.selected]
 				m.downloading = true
-				m.addLog("开始下载: " + candidateSummary(candidate))
+				m.addLog("开始下载: " + attributionDisplay(candidate) + " " + candidateSummary(candidate))
 				return m, downloadCmd(m.runtime, candidate)
 			}
 		}
@@ -395,7 +395,11 @@ func (m model) viewContent() string {
 		b.WriteString(errorStyle.Render(fitLine("代理未启动: "+m.startErr.Error()+"；按 r 重试", m.width-1)))
 		b.WriteString("\n")
 	} else if m.started {
-		b.WriteString(okStyle.Render(fitLine("代理运行中。建议先按 c 清空，再打开目标图片或播放目标视频或音频；来源不明的媒体会进入 6 未归属。", m.width-1)))
+		status := "代理运行中。建议先按 c 清空，再打开目标图片或播放目标视频或音频；来源不明的媒体会进入 6 未归属。"
+		if m.showUnattributedEnabled() && len(m.otherCandidates) > 0 {
+			status = fmt.Sprintf("代理运行中。检测到 %d 个未归属媒体（来源未确认），按 6 查看并可下载；目标列表只显示来源匹配的媒体。", len(m.otherCandidates))
+		}
+		b.WriteString(okStyle.Render(fitLine(status, m.width-1)))
 		b.WriteString("\n")
 	} else {
 		b.WriteString(mutedStyle.Render(fitLine("代理启动中...", m.width-1)))
@@ -839,11 +843,15 @@ func headerSummary(headers map[string]string) string {
 func (m *model) refresh() {
 	prevLen := len(m.filteredCandidates())
 	prevSelected := m.selected
+	prevOther := len(m.otherCandidates)
 	m.candidates = m.runtime.Candidates()
 	if m.runtime.Store != nil && m.showUnattributedEnabled() {
 		m.otherCandidates = m.runtime.Store.Unattributed()
 	} else {
 		m.otherCandidates = nil
+	}
+	if m.showUnattributedEnabled() && len(m.otherCandidates) > 0 && prevOther == 0 && m.activeCategory() != categoryOther {
+		m.addLog(fmt.Sprintf("检测到未归属媒体 %d 个，按 6 查看（来源未确认）", len(m.otherCandidates)))
 	}
 	visible := m.filteredCandidates()
 	if len(visible) > prevLen && (prevLen == 0 || prevSelected == prevLen-1) {

@@ -66,7 +66,7 @@ Mac 包完整解压后双击 `.app`，媒体保存在解压目录的 `downloads/
 ## 使用前了解
 
 - 一次只嗅探一个目标。发现阶段不收集媒体；确认目标后需要重新加载内容。切换目标会清空目标候选和进度，保留本地文件与未归属列表。
-- **目标候选**只接收请求来源 AppID 与目标完整匹配的媒体（标记 `✓`）。来源缺失或格式不符的媒体不会进入目标列表，但会进入**未归属媒体**（按 `6` 查看，标记 `?`）：H5/web-view 页面、原生播放器或 CDN 直接请求的媒体常常没有小程序的 page-frame Referer，因此以前会被直接丢弃。未归属媒体可由你判断后下载；手动输入 AppID 不会把它们变成目标媒体。小程序名称可补填，不参与过滤。可在配置 `capture.showUnattributed: false` 关闭未归属列表（关闭后来源未确认的媒体不再显示）。
+- **目标候选**只接收请求来源 AppID 与目标完整匹配的媒体（标记 `✓`）。来源缺失或格式不符的媒体不会进入目标列表，但会进入**未归属媒体**（按 `6` 查看，标记 `?`）：H5/web-view 页面、原生播放器或 CDN 直接请求的媒体常常没有小程序的 page-frame Referer，因此以前会被直接丢弃。未归属媒体可由你判断后下载；手动输入 AppID 不会把它们变成目标媒体。小程序名称可补填，不参与过滤。可在配置 `capture.showUnattributed: false` 关闭未归属列表（关闭后来源未确认的媒体不再显示）。代理运行期间会看到本机微信其他内容（例如公众号文章图片）的媒体，未归属列表只按响应类型收录，来源并不可靠。
 - 图片、直链视频和直链音频直接保存原文件，不转码。默认分发的**完整包已内置 ffmpeg**，m3u8 无需联网准备；**精简包**首次下载 m3u8 时自动下载并校验受管 ffmpeg。也可在配置中填写 `download.ffmpeg` 指定已有可执行文件，优先级最高。随包 ffmpeg 是独立的 GPLv3 程序，许可与源码获取方式见 `THIRD-PARTY-NOTICES.md`。macOS 完整解压后请保留整个文件夹，`ffmpeg/` 位于 `.app` 外。
 - 根证书与私钥在本机当前用户的受限目录中生成并复用，不随程序包分发；换电脑或 Windows 用户后需重新建立信任。安装根证书仍会修改 Windows 系统信任，退出不会卸载。旧版共享根证书需单独清理，详见[证书与迁移](https://github.com/MuZiJin701/wx-mini-video/blob/main/wx-mini-video-knowledge.md#证书风险与清理)。
 - 直链部分下载按资源隔离；只有具备服务器校验信息时才续传，否则重新下载。旧版未绑定资源的 `.part` 文件保留，但不再用于续传。JSON 跨域媒体不携带接口鉴权信息；若因此无法下载，请重新播放以捕获媒体自己的请求。
@@ -80,7 +80,7 @@ Mac 包完整解压后双击 `.app`，媒体保存在解压目录的 `downloads/
 | 异常退出后网络不通 | 重开程序，按 `Ctrl+D`，等到显示“代理运行中”后按 `q`。仅停在输入界面再退出不会恢复代理。 |
 | 证书安装失败 | 确认同意 UAC；仍失败时见[证书排障](https://github.com/MuZiJin701/wx-mini-video/blob/main/wx-mini-video-knowledge.md#排障)。 |
 | m3u8 下载或合并失败 | 完整包请确认 `ffmpeg/` 未被隔离或删除，必要时重新解压；精简包会自动下载受管 ffmpeg，也可在配置中指定 `download.ffmpeg`。错误会给出 ffmpeg 日志路径，更多处理见[排障](https://github.com/MuZiJin701/wx-mini-video/blob/main/wx-mini-video-knowledge.md#排障)。 |
-| 需要排查嗅探问题 | 用 `wx-mini-video.exe --debug` 启动（或双击包内 `start-debug.cmd`），诊断日志写入下载目录的 `wx-mini-video-debug.log`；分享前检查其中是否包含敏感信息。 |
+| 需要排查嗅探问题 | 用 `wx-mini-video.exe --debug` 启动，诊断日志写入下载目录的 `wx-mini-video-debug.log`；分享前检查其中是否包含敏感信息。 |
 
 [维护指南：配置、构建与验收](https://github.com/MuZiJin701/wx-mini-video/blob/main/wx-mini-video-knowledge.md) · [版本记录](https://github.com/MuZiJin701/wx-mini-video/blob/main/CHANGELOG.md)
 

@@ -88,7 +88,7 @@ ffmpeg 查找优先级为显式 `download.ffmpeg`、随包 ffmpeg、受管 ffmpe
 | 异常退出后网络不通 | 重开 exe → `Ctrl+D` → 等待“代理运行中”→ `q`。输入界面直接退出不会触发恢复；若启动失败，检查代理端口，或在 Windows 代理设置中核对并移除本工具残留地址。 |
 | 证书失败 | 确认同意 UAC。理解上节风险后，可手动将下载目录的 `WxMiniVideoRoot.cer` 安装到根信任库；代理运行时也可访问 `http://127.0.0.1:2023/cert` 获取证书（改端口后相应调整）。 |
 | 没有候选或音频 | 核对目标 AppID，按 `1` 查看全部、`5` 查看音频、`6` 查看未归属媒体，再重新加载媒体。缺失匹配 Referer 的媒体会进入未归属列表，不会进入目标列表；手动输入不能绕过。 |
-| 未归属列表 | H5/web-view、原生播放器和 CDN 媒体常无小程序 page-frame Referer，会进入此列表；下载沿用真实响应的 Referer/Cookie。列表上限 500 条，按 `c` 清空。 |
+| 未归属列表 | H5/web-view、原生播放器和 CDN 媒体常无小程序 page-frame Referer，会进入此列表；下载沿用真实响应的 Referer/Cookie。列表上限 500 条，按 `c` 清空。代理运行期间本机其他微信内容（如公众号文章图片）也可能进入该列表，来源不可靠。 |
 | 需要诊断嗅探 | 以 `wx-mini-video.exe --debug` 启动（参数会随 UAC/Terminal 重启转发，不依赖环境变量继承），日志写入 `下载目录\wx-mini-video-debug.log`；记录归属判断与丢弃原因，URL query 与 Cookie 值不落盘，分享前仍需检查。环境变量 `WX_MINI_VIDEO_DEBUG=1` 仍可直接使用。 |
 | 资源过多 | 按 `c` 清空，再打开目标内容；使用分类缩小列表。 |
 | 中文缺失 | 使用 Windows Terminal，或给传统控制台选择支持中文的字体。程序不自动安装 Terminal 或更改默认终端。 |
