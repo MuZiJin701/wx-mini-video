@@ -72,11 +72,9 @@ func CreateMiniProgramInterceptorPlugin(target miniprogram.Target, store *minipr
 				if confirmed {
 					addTargetResponseCandidate(store, dir, generation, target, appID, rawURL, contentType, contentLength, headers, domKind, domSuffix, ctx)
 					decision = "admit-target"
-				} else if target.AppID != "" {
-					if !captureUnattributed {
-						decision = "drop:disabled"
-						break
-					}
+				} else if captureUnattributed {
+					// 未归属列表与目标无关：发现阶段（尚未确认目标）也收集，
+					// 避免打开小程序时自动加载的第一个页面因目标为空而被丢弃。
 					store.AddUnattributed(miniprogram.Candidate{
 						SourceAppID:   appID,
 						Attribution:   miniprogram.AttributionUnattributed,
@@ -91,7 +89,7 @@ func CreateMiniProgramInterceptorPlugin(target miniprogram.Target, store *minipr
 					})
 					decision = "admit-unattributed"
 				} else {
-					decision = "drop:no-target"
+					decision = "drop:disabled"
 				}
 			case isJSONContentType(contentType):
 				if confirmed {
@@ -107,10 +105,7 @@ func CreateMiniProgramInterceptorPlugin(target miniprogram.Target, store *minipr
 			case isScannablePage(contentType):
 				// H5/web-view 页面的播放器常把媒体地址内联在 HTML/JS 里，
 				// 播放前或命中缓存时不会产生媒体请求；扫描页面可稳定拿到候选。
-				if target.AppID == "" {
-					decision = "drop:no-target"
-					break
-				}
+				// 发现阶段（目标为空）也扫描，目标确认后可在未归属列表查看。
 				if !captureUnattributed {
 					decision = "drop:disabled"
 					break

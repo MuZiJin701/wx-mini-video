@@ -164,7 +164,7 @@ func TestMiniProgramPluginAddsDirectM3U8Response(t *testing.T) {
 	}
 }
 
-func TestMiniProgramDiscoveryDoesNotCollectMedia(t *testing.T) {
+func TestMiniProgramDiscoveryCollectsOnlyUnattributedMedia(t *testing.T) {
 	store := miniprogram.NewStore()
 	dir := t.TempDir()
 	plugin := CreateMiniProgramInterceptorPlugin(miniprogram.Target{}, store, dir)
@@ -186,8 +186,11 @@ func TestMiniProgramDiscoveryDoesNotCollectMedia(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(store.List("")) != 0 || len(store.Unattributed()) != 0 || len(files) != 0 || ctx.reads != 0 {
-		t.Fatal("discovery collected media, cached a playlist or read the response body")
+	// 发现阶段不产生目标候选、不缓存播放列表；但未归属列表与目标无关，
+	// 会保留发现阶段看到的媒体，目标确认后可在 6 未归属中查看。
+	if len(store.List("")) != 0 || len(store.Unattributed()) != 1 || len(files) != 0 || ctx.reads != 0 {
+		t.Fatalf("discovery state: target=%d unattributed=%d files=%d reads=%d",
+			len(store.List("")), len(store.Unattributed()), len(files), ctx.reads)
 	}
 }
 
