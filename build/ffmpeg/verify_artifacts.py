@@ -14,6 +14,9 @@ EXPECTED_CASES = {
     "tls12-h264-ts", "tls12-hevc-fmp4", "tls12-h264-aes",
     "tls13-h264-ts", "tls13-hevc-fmp4", "tls13-h264-aes",
 }
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 REQUIRED_RECIPE = {
     "recipe/build.py", "recipe/verify.py", "recipe/test_build.py",
     "recipe/sources.json", "recipe/README.md", "recipe/LICENSE",

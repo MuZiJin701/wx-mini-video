@@ -6,6 +6,9 @@ on:
 permissions:
   contents: read
 
+env:
+  PYTHONUTF8: '1'
+
 jobs:
   build:
     name: FFmpeg · ${{ matrix.target }}

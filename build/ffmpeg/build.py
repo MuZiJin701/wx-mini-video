@@ -21,6 +21,9 @@ HERE = pathlib.Path(__file__).resolve().parent
 ROOT = HERE.parent.parent
 TARGETS = {"windows-amd64": "mingw64", "darwin-amd64": "darwin64-x86_64-cc",
            "darwin-arm64": "darwin64-arm64-cc"}
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
 
 def sha256(path):

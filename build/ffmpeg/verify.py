@@ -14,6 +14,9 @@ import threading
 import urllib.parse
 
 HERE = pathlib.Path(__file__).resolve().parent
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
 
 def execute(binary, args, cwd=None, trust_cert=None):
