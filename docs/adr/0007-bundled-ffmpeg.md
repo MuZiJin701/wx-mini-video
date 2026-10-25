@@ -4,7 +4,7 @@
 
 ## 背景
 
-v0.1.8 依赖的 Windows 受管 ffmpeg 固定下载地址（BtbN 日构建，2026-08-11）已被上游清理，实测返回 404；代码内置的 SHA-256 与旧月末构建也不一致，只改 tag 仍会校验失败。用户要求新版本默认直接提供 ffmpeg，同时修复自动下载逻辑；`docs/bundled-ffmpeg-requirements.md` 的 Q1/Q2 已确认完整包覆盖 Windows 与 macOS。
+v0.1.8 依赖的 Windows 受管 ffmpeg 固定下载地址（BtbN 日构建，2026-08-11）已被上游清理，实测返回 404；代码内置的 SHA-256 与旧月末构建也不一致，只改 tag 仍会校验失败。用户要求新版本默认直接提供 ffmpeg，同时修复自动下载逻辑；用户已确认完整包覆盖 Windows 与 macOS。
 
 ## 决策
 

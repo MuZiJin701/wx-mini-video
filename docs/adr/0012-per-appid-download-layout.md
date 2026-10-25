@@ -1,6 +1,6 @@
 # 下载产物按目标 AppID 与资源类型分类
 
-状态：已确认（2026-10-25）。修订 [ADR 0002](0002-portable-runtime-data.md) 中「下载目录平铺保存媒体」的布局描述。需求见 [ui-redesign-requirements.md](../ui-redesign-requirements.md)。
+状态：已确认（2026-10-25）。修订 [ADR 0002](0002-portable-runtime-data.md) 中「下载目录平铺保存媒体」的布局描述。
 
 ## 背景
 

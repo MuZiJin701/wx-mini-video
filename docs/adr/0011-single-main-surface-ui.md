@@ -1,6 +1,6 @@
 # TUI 改为单主界面品牌化布局，并删除小程序名称
 
-状态：已确认（2026-10-25）。需求见 [ui-redesign-requirements.md](../ui-redesign-requirements.md)。
+状态：已确认（2026-10-25）。
 
 ## 背景
 
@@ -29,7 +29,7 @@ v0.1.9 的 TUI 是三屏（AppID 输入 / 小程序发现 / 媒体列表）+ 高
 ## 后果
 
 - TUI 渲染从字符串拼接改为有布局度量的组件化渲染；现有 `View()` 断言类测试与 README 截图需要重写/重拍。
-- 主题、外观持久化（`downloads/ui.json`）、系统明暗检测、鼠标命中与响应式断点成为新的实现面；`docs/ui-redesign-requirements.md` 给出完整规格。
+- 主题、外观持久化（`downloads/ui.json`）、系统明暗检测、鼠标命中与响应式断点成为新的实现面。
 - `target.name` 从配置模板与 schema 移除；旧 yaml 中的该键被忽略，不做迁移。
 - logo 是本次唯一带前置原型门槛的部分；即使原型失败，界面仍可在块字符方案下达成其余目标。
 - 版本升至 0.2.0，并同步 README/知识文档/CHANGELOG。
