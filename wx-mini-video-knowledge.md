@@ -1,6 +1,6 @@
 # 维护指南
 
-用户操作见 [README.md](README.md)，术语见 [GLOSSARY.md](GLOSSARY.md)，发布历史见 [CHANGELOG.md](CHANGELOG.md)，macOS 使用见 [docs/macos-usage.md](docs/macos-usage.md)。本文件对应尚未发布的 v0.2.0 源码，记录实现、配置、构建、排障与验收；已确认规格及实施状态见 [TUI 需求](docs/tui-alignment-requirements.md)，决策背景见 `docs/adr/`，历史计划见 `docs/archive/`。
+用户操作见 [README.md](README.md)，术语见 [GLOSSARY.md](GLOSSARY.md)，发布历史见 [CHANGELOG.md](CHANGELOG.md)，macOS 使用见 [docs/macos-usage.md](docs/macos-usage.md)。本文件对应 v0.2.0 源码（本次沿用既有 v0.1.9 标签和 Release 更新分发，包内版本保持 v0.2.0），记录实现、配置、构建、排障与验收；已确认规格及实施状态见 [TUI 需求](docs/tui-alignment-requirements.md)，决策背景见 `docs/adr/`，历史计划见 `docs/archive/`。
 
 ## 架构
 

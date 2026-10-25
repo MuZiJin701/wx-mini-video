@@ -4,7 +4,7 @@ Save images, direct videos, HTTP-FLV live streams, direct audio, and m3u8 media 
 
 [Download latest](https://github.com/MuZiJin701/wx-mini-video/releases/latest) · [简体中文](https://github.com/MuZiJin701/wx-mini-video/blob/main/README.md)
 
-> This document describes the unreleased v0.2.0 source (discovery on startup, unified target area, six media categories, per-type download folders, HTTP-FLV live recording). The v0.1.9 packages linked below do not include these new features; build from source to try the current implementation. To upgrade, replace the exe and keep `wx-mini-video.yaml`, `ffmpeg/`, and `downloads/`.
+> This document describes v0.2.0 (discovery on startup, unified target area, six media categories, per-type download folders, HTTP-FLV live recording). At the maintainer's request, this update reuses the existing v0.1.9 tag and Release, with the tag moved to this release commit. The same-named downloads below have been replaced; the application version inside is v0.2.0. To upgrade, replace the exe and keep `wx-mini-video.yaml`, `ffmpeg/`, and `downloads/`.
 
 Windows and macOS packages are available together in the [v0.1.9 Release](https://github.com/MuZiJin701/wx-mini-video/releases/tag/v0.1.9):
 

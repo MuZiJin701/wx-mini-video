@@ -2,7 +2,9 @@
 
 使用说明见 [README.md](README.md)，英文说明见 [README.en.md](README.en.md)，构建与发布流程见 [wx-mini-video-knowledge.md](wx-mini-video-knowledge.md)。
 
-## v0.2.0 · 未发布
+## v0.2.0 · 2026-10-25（沿用 v0.1.9 标签）
+
+本次按维护者要求更新既有 `v0.1.9` 标签和 Release，不新建标签；Windows 与 macOS 同名完整包更新到本次发布提交，程序版本保持 `v0.2.0`，原 ffmpeg 对应源码附件保留。
 
 本版按 [TUI 对齐、目标选择与媒体分类需求](docs/tui-alignment-requirements.md) 完成单主界面、统一目标选择区、六个媒体分类与按类型下载目录的改造；相关取舍见 [ADR 0011](docs/adr/0011-single-main-surface-ui.md)、[ADR 0012](docs/adr/0012-per-appid-download-layout.md)、[ADR 0013](docs/adr/0013-live-stream-recording.md)。
 
@@ -46,7 +48,7 @@
 
 ### 文档与截图
 
-- README/README.en、维护指南与 CHANGELOG 按新交互重写，操作截图改为由真实 `View` 渲染的预览图（`go run -tags preview ./build/uipreview` + `build/ansi_to_png.py`）；版本号升至 0.2.0（发布前 Release 仍为 v0.1.9）。
+- README/README.en、维护指南与 CHANGELOG 按新交互重写，操作截图改为由真实 `View` 渲染的预览图（`go run -tags preview ./build/uipreview` + `build/ansi_to_png.py`）；版本号升至 0.2.0，本次沿用 v0.1.9 Release 更新分发。
 - macOS 验收脚本的 TUI 启动检查改用临时目录中的隔离配置与临时 `HOME`：`proxy.system=false`、`proxy.skipInstallRootCert=true`、独立下载目录与随机端口，只启动本地代理，不再可能触发系统代理设置或根证书安装。
 - 文档按最终实现统一：补全输入框/发现列表/确认按钮的动作与焦点规则、输入时 Ctrl+R 重试、平台外观回退差异、归档失败保留路径、实机验收边界和自建 ffmpeg 打包输入；澄清时的旧实现记录明确标为历史基线，中英文 README 同步。
 - 移除 README 中失效或无法对应当前源码的远程截图引用，改为本地界面预览生成入口，并修正第三方声明的章节锚点与维护文档链接。

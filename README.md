@@ -4,7 +4,7 @@
 
 [下载最新版](https://github.com/MuZiJin701/wx-mini-video/releases/latest) · [English](https://github.com/MuZiJin701/wx-mini-video/blob/main/README.en.md)
 
-> 本文档对应尚未发布的 v0.2.0 源码（启动即发现、统一目标选择区、6 个媒体分类、按类型下载目录、HTTP-FLV 直播录制）。下方 v0.1.9 下载包不包含这些新功能；体验当前实现需从源码构建。升级时替换 exe，保留 `wx-mini-video.yaml`、`ffmpeg/` 和 `downloads/`。
+> 本文档对应 v0.2.0（启动即发现、统一目标选择区、6 个媒体分类、按类型下载目录、HTTP-FLV 直播录制）。本次按维护者要求沿用既有 v0.1.9 标签和 Release 更新分发，标签指向本次发布提交；下方同名附件已更新，包内版本为 v0.2.0。升级时替换 exe，保留 `wx-mini-video.yaml`、`ffmpeg/` 和 `downloads/`。
 
 Windows 与 macOS 包在同一 [v0.1.9 Release](https://github.com/MuZiJin701/wx-mini-video/releases/tag/v0.1.9) 并列提供：
 

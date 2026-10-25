@@ -2,7 +2,7 @@
 
 适用 macOS 13 及以上，Apple Silicon 与 Intel 共用一个 ZIP。保留 Windows 版的单主界面、目标 AppID 严格归属、来源未确认媒体、图片、直链视频、直链音频、m3u8 与 HTTP-FLV 直播流录制。
 
-[下载 v0.1.9 Mac 通用 ZIP](https://github.com/MuZiJin701/wx-mini-video/releases/download/v0.1.9/wx-mini-video-macos-universal-unsigned.zip)。Mac 与 Windows 包在同一 [v0.1.9 Release](https://github.com/MuZiJin701/wx-mini-video/releases/tag/v0.1.9) 并列提供，附件构建提交与 SHA-256 见发布说明。本文与[中文 README](https://github.com/MuZiJin701/wx-mini-video/blob/main/README.md)描述尚未发布的 v0.2.0 源码；下述启动即发现、统一目标选择区、六分类与新目录需构建当前源码体验，v0.1.9 包不包含这些新功能。
+[下载 v0.1.9 Mac 通用 ZIP](https://github.com/MuZiJin701/wx-mini-video/releases/download/v0.1.9/wx-mini-video-macos-universal-unsigned.zip)。Mac 与 Windows 包在同一 [v0.1.9 Release](https://github.com/MuZiJin701/wx-mini-video/releases/tag/v0.1.9) 并列提供，附件构建提交与 SHA-256 见发布说明。本文与[中文 README](https://github.com/MuZiJin701/wx-mini-video/blob/main/README.md)描述 v0.2.0。本次沿用既有 v0.1.9 标签和 Release 更新分发，标签指向本次发布提交，同名附件已替换；包内版本为 v0.2.0，包含下述启动即发现、统一目标选择区、六分类与新目录。
 
 `wx-mini-video-macos-universal-unsigned.zip` 是本地构建的未签名测试包，仅供验证；正式发布须完成 Developer ID 签名、公证与双架构真机验收，并使用不含 `unsigned` 的文件名。
 
