@@ -4,7 +4,7 @@
 
 `wx-mini-video` 是 Windows 优先、同时提供 macOS 未签名测试版的 Go TUI：通过本地 HTTPS 代理识别 PC 微信目标小程序加载的图片、直链视频、直链音频和 m3u8，并下载到本地。
 
-当前范围是通用小程序媒体嗅探与下载。保持单二进制 TUI、Echo 代理适配、Windows 系统代理与证书、macOS 系统代理与钥匙串、目标 AppID 严格归属、手动输入与小程序发现、图片/直链视频/直链音频下载及 m3u8 的 ffmpeg 合并。Windows 启动请求 UAC 并优先使用已安装的 Terminal。Windows 与 macOS 均只分发一个完整包，随包附带 ffmpeg（Windows `ffmpeg\ffmpeg.exe`，macOS `.app` 外 `ffmpeg/ffmpeg-amd64|arm64`）；随包缺失或损坏时自动下载受管 ffmpeg 兜底。
+当前范围是通用小程序媒体嗅探与下载。保持单二进制 TUI、Echo 代理适配、Windows 系统代理与证书、macOS 系统代理与钥匙串、目标 AppID 严格归属、手动输入与小程序发现、图片/直链视频/直链音频下载及 m3u8 的 ffmpeg 合并。Windows 主程序以当前用户运行并优先使用已安装的 Terminal；只有安装根证书或清理旧共享证书时请求 UAC。Windows 与 macOS 均只分发一个完整包，随包附带 ffmpeg（Windows `ffmpeg\ffmpeg.exe`，macOS `.app` 外 `ffmpeg/ffmpeg-amd64|arm64`）；随包缺失或损坏时自动下载受管 ffmpeg 兜底。
 
 ## 先读
 

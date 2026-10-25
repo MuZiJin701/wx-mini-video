@@ -3,13 +3,46 @@
 package certificate
 
 import (
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"regexp"
 	"strings"
+	"time"
+
+	"golang.org/x/sys/windows"
 )
+
+const (
+	installCertArgPrefix = "--wx-mini-video-install-cert="
+	removeLegacyArg      = "--wx-mini-video-remove-legacy-root"
+)
+
+// processElevated 是测试注入点。主程序以当前用户运行，只有证书安装/旧证书清理需要提权。
+var processElevated = func() bool {
+	return windows.GetCurrentProcessToken().IsElevated()
+}
+
+// RunHelper 在提权子进程中执行单个证书操作后退出；普通进程返回 handled=false。
+// 证书通过命令行 base64 传递，避免提权后跨用户临时目录权限问题时找不到文件。
+func RunHelper(args []string) (bool, error) {
+	for _, arg := range args {
+		if strings.HasPrefix(arg, installCertArgPrefix) {
+			encoded := strings.TrimPrefix(arg, installCertArgPrefix)
+			data, err := base64.StdEncoding.DecodeString(encoded)
+			if err == nil {
+				err = installCertificateDirect(data)
+			}
+			return true, err
+		}
+		if arg == removeLegacyArg {
+			return true, removeLegacyRootDirect(LegacyRootThumbprint)
+		}
+	}
+	return false, nil
+}
 
 func fetchCertificates() ([]Certificate, error) {
 	certificates, err := fetchCertificatesWithPowerShell()
@@ -134,6 +167,33 @@ func parseCertutilCertificates(output string) []Certificate {
 }
 
 func installCertificate(cert_data []byte) error {
+	if processElevated() {
+		return installCertificateDirect(cert_data)
+	}
+	thumbprint, err := Thumbprint(cert_data)
+	if err != nil {
+		return err
+	}
+	encoded := base64.StdEncoding.EncodeToString(cert_data)
+	executable, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("定位程序失败: %w", err)
+	}
+	directory, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("读取当前目录失败: %w", err)
+	}
+	if err := launchElevated(executable, []string{installCertArgPrefix + encoded}, directory); err != nil {
+		return fmt.Errorf("请求管理员权限安装根证书失败: %w", err)
+	}
+	if err := waitForCertificate(thumbprint, true); err != nil {
+		return fmt.Errorf("安装根证书失败: %w", err)
+	}
+	return nil
+}
+
+// installCertificateDirect 由提权子进程调用，假定当前进程已有管理员权限。
+func installCertificateDirect(cert_data []byte) error {
 	cert_file, err := os.CreateTemp("", "WxMiniVideoRoot-*.cer")
 	if err != nil {
 		return fmt.Errorf("没有创建证书的权限，%v\n", err.Error())
@@ -157,10 +217,38 @@ func installCertificate(cert_data []byte) error {
 
 var runCertificateDelete = func(args ...string) ([]byte, error) { return exec.Command("certutil", args...).CombinedOutput() }
 
+// launchElevated 是测试注入点；生产环境通过 runas 启动本程序的提权子进程。
+var launchElevated = launchElevatedHelper
+
 func uninstallCertificate(thumbprint string) error {
 	if thumbprint != LegacyRootThumbprint {
 		return fmt.Errorf("只允许按固定指纹清理旧共享根证书")
 	}
+	if processElevated() {
+		return removeLegacyRootDirect(thumbprint)
+	}
+	// 当前用户根证书库用普通权限即可清理；提权子进程运行在管理员账号下，
+	// 无法删除标准用户自己的 CurrentUser\Root。
+	_, _ = runCertificateDelete("-user", "-delstore", "Root", thumbprint)
+	executable, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("定位程序失败: %w", err)
+	}
+	directory, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("读取当前目录失败: %w", err)
+	}
+	if err := launchElevated(executable, []string{removeLegacyArg}, directory); err != nil {
+		return fmt.Errorf("请求管理员权限清理旧共享根证书失败: %w", err)
+	}
+	if err := waitForCertificate(thumbprint, false); err != nil {
+		return fmt.Errorf("清理旧共享根证书失败: %w", err)
+	}
+	return nil
+}
+
+// removeLegacyRootDirect 假定当前进程已有管理员权限。
+func removeLegacyRootDirect(thumbprint string) error {
 	var cleanupErr error
 	for _, args := range [][]string{{"-delstore", "Root", thumbprint}, {"-user", "-delstore", "Root", thumbprint}} {
 		output, err := runCertificateDelete(args...)
@@ -169,4 +257,53 @@ func uninstallCertificate(thumbprint string) error {
 		}
 	}
 	return cleanupErr
+}
+
+func waitForCertificate(thumbprint string, present bool) error {
+	deadline := time.Now().Add(2 * time.Minute)
+	var lastErr error
+	for {
+		matched, err := CheckHasCertificate(thumbprint)
+		if err == nil {
+			lastErr = nil
+			if matched == present {
+				return nil
+			}
+		} else {
+			lastErr = err
+		}
+		if time.Now().After(deadline) {
+			if lastErr != nil {
+				return fmt.Errorf("等待管理员授权或检查证书超时: %w", lastErr)
+			}
+			return fmt.Errorf("等待管理员授权或证书操作完成超时，可能已取消 UAC")
+		}
+		time.Sleep(300 * time.Millisecond)
+	}
+}
+
+func launchElevatedHelper(executable string, args []string, directory string) error {
+	verb, err := windows.UTF16PtrFromString("runas")
+	if err != nil {
+		return err
+	}
+	file, err := windows.UTF16PtrFromString(executable)
+	if err != nil {
+		return err
+	}
+	parameters, err := windows.UTF16PtrFromString(windows.ComposeCommandLine(args))
+	if err != nil {
+		return err
+	}
+	cwd, err := windows.UTF16PtrFromString(directory)
+	if err != nil {
+		return err
+	}
+	if err := windows.ShellExecute(0, verb, file, parameters, cwd, 0); err != nil {
+		if errors.Is(err, windows.ERROR_CANCELLED) {
+			return fmt.Errorf("已取消管理员授权")
+		}
+		return err
+	}
+	return nil
 }

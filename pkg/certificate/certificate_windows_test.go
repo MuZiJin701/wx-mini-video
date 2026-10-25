@@ -3,6 +3,8 @@
 package certificate
 
 import (
+	"bytes"
+	"encoding/base64"
 	"errors"
 	"golang.org/x/sys/windows"
 	"path/filepath"
@@ -12,7 +14,12 @@ import (
 
 func TestLegacyRootRemovalTargetsBothStoresAndVerifiesResult(t *testing.T) {
 	originalDelete, originalFetch := runCertificateDelete, fetchCertificatesForCheck
-	t.Cleanup(func() { runCertificateDelete, fetchCertificatesForCheck = originalDelete, originalFetch })
+	originalElevated := processElevated
+	t.Cleanup(func() {
+		runCertificateDelete, fetchCertificatesForCheck = originalDelete, originalFetch
+		processElevated = originalElevated
+	})
+	processElevated = func() bool { return true }
 	var calls [][]string
 	runCertificateDelete = func(args ...string) ([]byte, error) {
 		calls = append(calls, args)
@@ -31,6 +38,89 @@ func TestLegacyRootRemovalTargetsBothStoresAndVerifiesResult(t *testing.T) {
 	fetchCertificatesForCheck = func() ([]Certificate, error) { return []Certificate{{Thumbprint: LegacyRootThumbprint}}, nil }
 	if err := RemoveLegacyRoot(); err == nil {
 		t.Fatal("reported success while shared root remains")
+	}
+}
+
+func TestRunHelperIgnoresNormalArguments(t *testing.T) {
+	handled, err := RunHelper([]string{"--debug"})
+	if handled || err != nil {
+		t.Fatalf("RunHelper() = (%v, %v), want not handled", handled, err)
+	}
+}
+
+func TestRunHelperRejectsInvalidCertificatePayload(t *testing.T) {
+	handled, err := RunHelper([]string{installCertArgPrefix + "not-base64"})
+	if !handled || err == nil {
+		t.Fatalf("RunHelper() = (%v, %v), want handled error", handled, err)
+	}
+}
+
+func TestUninstallCertificateDeletesCurrentUserStoreBeforeElevation(t *testing.T) {
+	originalDelete, originalFetch := runCertificateDelete, fetchCertificatesForCheck
+	originalElevated, originalLaunch := processElevated, launchElevated
+	t.Cleanup(func() {
+		runCertificateDelete, fetchCertificatesForCheck = originalDelete, originalFetch
+		processElevated, launchElevated = originalElevated, originalLaunch
+	})
+	processElevated = func() bool { return false }
+	var deleteCalls [][]string
+	runCertificateDelete = func(args ...string) ([]byte, error) {
+		deleteCalls = append(deleteCalls, args)
+		return nil, nil
+	}
+	var launchedArgs []string
+	launchElevated = func(executable string, args []string, directory string) error {
+		launchedArgs = append([]string(nil), args...)
+		return nil
+	}
+	fetchCertificatesForCheck = func() ([]Certificate, error) { return nil, nil }
+
+	if err := uninstallCertificate(LegacyRootThumbprint); err != nil {
+		t.Fatal(err)
+	}
+	if len(deleteCalls) != 1 || strings.Join(deleteCalls[0], " ") != "-user -delstore Root "+LegacyRootThumbprint {
+		t.Fatalf("current-user store was not cleaned before elevation: %v", deleteCalls)
+	}
+	if len(launchedArgs) != 1 || launchedArgs[0] != removeLegacyArg {
+		t.Fatalf("unexpected elevated helper arguments: %v", launchedArgs)
+	}
+}
+
+func TestInstallCertificateLaunchesElevatedHelperWithPublicCertificate(t *testing.T) {
+	originalElevated, originalLaunch, originalFetch := processElevated, launchElevated, fetchCertificatesForCheck
+	t.Cleanup(func() {
+		processElevated, launchElevated, fetchCertificatesForCheck = originalElevated, originalLaunch, originalFetch
+	})
+	processElevated = func() bool { return false }
+	cert, err := LoadOrCreate(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	thumbprint, err := Thumbprint(cert.Cert)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var launched []string
+	launchElevated = func(executable string, args []string, directory string) error {
+		launched = append([]string(nil), args...)
+		return nil
+	}
+	fetchCertificatesForCheck = func() ([]Certificate, error) {
+		return []Certificate{{Thumbprint: thumbprint}}, nil
+	}
+
+	if err := installCertificate(cert.Cert); err != nil {
+		t.Fatal(err)
+	}
+	if len(launched) != 1 || !strings.HasPrefix(launched[0], installCertArgPrefix) {
+		t.Fatalf("unexpected helper arguments: %v", launched)
+	}
+	payload, err := base64.StdEncoding.DecodeString(strings.TrimPrefix(launched[0], installCertArgPrefix))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(payload, cert.Cert) {
+		t.Fatal("helper received a different certificate payload")
 	}
 }
 

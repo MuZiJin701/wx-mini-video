@@ -3,7 +3,6 @@
 package system
 
 import (
-	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -14,19 +13,19 @@ import (
 )
 
 const (
-	elevatedChildArg = "--wx-mini-video-elevated"
 	terminalChildArg = "--wx-mini-video-terminal"
 	configPathArg    = "--wx-mini-video-config="
 )
 
 type consoleEnvironment struct {
 	executable, directory string
-	elevated, inTerminal  bool
+	inTerminal            bool
 	findTerminal          func() (string, error)
-	launch                func(executable string, args []string, elevate bool) error
+	launch                func(executable string, args []string, directory string) error
 }
 
-// PrepareConsole runs before configuration, certificates or the proxy are loaded.
+// PrepareConsole 在加载配置、证书和代理前选择 Windows Terminal。
+// 主程序始终以当前用户运行；证书安装/旧证书清理由证书包在需要时单独请求 UAC。
 func PrepareConsole() (bool, error) {
 	executable, err := os.Executable()
 	if err != nil {
@@ -56,44 +55,25 @@ func PrepareConsole() (bool, error) {
 	return prepareConsole(consoleEnvironment{
 		executable: executable,
 		directory:  directory,
-		elevated:   windows.GetCurrentProcessToken().IsElevated(),
 		inTerminal: os.Getenv("WT_SESSION") != "",
 		findTerminal: func() (string, error) {
 			return exec.LookPath("wt.exe")
 		},
-		launch: func(executable string, args []string, elevate bool) error {
-			return launchConsole(executable, args, directory, elevate)
-		},
+		launch: launchConsole,
 	}, args)
 }
 
 func prepareConsole(env consoleEnvironment, args []string) (bool, error) {
-	var elevatedChild, terminalChild bool
+	terminalChild := false
 	forwarded := make([]string, 0, len(args))
 	for _, arg := range args {
-		switch arg {
-		case elevatedChildArg:
-			elevatedChild = true
-		case terminalChildArg:
+		if arg == terminalChildArg {
 			terminalChild = true
-		default:
-			forwarded = append(forwarded, arg)
+			continue
 		}
+		forwarded = append(forwarded, arg)
 	}
-	if !env.elevated {
-		if elevatedChild || terminalChild {
-			return false, fmt.Errorf("重启后的进程没有管理员权限，请右键程序选择“以管理员身份运行”")
-		}
-		if err := env.launch(env.executable, append(forwarded, elevatedChildArg), true); err != nil {
-			if errors.Is(err, windows.ERROR_CANCELLED) {
-				return false, fmt.Errorf("已取消管理员权限请求，程序未启动: %w", err)
-			}
-			return false, fmt.Errorf("请求管理员权限失败: %w", err)
-		}
-		return true, nil
-	}
-	// UAC starts a new console even when WT_SESSION was inherited from the caller.
-	if terminalChild || (env.inTerminal && !elevatedChild) {
+	if terminalChild || env.inTerminal {
 		return false, nil
 	}
 	terminal, err := env.findTerminal()
@@ -106,32 +86,16 @@ func prepareConsole(env consoleEnvironment, args []string) (bool, error) {
 	for i := range terminalArgs {
 		terminalArgs[i] = strings.ReplaceAll(terminalArgs[i], ";", `\;`)
 	}
-	if err := env.launch(terminal, terminalArgs, false); err != nil {
-		return false, fmt.Errorf("Windows Terminal 启动失败，请在管理员 Windows Terminal 中手动运行程序: %w", err)
+	if err := env.launch(terminal, terminalArgs, env.directory); err != nil {
+		return false, fmt.Errorf("Windows Terminal 启动失败，请在当前控制台或 Windows Terminal 中手动运行程序: %w", err)
 	}
 	return true, nil
 }
 
-func launchConsole(executable string, args []string, directory string, elevate bool) error {
-	if !elevate {
-		cmd := exec.Command(executable, args...)
-		cmd.Dir = directory
-		return cmd.Run()
-	}
-	verb, _ := windows.UTF16PtrFromString("runas")
-	file, err := windows.UTF16PtrFromString(executable)
-	if err != nil {
-		return err
-	}
-	parameters, err := windows.UTF16PtrFromString(windows.ComposeCommandLine(args))
-	if err != nil {
-		return err
-	}
-	cwd, err := windows.UTF16PtrFromString(directory)
-	if err != nil {
-		return err
-	}
-	return windows.ShellExecute(0, verb, file, parameters, cwd, windows.SW_SHOWNORMAL)
+func launchConsole(executable string, args []string, directory string) error {
+	cmd := exec.Command(executable, args...)
+	cmd.Dir = directory
+	return cmd.Run()
 }
 
 func ShowStartupError(err error) {

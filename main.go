@@ -8,6 +8,7 @@ import (
 	"wx_channel/internal/app"
 	"wx_channel/internal/config"
 	"wx_channel/internal/tui"
+	"wx_channel/pkg/certificate"
 	"wx_channel/pkg/system"
 )
 
@@ -15,6 +16,13 @@ var AppVer = "v0.1.9"
 var Mode = "debug"
 
 func main() {
+	if handled, err := certificate.RunHelper(os.Args[1:]); handled {
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
 	relaunched, err := system.PrepareConsole()
 	if err != nil {
 		system.ShowStartupError(err)
