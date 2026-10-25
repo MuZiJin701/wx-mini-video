@@ -11,6 +11,7 @@ import (
 	"regexp"
 	"strings"
 	"time"
+	"unicode/utf8"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
@@ -210,9 +211,28 @@ func installCertificateDirect(cert_data []byte) error {
 	cmd := exec.Command("certutil", "-addstore", "Root", cert_file.Name())
 	output, err2 := cmd.CombinedOutput()
 	if err2 != nil {
-		return fmt.Errorf("安装证书失败: %w, %s", err2, strings.TrimSpace(string(output)))
+		return fmt.Errorf("安装证书失败: %w, %s", err2, decodeOEMOutput(output))
 	}
 	return nil
+}
+
+// decodeOEMOutput 把 certutil 等控制台程序重定向输出的本地代码页文本转成 UTF-8。
+// 中文 Windows 上错误输出是 GBK，直接交给 MessageBoxW 会显示乱码。
+func decodeOEMOutput(data []byte) string {
+	text := strings.TrimSpace(string(data))
+	if text == "" || utf8.Valid(data) {
+		return text
+	}
+	const cpOEM = 1 // CP_OEMCP
+	size, err := windows.MultiByteToWideChar(cpOEM, 0, &data[0], int32(len(data)), nil, 0)
+	if err != nil || size <= 0 {
+		return text
+	}
+	buffer := make([]uint16, size)
+	if _, err := windows.MultiByteToWideChar(cpOEM, 0, &data[0], int32(len(data)), &buffer[0], size); err != nil {
+		return text
+	}
+	return strings.TrimSpace(windows.UTF16ToString(buffer))
 }
 
 var runCertificateDelete = func(args ...string) ([]byte, error) { return exec.Command("certutil", args...).CombinedOutput() }
@@ -251,7 +271,7 @@ func removeLegacyRootDirect(thumbprint string) error {
 	for _, args := range [][]string{{"-delstore", "Root", thumbprint}, {"-user", "-delstore", "Root", thumbprint}} {
 		output, err := runCertificateDelete(args...)
 		if err != nil {
-			cleanupErr = errors.Join(cleanupErr, fmt.Errorf("删除证书失败: %w, %s", err, strings.TrimSpace(string(output))))
+			cleanupErr = errors.Join(cleanupErr, fmt.Errorf("删除证书失败: %w, %s", err, decodeOEMOutput(output)))
 		}
 	}
 	return cleanupErr
@@ -315,6 +335,9 @@ func launchElevatedHelper(executable string, args []string, directory string) er
 	}
 	if result == 0 {
 		err := callErr
+		if err == nil {
+			err = errors.New("ShellExecuteExW 返回失败但未提供错误码")
+		}
 		if errors.Is(err, windows.ERROR_CANCELLED) {
 			return fmt.Errorf("已取消管理员授权: %w", err)
 		}

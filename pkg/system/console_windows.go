@@ -101,5 +101,5 @@ func launchConsole(executable string, args []string, directory string) error {
 func ShowStartupError(err error) {
 	text, _ := windows.UTF16PtrFromString(err.Error())
 	caption, _ := windows.UTF16PtrFromString("wx-mini-video")
-	_, _ = windows.MessageBox(0, text, caption, windows.MB_OK|windows.MB_ICONERROR)
+	_, _ = windows.MessageBox(0, text, caption, windows.MB_OK|windows.MB_ICONERROR|windows.MB_SETFOREGROUND)
 }

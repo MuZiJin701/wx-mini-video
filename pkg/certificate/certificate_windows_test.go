@@ -273,6 +273,15 @@ func TestShellExecuteInfoStartsOrdinaryProcess(t *testing.T) {
 	}
 }
 
+func TestDecodeOEMOutputKeepsUTF8(t *testing.T) {
+	if got := decodeOEMOutput([]byte("plain 证书")); got != "plain 证书" {
+		t.Fatalf("decodeOEMOutput() = %q", got)
+	}
+	if got := decodeOEMOutput(nil); got != "" {
+		t.Fatalf("decodeOEMOutput(nil) = %q", got)
+	}
+}
+
 func TestManagedPrivateKeyHasProtectedUserACL(t *testing.T) {
 	dir := t.TempDir()
 	if _, err := LoadOrCreate(dir); err != nil {
