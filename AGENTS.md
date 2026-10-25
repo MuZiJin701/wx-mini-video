@@ -17,6 +17,20 @@
 - **历史计划与背景：** `docs/archive/`。
 - **代码入口：** 启动看 `main.go` 和 `internal/app/`；TUI 看 `internal/tui/model.go`；嗅探看 `internal/interceptor/miniprogram.go`；下载看 `internal/minidownload/`；代理库 patch 看 `third_party/echo/`。
 
+## Agent skills
+
+### Issue tracker
+
+GitHub Issues：`MuZiJin701/wx-mini-video`，使用 `gh`。详见 `docs/agents/issue-tracker.md`。
+
+### Triage labels
+
+使用默认五角色标签：`needs-triage`、`needs-info`、`ready-for-agent`、`ready-for-human`、`wontfix`；另用 `bug` / `enhancement` 分类。详见 `docs/agents/triage-labels.md`。
+
+### Domain docs
+
+单上下文：根目录 `GLOSSARY.md` + `docs/adr/`。详见 `docs/agents/domain.md`。
+
 ## 变更
 
 - 先检查相关实现、调用方、测试和已有未提交修改；保留无关用户修改。
