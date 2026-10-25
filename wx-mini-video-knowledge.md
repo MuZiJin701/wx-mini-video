@@ -33,7 +33,7 @@ macOS 通过系统授权管理活动网络服务的 HTTP/HTTPS 代理，捕获�
 2. 发现阶段只登记 AppID 与首次/最近出现时间（仅本次运行），按 AppID 去重；目标覆盖层按最近出现排序，选中即确认（v0.2.0 删除小程序名称）。发现阶段不产生目标候选，但照常收集来源未确认媒体，确认目标后显示，首屏页面不会丢失。
 3. `s`/`Ctrl+D` 打开目标覆盖层，取消不清空当前目标；确认新 AppID 才清空目标候选与进度，保留文件、历史、部分下载和来源未确认媒体。下载中不允许切换目标；`c` 清空使清空前在途响应失效。
 4. 直接响应按 Content-Type 或 URL 后缀识别媒体。FLV（`video/x-flv`、`video/flv`、`application/x-flv` 或 `.flv` 地址）归为视频并保存 `.flv`；无 `Content-Length` 的 FLV 响应或 `.flv` 地址标记为疑似 **HTTP-FLV 直播流**（`Candidate.Live`），真实响应会修正 JSON/H5 的推测。JSON 候选可带标题；跨域链接仅保留 User-Agent、Referer、Accept、Accept-Language，不转发接口 Cookie/Authorization。未知类型且 ≥256 KB 的响应可作「未知文件」兜底。对小程序 H5 页面/脚本（≤4 MB，含 `miniProgram`、`jweixin`、`ckplayer` 或 `<video` 标记）扫描内联媒体地址，作为来源未确认候选（标记「H5 页面/脚本扫描（未播放验证）」）。
-5. 直链先写带资源标识的 `.part` 与校验元数据，仅在有强 ETag 时续传；HTTP 分段响应从 Content-Range 取得总长度并校验。默认命名在重试时会按候选标识反查遗留 `.part`，避免时间戳变化导致重新下载全部内容；复用前按 `FLV` 魔数跳过未保存的直播录制，并为新录制生成独立文件名，指定文件名与疑似直播（含 `.flv` 地址）也不复用旧文件。下载时才确认为直播时，产物后缀会修正为 `.flv`。**HTTP-FLV 直播**在响应头与 FLV 魔数确认后持续录制：不发 Range、不校验总长度、状态为 `recording`；服务端结束则正常提交；用户按 `x` 或确认退出时取消上下文，把已录内容提交为 `.flv`（`ErrRecordingStopped`，仍写 `history.jsonl`）。异常断流（`ctx` 未取消时的 `unexpected EOF`、断网等）同样提交已录内容并写历史，返回 `ErrRecordingInterrupted` 并在状态行报告原因；提交失败则保留 `.part` 并原样报错。只有真正的上下文取消才折算为「已停止」，停止录制时的保存失败不会被 `ErrDownloadStopped` 掩盖（普通下载停止保留 `.part`）。成功记录追加到下载根目录 `history.jsonl`，含路径、目标/来源 AppID、类型、归属、来源域名、大小与 UTC 时间。决策见 [ADR 0013](docs/adr/0013-live-stream-recording.md)。
+5. 直链先写带资源标识的 `.part` 与校验元数据，仅在有强 ETag 时续传；HTTP 分段响应从 Content-Range 取得总长度并校验。默认命名在重试时会按候选标识反查遗留 `.part`，避免时间戳变化导致重新下载全部内容；复用前按 `FLV` 魔数跳过未保存的直播录制，并为新录制生成独立文件名——选名在同一循环同时避开成品与同候选 `.part`（含 `_2` 变体），续传直接使用遗留基名，避免二次改名绕过保护；指定文件名与疑似直播（含 `.flv` 地址）也不复用旧文件。下载时才确认为直播时，产物后缀会修正为 `.flv`。**HTTP-FLV 直播**在响应头与 FLV 魔数确认后持续录制：不发 Range、不校验总长度、状态为 `recording`；服务端结束则正常提交；用户按 `x` 或确认退出时取消上下文，把已录内容提交为 `.flv`（`ErrRecordingStopped`，仍写 `history.jsonl`）。异常断流（`ctx` 未取消时的 `unexpected EOF`、断网等）同样提交已录内容并写历史，返回 `ErrRecordingInterrupted` 并在状态行报告原因；提交失败则保留 `.part` 并原样报错。只有真正的上下文取消才折算为「已停止」，停止录制时的保存失败不会被 `ErrDownloadStopped` 掩盖（普通下载停止保留 `.part`）。成功记录追加到下载根目录 `history.jsonl`，含路径、目标/来源 AppID、类型、归属、来源域名、大小与 UTC 时间。决策见 [ADR 0013](docs/adr/0013-live-stream-recording.md)。
 6. m3u8 使用已捕获播放列表，缺失时允许远程回补，由 ffmpeg 合并为 mp4。捕获缓存保留相对引用，下载阶段统一解析；预取按候选与播放列表内容隔离，按来源重放鉴权头。ffmpeg 经仅在下载期间运行的随机端口入口读取缓存，入口只接受已登记路径；跨源重定向不携带凭据。
 
 支持格式：图片 `jpg/png/webp/gif/bmp/avif`；直链视频 `mp4/webm/mov/flv`；直链音频 `mp3/m4a/aac/wav/ogg/flac/opus/amr`。不提供转码、音轨提取或播放。
@@ -98,7 +98,7 @@ go vet ./...
 git diff --check
 ```
 
-测试覆盖来源过滤与副作用、发现/选择/切换、分类与下载、Windows 启动编排、TUI 布局/鼠标/外观持久化、下载目录分桶与命名、logo 探测与编码，以及 HTTP-FLV 分类、疑似直播标记、chunked 录制到用户停止、异常断流保存、停止时保存失败不被掩盖、真实时钟下的重试续传、未保存录制不被重试覆盖、晚确认直播的后缀修正与 `.flv` 命名；鼠标回归覆盖目标卡「自动发现」启动代理与两个模态覆盖层的按钮/悬停；退出回归覆盖保存失败时取消自动退出。修改 `third_party/echo/` 后运行 `go test -count=1 github.com/ltaoo/echo/...`；代理恢复回归使用替身，不修改真实代理或证书。自动化不能替代真实微信、Windows Terminal 交互和 Mac 真机验收。
+测试覆盖来源过滤与副作用、发现/选择/切换、分类与下载、Windows 启动编排、TUI 布局/鼠标/外观持久化、下载目录分桶与命名、logo 探测与编码，以及 HTTP-FLV 分类、疑似直播标记、chunked 录制到用户停止、异常断流保存、停止时保存失败不被掩盖、真实时钟下的重试续传、未保存录制不被重试覆盖、成品与 `.part` 双重命名冲突、晚确认直播的后缀修正与 `.flv` 命名；鼠标回归覆盖目标卡「自动发现」启动代理与两个模态覆盖层的按钮/悬停；退出回归覆盖保存失败时取消自动退出。修改 `third_party/echo/` 后运行 `go test -count=1 github.com/ltaoo/echo/...`；代理恢复回归使用替身，不修改真实代理或证书。自动化不能替代真实微信、Windows Terminal 交互和 Mac 真机验收。
 
 macOS CI 在 `macos-15-intel` 与 `macos-15` 上运行全量测试、`go vet`、通用包构建（含双架构 ffmpeg）与 `python3 build/verify-macos.py`，设置 `WX_MINI_VIDEO_MACOS_INTEGRATION=1` 时只读调用真实网络服务与钥匙串并验证鉴权 m3u8 合并。打包检查在中文/空格路径解压并启动 TUI，不覆盖 Finder 双击、系统授权、真实微信或 macOS 13 兼容性。
 

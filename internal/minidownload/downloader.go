@@ -190,21 +190,6 @@ func safeOutputName(name string) string {
 	return name
 }
 
-func outputPath(dir, name string) string {
-	path := filepath.Join(dir, name)
-	if !fileExists(path) {
-		return path
-	}
-	ext := filepath.Ext(name)
-	stem := strings.TrimSuffix(name, ext)
-	for n := 2; ; n++ {
-		path = filepath.Join(dir, fmt.Sprintf("%s_%d%s", stem, n, ext))
-		if !fileExists(path) {
-			return path
-		}
-	}
-}
-
 func shortCandidateID(id string) string {
 	id = strings.TrimSpace(id)
 	if len(id) > 8 {
@@ -300,15 +285,17 @@ func (d *Downloader) Download(ctx context.Context, candidate miniprogram.Candida
 		return "", fmt.Errorf("创建下载目录 %s 失败: %w", bucket, err)
 	}
 	name := priorRecordingName(bucket, candidate, preferredName)
-	if name == "" {
-		name = OutputName(candidate, preferredName)
-		if strings.TrimSpace(preferredName) == "" {
-			// 不复用旧 .part 时（含直播遗留录制），默认名也要避开同候选的遗留文件，
-			// 否则同一秒重试仍可能命中并清空上一段未保存的录制。
-			name = uniqueDefaultName(bucket, name, candidate)
-		}
+	// 成品已存在时不再复用遗留 .part，避免覆盖已有成品；此时走新路径并保留旧 .part。
+	if name != "" && fileExists(filepath.Join(bucket, name)) {
+		name = ""
 	}
-	targetPath := outputPath(bucket, name)
+	var targetPath string
+	if name != "" {
+		// 续传：直接使用遗留 .part 的基名，不能再经过成品重命名的二次改名。
+		targetPath = filepath.Join(bucket, name)
+	} else {
+		name, targetPath = availableOutputPath(bucket, OutputName(candidate, preferredName), candidate, strings.TrimSpace(preferredName) == "")
+	}
 	d.emit(Progress{ID: candidate.ID, Name: name, Path: targetPath, Status: "starting", Total: candidate.ContentLength, Live: candidate.Live})
 	var live bool
 	var err error
@@ -319,7 +306,7 @@ func (d *Downloader) Download(ctx context.Context, candidate miniprogram.Candida
 	}
 	// 只有下载时才确认为直播的候选，产物按实际内容改成 .flv 后缀。
 	if live && fileExists(targetPath) {
-		targetPath, name = correctLiveSuffix(bucket, targetPath)
+		targetPath, name = correctLiveSuffix(bucket, targetPath, candidate)
 	}
 	// 只有真正的取消错误才折算为“已停止”；保存/重命名等失败必须原样暴露给用户。
 	if err != nil && ctx.Err() != nil && isContextCancellation(err) &&
@@ -1075,29 +1062,36 @@ func partReusable(path string) bool {
 	return !bytes.HasPrefix(head, []byte("FLV"))
 }
 
-// uniqueDefaultName 为默认命名的新下载避开同候选遗留的 .part，避免同一秒重试覆盖未保存录制。
-func uniqueDefaultName(bucket, base string, candidate miniprogram.Candidate) string {
-	if !fileExists(filepath.Join(bucket, base+partialSuffix(candidate))) {
-		return base
-	}
-	ext := filepath.Ext(base)
-	stem := strings.TrimSuffix(base, ext)
-	for i := 2; ; i++ {
-		name := fmt.Sprintf("%s_%d%s", stem, i, ext)
-		if !fileExists(filepath.Join(bucket, name+partialSuffix(candidate))) {
-			return name
+// availableOutputPath 在一次循环里同时避开已存在的成品与同候选遗留的 .part，
+// 避免选名后又因成品重名二次改名、撞上未保存录制的 .part。
+// avoidPartFirst 为 true 时（默认命名）首个候选也检查 .part；指定文件名时保留首个候选的续传语义。
+func availableOutputPath(bucket, name string, candidate miniprogram.Candidate, avoidPartFirst bool) (string, string) {
+	ext := filepath.Ext(name)
+	stem := strings.TrimSuffix(name, ext)
+	for i := 1; ; i++ {
+		candidateName := name
+		if i > 1 {
+			candidateName = fmt.Sprintf("%s_%d%s", stem, i, ext)
 		}
+		final := filepath.Join(bucket, candidateName)
+		if fileExists(final) {
+			continue
+		}
+		if (avoidPartFirst || i > 1) && fileExists(final+partialSuffix(candidate)) {
+			continue
+		}
+		return candidateName, final
 	}
 }
 
-// correctLiveSuffix 把只有下载时才确认为直播的产物改成 .flv 后缀，返回最终路径与文件名。
-func correctLiveSuffix(bucket, targetPath string) (string, string) {
+// correctLiveSuffix 把只有下载时才确认为直播的产物改成 .flv 后缀；目标同样避开成品与遗留 .part。
+func correctLiveSuffix(bucket, targetPath string, candidate miniprogram.Candidate) (string, string) {
 	if strings.EqualFold(filepath.Ext(targetPath), ".flv") {
 		return targetPath, filepath.Base(targetPath)
 	}
 	base := filepath.Base(targetPath)
 	correctedName := strings.TrimSuffix(base, filepath.Ext(base)) + ".flv"
-	correctedPath := outputPath(bucket, correctedName)
+	_, correctedPath := availableOutputPath(bucket, correctedName, candidate, true)
 	if err := os.Rename(targetPath, correctedPath); err != nil {
 		return targetPath, base
 	}

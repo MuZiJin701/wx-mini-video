@@ -1199,3 +1199,61 @@ func TestLiveDownloadLateDetectionUsesFLVSuffix(t *testing.T) {
 		t.Fatalf("output is not FLV: err=%v", err)
 	}
 }
+
+func TestRetryAvoidsFinalAndPartialNameCollisions(t *testing.T) {
+	oldMarker := []byte("OLD-UNSAVED-LIVE-RECORDING-MARKER")
+	oldPart := append([]byte("FLV\x01\x05\x00\x00\x00\x09"), oldMarker...)
+	newFrame := append([]byte("FLV\x01\x05\x00\x00\x00\x09"), bytes.Repeat([]byte("NEW"), 64)...)
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "video/x-flv")
+		flusher := w.(http.Flusher)
+		_, _ = w.Write(newFrame)
+		flusher.Flush()
+	}))
+	defer ts.Close()
+
+	d := New(t.TempDir())
+	stubDownloadClock(t, time.Date(2026, 10, 25, 13, 0, 0, 0, time.Local))
+	candidate := miniprogram.Candidate{ID: "collision-retry", URL: ts.URL + "/live/stream", Kind: "video", Suffix: ".flv", Live: true}
+	bucket := filepath.Join(d.Dir, "_unknown", miniprogram.DirVideos)
+	if err := os.MkdirAll(bucket, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	baseName := OutputName(candidate, "")
+	savedPath := filepath.Join(bucket, baseName)
+	if err := os.WriteFile(savedPath, []byte("OLD-SAVED-RECORDING"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// 成品占用 base；未保存录制占用 base_2；旧实现会先选 base、再被改名到 base_2 并清空它。
+	ext := filepath.Ext(baseName)
+	secondName := strings.TrimSuffix(baseName, ext) + "_2" + ext
+	unsavedPart := filepath.Join(bucket, secondName+partialSuffix(candidate))
+	if err := os.WriteFile(unsavedPart, oldPart, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(unsavedPart+".json", []byte(`{"total":-1}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	output, err := d.Download(context.Background(), candidate, "", "")
+	if err != nil {
+		t.Fatalf("retry failed: %v", err)
+	}
+	if output == savedPath || output == filepath.Join(bucket, secondName) {
+		t.Fatalf("retry reused %q despite existing final/partial collisions", output)
+	}
+	oldData, readErr := os.ReadFile(unsavedPart)
+	if readErr != nil || !bytes.Contains(oldData, oldMarker) {
+		t.Fatalf("unsaved recording was overwritten: err=%v data=%q", readErr, oldData)
+	}
+	if _, err := os.Stat(unsavedPart + ".json"); err != nil {
+		t.Fatalf("unsaved recording metadata missing: %v", err)
+	}
+	if saved, err := os.ReadFile(savedPath); err != nil || string(saved) != "OLD-SAVED-RECORDING" {
+		t.Fatalf("existing final recording changed: err=%v data=%q", err, saved)
+	}
+	finalData, err := os.ReadFile(output)
+	if err != nil || !bytes.Contains(finalData, []byte("NEW")) {
+		t.Fatalf("new recording content invalid: err=%v", err)
+	}
+}
