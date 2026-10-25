@@ -51,6 +51,7 @@ jobs:
           key: ffmpeg-cache-macos-martin-riedl-9.0.2
       - name: 构建并验证通用便携包
         run: |
+          python3 -B -m unittest discover -s build -p "test_*.py"
           go run ./build/macos
           python3 build/verify-macos.py
           shasum -a 256 dist/wx-mini-video-macos-universal-unsigned.zip

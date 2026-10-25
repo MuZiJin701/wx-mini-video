@@ -1,5 +1,8 @@
 import importlib.util
 import pathlib
+import os
+import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -9,6 +12,25 @@ spec.loader.exec_module(verifier)
 
 
 class StartupDiagnosticsTests(unittest.TestCase):
+    @unittest.skipIf(os.name == "nt", "PTY drain requires POSIX")
+    def test_exit_drains_output_larger_than_the_pty_buffer(self):
+        import pty
+        master, slave = pty.openpty()
+        process = subprocess.Popen(
+            [sys.executable, "-c", "import os; os.write(1, b'x' * 1048576)"],
+            stdin=subprocess.DEVNULL, stdout=slave, stderr=slave,
+        )
+        try:
+            output = bytearray()
+            self.assertEqual(verifier.wait_for_tui_exit(process, master, output, timeout=10), 0)
+            self.assertGreater(len(output), 65536)
+        finally:
+            if process.poll() is None:
+                process.kill()
+                process.wait()
+            os.close(master)
+            os.close(slave)
+
     def test_failure_reason_survives_long_frames_and_partial_terminal_output(self):
         with tempfile.TemporaryDirectory() as directory:
             log = pathlib.Path(directory) / "wx-mini-video.log"

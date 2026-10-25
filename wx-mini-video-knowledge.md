@@ -118,7 +118,7 @@ git diff --check
 
 文档界面预览由真实 `View` 渲染，不手工伪造：`go run -tags preview ./build/uipreview` 生成 `build/preview/{home,discovered,appearance,media,recording,downloaded,logs}.ansi`，再用 `build/ansi_to_png.py` 转为 PNG（依赖 Cascadia Mono、微软雅黑与 Segoe UI Symbol 字体）。预览使用样例状态，不执行真实微信操作，也不代替终端鼠标与缩放验收。`build/preview/` 与 `dist/` 不入库。
 
-macOS CI 在 `macos-15-intel` 与 `macos-15` 上运行全量测试、`go vet`、通用包构建（含双架构 ffmpeg）与 `python3 build/verify-macos.py`，设置 `WX_MINI_VIDEO_MACOS_INTEGRATION=1` 时只读调用真实网络服务与钥匙串并验证鉴权 m3u8 合并。打包检查在中文/空格路径解压并启动 TUI：TUI 验收使用临时目录中的隔离配置与临时 `HOME`（`proxy.system=false`、`proxy.skipInstallRootCert=true`、独立下载目录与随机端口），只启动本地代理，不修改用户系统代理、不安装证书；不覆盖 Finder 双击、真实系统授权、真实微信或 macOS 13 兼容性。
+macOS CI 在 `macos-15-intel` 与 `macos-15` 上运行全量测试、`go vet`、Python 验收脚本回归（含真实 PTY 大输出退出）、通用包构建（含双架构 ffmpeg）与 `python3 build/verify-macos.py`，设置 `WX_MINI_VIDEO_MACOS_INTEGRATION=1` 时只读调用真实网络服务与钥匙串并验证鉴权 m3u8 合并。打包检查在中文/空格路径解压并启动 TUI：TUI 验收使用临时目录中的隔离配置与临时 `HOME`（`proxy.system=false`、`proxy.skipInstallRootCert=true`、独立下载目录与随机端口），只启动本地代理，不修改用户系统代理、不安装证书；不覆盖 Finder 双击、真实系统授权、真实微信或 macOS 13 兼容性。
 
 ## 分发
 

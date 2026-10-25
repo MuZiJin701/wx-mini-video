@@ -65,6 +65,21 @@ def startup_diagnostics(output, downloads):
     return text
 
 
+def wait_for_tui_exit(process, master, output, timeout=15):
+    # Keep draining the PTY while the renderer finishes; waiting alone can fill its buffer.
+    deadline = time.monotonic() + timeout
+    while process.poll() is None and time.monotonic() < deadline:
+        if select.select([master], [], [], 0.2)[0]:
+            try:
+                chunk = os.read(master, 65536)
+            except OSError:
+                break
+            if not chunk:
+                break
+            output.extend(chunk)
+    return process.wait(timeout=max(0.1, deadline - time.monotonic()))
+
+
 def check_tui(executable, cwd, config, downloads, home):
     import fcntl
     import pty
@@ -111,7 +126,7 @@ def check_tui(executable, cwd, config, downloads, home):
         assert certificates.is_dir(), f"证书目录未落在隔离 HOME: {certificates}"
         assert downloads.is_dir(), f"隔离下载目录未创建: {downloads}"
         os.write(master, b"\x1b")
-        assert process.wait(timeout=15) == 0, text[:4000]
+        assert wait_for_tui_exit(process, master, output) == 0, startup_diagnostics(output, downloads)
     finally:
         if process is not None and process.poll() is None:
             process.kill()
