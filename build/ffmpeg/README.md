@@ -47,7 +47,15 @@ Actions 附件只有 30 天保留期，不能充当长期公开源码下载入�
 python -B -m unittest discover -s build/ffmpeg -p "test_*.py"
 ```
 
-构建完成后自动运行 `verify.py`：
+构建完成后自动运行 `verify.py`；CI 还会运行 `verify_artifacts.py` 校验产物、`build-info.json` 和对应源码归档的一致性。单独复验：
+
+```text
+python -B build/ffmpeg/verify_artifacts.py dist/ffmpeg-selfbuilt/windows-amd64
+```
+
+`verify_artifacts.py` 检查 `ffmpeg.zip` 条目与许可、二进制摘要、十二项验证记录、对应源码归档条目和三个摘要是否与 `build-info.json` 一致；不通过时 CI 不会上传附件。
+
+`verify.py` 检查：
 
 - 检查版本、许可、编译选项及 file/http/https/tcp/tls/crypto/data 协议。
 - 三组数据：H.264 + AAC 的 TS、HEVC + AAC 的 fMP4，以及 AES-128 加密 H.264 HLS。

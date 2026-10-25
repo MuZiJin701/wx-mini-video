@@ -32,6 +32,8 @@ jobs:
         run: python -B -m unittest discover -s build/ffmpeg -p "test_*.py"
       - name: 构建并执行真实媒体验证
         run: python -B build/ffmpeg/build.py ${{ matrix.target }}
+      - name: 校验产物与源码归档一致性
+        run: python -B build/ffmpeg/verify_artifacts.py dist/ffmpeg-selfbuilt/${{ matrix.target }}
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: ffmpeg-${{ matrix.target }}
