@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -402,5 +403,24 @@ func TestMouseLegacyKeepDismissesPrompt(t *testing.T) {
 	m = next.(model)
 	if cmd == nil || m.legacyPrompt || !m.legacyChecked || !m.starting {
 		t.Fatalf("mouse legacy keep should dismiss the prompt: cmd=%v prompt=%v checked=%v starting=%v", cmd, m.legacyPrompt, m.legacyChecked, m.starting)
+	}
+}
+
+func TestQuitCancelledWhenDownloadSaveFails(t *testing.T) {
+	m := testModel(t)
+	m.targetReady = true
+	m.downloading = true
+	m.quitAfterDownload = true
+	next, _ := m.Update(downloadMsg{
+		candidateID: "live-save-fail",
+		path:        "downloads/wx/视频/直播.flv",
+		err:         errors.New("已停止录制，但保存已录内容失败: rename 失败"),
+	})
+	m = next.(model)
+	if m.stopping || m.quitAfterDownload {
+		t.Fatalf("save failure should cancel the pending quit: stopping=%v quitAfterDownload=%v", m.stopping, m.quitAfterDownload)
+	}
+	if !strings.Contains(m.notice, "已取消退出") || !strings.Contains(strings.Join(m.logs, "\n"), "已取消退出") {
+		t.Fatalf("save failure should keep the error visible: notice=%q logs=%v", m.notice, m.logs)
 	}
 }

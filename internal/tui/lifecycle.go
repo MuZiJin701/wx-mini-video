@@ -1,9 +1,12 @@
 package tui
 
 import (
+	"errors"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+
+	"wx_channel/internal/minidownload"
 	"wx_channel/pkg/certificate"
 )
 
@@ -46,4 +49,13 @@ func (m model) confirmQuitNow() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	return m.beginStop()
+}
+
+// quitAfterDownloadAllowed 判断下载收尾结果是否已保存现场、可以继续自动退出。
+// 保存失败等真实错误必须取消自动退出，让用户停留查看和处理现场。
+func quitAfterDownloadAllowed(err error) bool {
+	return err == nil ||
+		errors.Is(err, minidownload.ErrRecordingStopped) ||
+		errors.Is(err, minidownload.ErrDownloadStopped) ||
+		errors.Is(err, minidownload.ErrRecordingInterrupted)
 }

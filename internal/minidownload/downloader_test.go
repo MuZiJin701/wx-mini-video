@@ -1,6 +1,7 @@
 package minidownload
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -1110,5 +1111,91 @@ func TestDownloadRetryAfterSecondBoundaryResumes(t *testing.T) {
 	mu.Unlock()
 	if len(got) != 2 || got[0] != "" || !strings.HasPrefix(got[1], "bytes=") {
 		t.Fatalf("requests = %v, want first full GET and second Range request", got)
+	}
+}
+
+func TestRetryPreservesUnsavedLiveRecording(t *testing.T) {
+	oldMarker := []byte("OLD-UNSAVED-LIVE-RECORDING-MARKER")
+	oldPart := append([]byte("FLV\x01\x05\x00\x00\x00\x09"), oldMarker...)
+	newFrame := append([]byte("FLV\x01\x05\x00\x00\x00\x09"), bytes.Repeat([]byte("NEW"), 64)...)
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "video/x-flv")
+		flusher := w.(http.Flusher)
+		_, _ = w.Write(newFrame)
+		flusher.Flush()
+		_, _ = w.Write(newFrame)
+		flusher.Flush()
+	}))
+	defer ts.Close()
+
+	d := New(t.TempDir())
+	stubDownloadClock(t, time.Date(2026, 10, 25, 13, 0, 0, 0, time.Local))
+	candidate := miniprogram.Candidate{ID: "retry-live", URL: ts.URL + "/media/live-stream", Kind: "video", Suffix: ".mp4"}
+	bucket := filepath.Join(d.Dir, "_unknown", miniprogram.DirVideos)
+	if err := os.MkdirAll(bucket, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	oldName := OutputName(candidate, "")
+	oldPath := filepath.Join(bucket, oldName)
+	oldPartPath := oldPath + partialSuffix(candidate)
+	if err := os.WriteFile(oldPartPath, oldPart, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(oldPartPath+".json", []byte(`{"total":-1}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	output, err := d.Download(context.Background(), candidate, "", "")
+	if err != nil {
+		t.Fatalf("retry failed: %v", err)
+	}
+	if output == oldPath {
+		t.Fatalf("retry reused the unsaved recording path %q", output)
+	}
+	if filepath.Ext(output) != ".flv" {
+		t.Fatalf("late-detected live output = %q, want .flv suffix", output)
+	}
+	oldData, err := os.ReadFile(oldPartPath)
+	if err != nil || !bytes.Contains(oldData, oldMarker) {
+		t.Fatalf("unsaved live recording was overwritten: err=%v data=%q", err, oldData)
+	}
+	if _, err := os.Stat(oldPartPath + ".json"); err != nil {
+		t.Fatalf("unsaved live recording metadata missing: %v", err)
+	}
+	finalData, err := os.ReadFile(output)
+	if err != nil || !bytes.Contains(finalData, []byte("NEW")) || bytes.Contains(finalData, oldMarker) {
+		t.Fatalf("new recording content invalid: err=%v data=%q", err, finalData)
+	}
+	history, err := os.ReadFile(filepath.Join(d.Dir, "history.jsonl"))
+	if err != nil || !strings.Contains(string(history), filepath.Base(output)) {
+		t.Fatalf("history missing for new recording: err=%v history=%q", err, history)
+	}
+}
+
+func TestLiveDownloadLateDetectionUsesFLVSuffix(t *testing.T) {
+	frame := append([]byte("FLV\x01\x05\x00\x00\x00\x09"), bytes.Repeat([]byte("NEW"), 64)...)
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "video/x-flv")
+		flusher := w.(http.Flusher)
+		_, _ = w.Write(frame)
+		flusher.Flush()
+	}))
+	defer ts.Close()
+
+	d := New(t.TempDir())
+	candidate := miniprogram.Candidate{ID: "late-live", URL: ts.URL + "/media/live-stream", Kind: "video", Suffix: ".mp4"}
+	output, err := d.Download(context.Background(), candidate, "", "")
+	if err != nil {
+		t.Fatalf("late-detected live download failed: %v", err)
+	}
+	if filepath.Ext(output) != ".flv" {
+		t.Fatalf("output = %q, want .flv suffix for confirmed live FLV", output)
+	}
+	if fileExists(strings.TrimSuffix(output, ".flv") + ".mp4") {
+		t.Fatalf("stale .mp4 file left behind for live FLV: %q", output)
+	}
+	data, err := os.ReadFile(output)
+	if err != nil || !bytes.HasPrefix(data, []byte("FLV")) {
+		t.Fatalf("output is not FLV: err=%v", err)
 	}
 }

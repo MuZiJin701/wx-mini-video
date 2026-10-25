@@ -302,15 +302,24 @@ func (d *Downloader) Download(ctx context.Context, candidate miniprogram.Candida
 	name := priorRecordingName(bucket, candidate, preferredName)
 	if name == "" {
 		name = OutputName(candidate, preferredName)
+		if strings.TrimSpace(preferredName) == "" {
+			// 不复用旧 .part 时（含直播遗留录制），默认名也要避开同候选的遗留文件，
+			// 否则同一秒重试仍可能命中并清空上一段未保存的录制。
+			name = uniqueDefaultName(bucket, name, candidate)
+		}
 	}
-	outputPath := outputPath(bucket, name)
-	d.emit(Progress{ID: candidate.ID, Name: name, Path: outputPath, Status: "starting", Total: candidate.ContentLength, Live: candidate.Live})
+	targetPath := outputPath(bucket, name)
+	d.emit(Progress{ID: candidate.ID, Name: name, Path: targetPath, Status: "starting", Total: candidate.ContentLength, Live: candidate.Live})
 	var live bool
 	var err error
 	if miniprogram.MediaKind(candidate) == "m3u8" {
-		err = d.downloadM3U8(ctx, candidate, outputPath)
+		err = d.downloadM3U8(ctx, candidate, targetPath)
 	} else {
-		live, err = d.downloadDirect(ctx, candidate, outputPath)
+		live, err = d.downloadDirect(ctx, candidate, targetPath)
+	}
+	// 只有下载时才确认为直播的候选，产物按实际内容改成 .flv 后缀。
+	if live && fileExists(targetPath) {
+		targetPath, name = correctLiveSuffix(bucket, targetPath)
 	}
 	// 只有真正的取消错误才折算为“已停止”；保存/重命名等失败必须原样暴露给用户。
 	if err != nil && ctx.Err() != nil && isContextCancellation(err) &&
@@ -318,10 +327,10 @@ func (d *Downloader) Download(ctx context.Context, candidate miniprogram.Candida
 		err = ErrDownloadStopped
 	}
 	if err == nil || errors.Is(err, ErrRecordingStopped) || errors.Is(err, ErrRecordingInterrupted) {
-		_ = d.appendHistory(candidate, outputPath, targetAppID)
+		_ = d.appendHistory(candidate, targetPath, targetAppID)
 	}
-	d.finishProgress(candidate, name, outputPath, live, err)
-	return outputPath, err
+	d.finishProgress(candidate, name, targetPath, live, err)
+	return targetPath, err
 }
 
 func (d *Downloader) finishProgress(candidate miniprogram.Candidate, name, outputPath string, live bool, err error) {
@@ -1034,6 +1043,10 @@ func priorRecordingName(bucket string, candidate miniprogram.Candidate, preferre
 		if name == "" || safeOutputName(name) != name {
 			continue
 		}
+		// 按实际内容判断：FLV 魔数说明这是未保存的直播录制，绝不能复用后再被 O_TRUNC 清空。
+		if !partReusable(filepath.Join(bucket, entry.Name())) {
+			continue
+		}
 		info, err := entry.Info()
 		if err != nil {
 			continue
@@ -1044,6 +1057,51 @@ func priorRecordingName(bucket string, candidate miniprogram.Candidate, preferre
 		}
 	}
 	return best
+}
+
+// partReusable 判断遗留 .part 是否可以安全复用：空文件或普通下载可复用；
+// 以 FLV 魔数开头的是直播录制，复用后会覆盖未保存内容；无法读取时同样不复用。
+func partReusable(path string) bool {
+	file, err := os.Open(path)
+	if err != nil {
+		return false
+	}
+	defer file.Close()
+	head := make([]byte, 3)
+	n, _ := io.ReadFull(file, head)
+	if n < 3 {
+		return true
+	}
+	return !bytes.HasPrefix(head, []byte("FLV"))
+}
+
+// uniqueDefaultName 为默认命名的新下载避开同候选遗留的 .part，避免同一秒重试覆盖未保存录制。
+func uniqueDefaultName(bucket, base string, candidate miniprogram.Candidate) string {
+	if !fileExists(filepath.Join(bucket, base+partialSuffix(candidate))) {
+		return base
+	}
+	ext := filepath.Ext(base)
+	stem := strings.TrimSuffix(base, ext)
+	for i := 2; ; i++ {
+		name := fmt.Sprintf("%s_%d%s", stem, i, ext)
+		if !fileExists(filepath.Join(bucket, name+partialSuffix(candidate))) {
+			return name
+		}
+	}
+}
+
+// correctLiveSuffix 把只有下载时才确认为直播的产物改成 .flv 后缀，返回最终路径与文件名。
+func correctLiveSuffix(bucket, targetPath string) (string, string) {
+	if strings.EqualFold(filepath.Ext(targetPath), ".flv") {
+		return targetPath, filepath.Base(targetPath)
+	}
+	base := filepath.Base(targetPath)
+	correctedName := strings.TrimSuffix(base, filepath.Ext(base)) + ".flv"
+	correctedPath := outputPath(bucket, correctedName)
+	if err := os.Rename(targetPath, correctedPath); err != nil {
+		return targetPath, base
+	}
+	return correctedPath, filepath.Base(correctedPath)
 }
 
 func (p partialDownload) validator() string {

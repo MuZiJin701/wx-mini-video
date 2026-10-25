@@ -271,7 +271,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if m.quitAfterDownload {
 			m.quitAfterDownload = false
-			return m.beginStop()
+			if quitAfterDownloadAllowed(v.err) {
+				return m.beginStop()
+			}
+			// 收尾失败（如保存已录内容失败）：取消自动退出，保留现场与错误，由用户决定后续处理。
+			m.addLog("已取消退出：下载/录制未正常收尾，请处理后重试")
+			m.setNotice("已取消退出："+v.err.Error()+"；错误与 .part 已保留，处理后可再按 q 退出", 12*time.Second)
 		}
 	case appearanceSavedMsg:
 		if v.err != nil {
