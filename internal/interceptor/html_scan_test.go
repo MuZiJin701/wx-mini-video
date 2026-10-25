@@ -98,3 +98,70 @@ func TestJavaScriptScanCapturesInlineM3U8(t *testing.T) {
 		t.Fatalf("unattributed candidates = %#v, want one m3u8 candidate", candidates)
 	}
 }
+
+func TestPageScanKeepsCandidatesAndScopesCredentials(t *testing.T) {
+	for _, mediaURL := range []string{"https://h5.example.com/v.mp4", "https://cdn.example.com/v.mp4"} {
+		t.Run(mediaURL, func(t *testing.T) {
+			store := miniprogram.NewStore()
+			plugin := CreateMiniProgramInterceptorPlugin(miniprogram.Target{}, store, t.TempDir())
+			pageURL := "https://h5.example.com/detail"
+			ctx := htmlScanContext(`<video src="`+mediaURL+`"></video>`, "text/html", pageURL, "")
+			ctx.req.Header.Set("Authorization", "Bearer page-secret")
+			ctx.req.Header.Set("X-Token", "page-token")
+			plugin.OnResponse(ctx)
+			candidates := store.Unattributed()
+			if len(candidates) != 1 || candidates[0].URL != mediaURL || candidates[0].SourceURL != pageURL {
+				t.Fatalf("first-page candidate lost: %+v", candidates)
+			}
+			headers := candidates[0].Headers
+			if headers["Referer"] != pageURL {
+				t.Fatalf("page Referer lost: %+v", headers)
+			}
+			if mediaURL == "https://h5.example.com/v.mp4" {
+				if headers["Cookie"] != "sid=abc" || headers["Authorization"] == "" || headers["X-Token"] == "" {
+					t.Fatalf("same-origin credentials lost: %+v", headers)
+				}
+			} else if headers["Cookie"] != "" || headers["Authorization"] != "" || headers["X-Token"] != "" {
+				t.Fatalf("cross-origin credentials leaked: %+v", headers)
+			}
+		})
+	}
+}
+
+func TestPageScanCannotRepopulateClearedListButSurvivesTargetSelection(t *testing.T) {
+	for _, clear := range []bool{true, false} {
+		store := miniprogram.NewStore()
+		plugin := CreateMiniProgramInterceptorPlugin(miniprogram.Target{}, store, t.TempDir())
+		ctx := htmlScanContext(`<video src="https://cdn.example.com/v.mp4"></video>`, "text/html", "https://h5.example.com/detail", "")
+		ctx.onRead = func() {
+			if clear {
+				store.Clear("")
+			} else {
+				store.SetTarget(miniprogram.Target{AppID: "wx123"})
+			}
+		}
+		plugin.OnResponse(ctx)
+		want := 1
+		if clear {
+			want = 0
+		}
+		if got := len(store.Unattributed()); got != want {
+			t.Fatalf("clear=%v: got %d candidates, want %d", clear, got, want)
+		}
+	}
+}
+
+func TestPageScanDoesNotOverwriteObservedMediaCredentials(t *testing.T) {
+	store := miniprogram.NewStore()
+	plugin := CreateMiniProgramInterceptorPlugin(miniprogram.Target{}, store, t.TempDir())
+	page := htmlScanContext(`<video src="https://cdn.example.com/v.mp4"></video>`, "text/html", "https://h5.example.com/detail", "")
+	plugin.OnResponse(page)
+	media := htmlScanContext("video", "video/mp4", "https://cdn.example.com/v.mp4", "https://h5.example.com/detail")
+	media.req.Header.Set("Cookie", "cdn-session=observed")
+	plugin.OnResponse(media)
+	plugin.OnResponse(page)
+	got := store.Unattributed()
+	if len(got) != 1 || got[0].Source != "response" || got[0].Headers["Cookie"] != "cdn-session=observed" {
+		t.Fatalf("observed media credentials overwritten: %+v", got)
+	}
+}

@@ -4,6 +4,8 @@
 
 ## 已确认
 
+- 2026-10-25 修复审查后用户确认：暂时保留现有第三方构建，完整包先不公开发布；不以未落实的源码书面要约代替网络分发所需的对应源码材料。
+
 - Q1：完整包随附 ffmpeg，用户完整解压后，首次下载 m3u8 无需另行联网获取 ffmpeg，也无需安装工具或填写可执行文件路径。媒体下载本身仍需要网络；保留当前 TUI 和下载操作。
 - Q2：同时提供 Windows amd64 与 macOS Intel / Apple Silicon 完整包。Mac 延续现有测试版状态，签名、公证与真实微信验收要求不变。
 - Q3：Windows 与 macOS 均只提供一个完整包；不再提供不含 ffmpeg 的精简包。随包 ffmpeg 缺失或损坏时自动下载兜底。
@@ -15,7 +17,7 @@
 - Windows 完整包允许 `README.md`、`wx-mini-video.exe`、`wx-mini-video.yaml`、`ffmpeg\ffmpeg.exe`、`ffmpeg\LICENSE.txt`、`THIRD-PARTY-NOTICES.md`。Mac 包允许说明、配置、`.app`（内部三文件）、`ffmpeg/ffmpeg-amd64`、`ffmpeg/ffmpeg-arm64`、`ffmpeg/LICENSE.txt`、`THIRD-PARTY-NOTICES.md`。
 - 随包 ffmpeg 通过 `os.Executable()` 定位；查找优先级为显式 `download.ffmpeg` > 随包 > 受管下载。随包文件不做每次渲染的哈希校验，只在启动时做一次存在/可执行/`-version` 探测。
 - 受管 ffmpeg 位于下载目录，复用需要同时匹配固定来源摘要和可执行文件摘要；随包文件不写 marker。旧版本下载的 marker 因来源摘要变化自动失效。
-- 随包 ffmpeg 是 GPLv3 独立程序，按 GPLv3 §6 提供许可证全文、第三方声明与精确对应源码的获取方式（书面要约或托管），项目代码许可与 ffmpeg 许可分别标识。
+- 随包 ffmpeg 是 GPLv3 独立程序，网络分发按 GPLv3 §6(d) 提供许可证全文、第三方声明与精确对应源码下载入口；不能用实物分发的书面要约代替，当前源码材料未齐，完整包公开发布保持阻断，项目代码许可与 ffmpeg 许可分别标识。
 
 ## 外部来源核查
 

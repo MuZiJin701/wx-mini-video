@@ -381,3 +381,25 @@ func TestCandidateProcessJSONTags(t *testing.T) {
 		}
 	}
 }
+
+func TestUnattributedGenerationInvalidatesOnlyOnClear(t *testing.T) {
+	store := NewStore()
+	generation := store.UnattributedGeneration()
+	store.SetTarget(Target{AppID: "wx123"})
+	candidate := Candidate{URL: "https://cdn.example.com/v.mp4", Kind: "video"}
+	if _, ok := store.AddUnattributedForGeneration(generation, candidate); !ok {
+		t.Fatal("target selection discarded first-page response")
+	}
+	store.Clear("wx123")
+	if _, ok := store.AddUnattributedForGeneration(generation, candidate); ok {
+		t.Fatal("old response repopulated cleared list")
+	}
+	generation = store.UnattributedGeneration()
+	if _, ok := store.AddUnattributedForGeneration(generation, candidate); !ok {
+		t.Fatal("new response after clear was discarded")
+	}
+	store.ClearUnattributed()
+	if _, ok := store.AddUnattributedForGeneration(generation, candidate); ok {
+		t.Fatal("old response survived ClearUnattributed")
+	}
+}

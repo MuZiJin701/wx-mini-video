@@ -9,9 +9,11 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -98,7 +100,42 @@ func BundledFFmpegPath() string {
 	if err != nil {
 		return ""
 	}
-	return bundledFFmpegPath(filepath.Dir(absolute), runtime.GOOS, runtime.GOARCH)
+	return checkedBundledFFmpeg(bundledFFmpegPath(filepath.Dir(absolute), runtime.GOOS, runtime.GOARCH))
+}
+
+var bundledFFmpegProbeCache = struct {
+	sync.Mutex
+	path     string
+	size     int64
+	modified time.Time
+	usable   bool
+}{}
+
+// 同一文件只探测一次；替换或修复随包文件后重新检查，避免渲染时反复启动进程。
+func checkedBundledFFmpeg(path string) string {
+	if path == "" {
+		return ""
+	}
+	info, err := os.Stat(path)
+	if err != nil || !isExecutableFile(path, runtime.GOOS) {
+		return ""
+	}
+	cache := &bundledFFmpegProbeCache
+	cache.Lock()
+	defer cache.Unlock()
+	if cache.path != path || cache.size != info.Size() || !cache.modified.Equal(info.ModTime()) {
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		command := exec.CommandContext(ctx, path, "-version")
+		command.WaitDelay = time.Second
+		output, err := command.Output()
+		cache.path, cache.size, cache.modified = path, info.Size(), info.ModTime()
+		cache.usable = err == nil && strings.HasPrefix(strings.TrimSpace(string(output)), "ffmpeg version ")
+	}
+	if !cache.usable {
+		return ""
+	}
+	return path
 }
 
 // bundledFFmpegPath 按包布局计算随包 ffmpeg 路径并做轻量可用性检查。

@@ -1,20 +1,21 @@
 """在 macOS 验证便携包及终端内启动；不触发系统授权或启动代理。"""
 
-import fcntl
 import os
 import pathlib
 import plistlib
-import pty
 import select
 import struct
 import subprocess
 import tempfile
-import termios
+import sys
 import time
 import zipfile
 
 
 def check_tui(executable, cwd):
+    import fcntl
+    import pty
+    import termios
     master, slave = pty.openpty()
     process = None
     output = bytearray()
@@ -97,6 +98,9 @@ def main():
                 assert ffmpeg_binary == source.read("ffmpeg"), f"{name} 与固定构建不一致（不得 lipo）"
             assert len(ffmpeg_binary) > 10 * 1024 * 1024, name
         assert package.read(prefix + "ffmpeg/ffmpeg-amd64") != package.read(prefix + "ffmpeg/ffmpeg-arm64")
+    if "--package-only" in sys.argv[1:]:
+        print("已通过 ZIP、双架构、随包 ffmpeg、许可、构建来源与权限检查；未执行 macOS 原生启动")
+        return
     with tempfile.TemporaryDirectory(prefix="wx-mini-video 测试 ") as directory:
         subprocess.run(["/usr/bin/ditto", "-x", "-k", str(archive), directory], check=True)
         portable = pathlib.Path(directory) / "wx-mini-video-macos"

@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -103,6 +104,27 @@ func TestBundledFFmpegCandidateLayouts(t *testing.T) {
 				t.Fatalf("bundledFFmpegCandidate() = %q, want %q", got, tc.want)
 			}
 		})
+	}
+}
+
+func TestCheckedBundledFFmpegRejectsCorruptionAndAcceptsWorkingExecutable(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "ffmpeg.exe")
+	if err := os.WriteFile(path, []byte("corrupt executable"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if got := checkedBundledFFmpeg(path); got != "" {
+		t.Fatalf("corrupt bundled executable accepted: %q", got)
+	}
+	// 本机已有 ffmpeg 时验证成功探测及缓存；不复制可能依赖旁文件的系统启动 shim。
+	installed, err := exec.LookPath("ffmpeg")
+	if err != nil {
+		return
+	}
+	if got := checkedBundledFFmpeg(installed); got != installed {
+		t.Fatalf("working executable rejected: %q", got)
+	}
+	if got := checkedBundledFFmpeg(installed); got != installed {
+		t.Fatal("cached usable executable lost")
 	}
 }
 

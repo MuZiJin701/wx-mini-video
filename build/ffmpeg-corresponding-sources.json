@@ -1,0 +1,20 @@
+{
+  "windows-amd64": {
+    "binary_archive_sha256": "60f467265b1e312373dbcd92200c2618a74850f98d3d078e94296bb3fa2047ba",
+    "source_url": null,
+    "source_sha256": null,
+    "reviewed": false
+  },
+  "darwin-amd64": {
+    "binary_archive_sha256": "7c6b4125b191cbf773832dc51f424cf2b6bb7da43007d1e066f95909e47cacd4",
+    "source_url": null,
+    "source_sha256": null,
+    "reviewed": false
+  },
+  "darwin-arm64": {
+    "binary_archive_sha256": "c8ed4c4e6978a03c485edbfe4e0a5dc2380f8a30bba5150531b31b094492d924",
+    "source_url": null,
+    "source_sha256": null,
+    "reviewed": false
+  }
+}

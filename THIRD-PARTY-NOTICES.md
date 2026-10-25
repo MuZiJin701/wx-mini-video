@@ -15,7 +15,7 @@
 
 ## 随包 ffmpeg（macOS 通用完整包）
 
-- 组件：FFmpeg 9.0.2，Martin Riedl 提供的 macOS 原始构建，amd64 与 arm64 各一份，未用 `lipo` 合并（避免构成 GPLv3 第 5 条意义上的修改版）。
+- 组件：FFmpeg 9.0.2，Martin Riedl 提供的 macOS 原始构建，amd64 与 arm64 各一份，未用 `lipo` 合并，以便逐字节核对发布者原始构建。
 - Intel（`ffmpeg/ffmpeg-amd64`）：
   - 下载地址：<https://ffmpeg.martin-riedl.de/download/macos/amd64/1789931006_9.0.2/ffmpeg.zip>
   - ZIP SHA-256：`7c6b4125b191cbf773832dc51f424cf2b6bb7da43007d1e066f95909e47cacd4`
@@ -35,15 +35,17 @@
 
 这些下载的二进制不在发布包内，由客户端在用户机器上按 URL 与 SHA-256 固定校验后保存；对应的 GPLv3/LGPL 许可与本节、`LICENSE` 及包内许可文本一致。LGPL 来源的 BtbN 构建按 LGPL 条款提供，GPLv3 全文随包提供不影响其独立许可标识。
 
-## GPLv3 对应源码的书面要约
+## 对应源码与公开发布状态
 
-FFmpeg 以 GPLv3 授权发布。本项目是发布包内 GPLv3 授权的 ffmpeg 二进制（Windows gyan 构建、macOS Martin Riedl 构建）的再分发者，依据 GPLv3 第 6 条，就这些二进制作出以下**有效期不少于三年的书面要约**：应任何接收者请求，提供与该二进制**精确对应**的 Corresponding Source。
+**当前随包构建的完整对应源码材料尚未落实，完整包不得公开发布。** 本文件中的 FFmpeg commit、构建参数、发布者主页与许可证全文只是已核实的来源信息，不是已提供完整 Corresponding Source 的声明。
 
-- 请求方式：在项目发布页 <https://github.com/MuZiJin701/wx-mini-video/issues> 提交 issue，注明包文件名（或下载 URL）及其 SHA-256，以便定位确切构建。
-- 提供内容：对应 FFmpeg 源码版本（Windows gyan 构建为 commit `946fcce07b`；macOS Martin Riedl 构建的精确源码版本以发布者构建记录为准）、该构建使用的编译配置（configure 选项、编译器版本、静态链接的外部库），以及 GPLv3 要求随目标代码提供的其他许可材料。
-- 该要约自对应发布包发布之日起三年内有效；不因包内已附 GPLv3 全文而免除。
+GitHub Release 属于网络分发，应落实 [GPLv3 §6(d)](https://www.gnu.org/licenses/gpl-3.0.html#section6) 要求的等效对应源码获取途径，源码可以另行下载，但须在二进制下载入口旁清楚标明并持续保证可获取。§6(b) 的实物分发书面要约不作为本项目网络分发的替代方案；“提交 Issue 后再向上游索取”不表示已经满足该要求。
 
-BtbN 的 LGPL 构建由客户端直接从上游发布页下载，不经本项目重新分发；其对应源码与许可见该发布页及压缩包内 `LICENSE.txt`，需要时同样可通过上述 issue 通道索取。
+公开发布前须取得并核实每份二进制精确对应的 FFmpeg 源码、修改/补丁、所需外部库源码及构建/安装脚本，不能只提供 FFmpeg 主仓库快照或构建脚本仓库。人工核对完整性与对应关系后，在 `build/ffmpeg-corresponding-sources.json` 填写每个构建的源码归档 HTTPS 地址、SHA-256 和核对状态；运行 `python3 build/verify-release-sources.py`，校验二进制来源摘要、源码入口与实际下载摘要。该工具不能自动证明源码完整或代替人工核对，未经核实不得把 `reviewed` 改为 `true`。
+
+完成后，应将源码索引与对应归档和发布说明一起提供下载。源码材料未就绪时，开发构建和自动化测试可以继续，但不能将生成的完整包当作可公开发布的产物。
+
+BtbN 的 LGPL 备用构建由客户端直接从上游下载；这是与随包二进制分发不同的路径，其许可证由上游提供，不把本项目的 GPLv3 全文误称为该 LGPL 构建的许可证，也不承诺持有尚未归档的对应源码。
 
 本项目不声称这些 ffmpeg 二进制由本项目编译，也不把第三方构建脚本仓库的许可当作产物许可。
 

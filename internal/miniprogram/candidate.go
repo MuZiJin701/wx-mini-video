@@ -55,15 +55,16 @@ type Candidate struct {
 const unattributedLimit = 500
 
 type Store struct {
-	mu                sync.RWMutex
-	items             map[string]Candidate
-	order             []string
-	unattributed      map[string]Candidate
-	unattributedOrder []string
-	target            Target
-	generation        uint64
-	programs          []Target
-	OnCandidateAdded  func(Candidate)
+	mu                     sync.RWMutex
+	items                  map[string]Candidate
+	order                  []string
+	unattributed           map[string]Candidate
+	unattributedOrder      []string
+	unattributedGeneration uint64
+	target                 Target
+	generation             uint64
+	programs               []Target
+	OnCandidateAdded       func(Candidate)
 }
 
 func NewStore() *Store {
@@ -86,6 +87,21 @@ func (s *Store) AddForTarget(generation uint64, candidate Candidate, cache func(
 // 该列表与目标和代次无关：切换目标不会清空它；重复 URL 会合并最新请求头，
 // 便于用最近一次真实响应的 Referer/Cookie 下载防盗链资源；超过上限时丢弃最旧条目。
 func (s *Store) AddUnattributed(candidate Candidate) (Candidate, bool) {
+	return s.addUnattributed(candidate, nil)
+}
+
+// UnattributedGeneration 只随清空变化，选择或切换目标不使首屏媒体失效。
+func (s *Store) UnattributedGeneration() uint64 {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.unattributedGeneration
+}
+
+func (s *Store) AddUnattributedForGeneration(generation uint64, candidate Candidate) (Candidate, bool) {
+	return s.addUnattributed(candidate, &generation)
+}
+
+func (s *Store) addUnattributed(candidate Candidate, generation *uint64) (Candidate, bool) {
 	if candidate.URL == "" {
 		return candidate, false
 	}
@@ -100,14 +116,24 @@ func (s *Store) AddUnattributed(candidate Candidate) (Candidate, bool) {
 		candidate.CreatedAt = time.Now()
 	}
 	s.mu.Lock()
+	if generation != nil && *generation != s.unattributedGeneration {
+		s.mu.Unlock()
+		return candidate, false
+	}
 	if existing, exists := s.unattributed[candidate.ID]; exists {
 		changed := false
-		if candidate.Source != "" && candidate.Source != existing.Source {
+		// 页面推测不能覆盖真实媒体请求中观察到的防盗链凭据。
+		preferExistingResponse := existing.Source == "response" && candidate.Source == "html"
+		if !preferExistingResponse && candidate.Source != "" && candidate.Source != existing.Source {
 			existing.Source = candidate.Source
 			changed = true
 		}
-		if len(candidate.Headers) > 0 {
+		if !preferExistingResponse && len(candidate.Headers) > 0 {
 			existing.Headers = candidate.Headers
+			changed = true
+		}
+		if !preferExistingResponse && candidate.SourceURL != "" && candidate.SourceURL != existing.SourceURL {
+			existing.SourceURL = candidate.SourceURL
 			changed = true
 		}
 		if candidate.ContentType != "" && candidate.ContentType != existing.ContentType {
@@ -173,6 +199,7 @@ func (s *Store) Unattributed() []Candidate {
 func (s *Store) ClearUnattributed() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.unattributedGeneration++
 	s.unattributed = make(map[string]Candidate)
 	s.unattributedOrder = nil
 }
@@ -283,6 +310,7 @@ func (s *Store) Clear(appID string) {
 	clearUnattributed := clearAll || appID == s.target.AppID
 	if clearUnattributed {
 		s.generation++
+		s.unattributedGeneration++
 		s.unattributed = make(map[string]Candidate)
 		s.unattributedOrder = nil
 	}

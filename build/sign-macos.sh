@@ -8,6 +8,10 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 PACKAGE="$ROOT/dist/wx-mini-video-macos"
 APP="$PACKAGE/wx-mini-video.app"
 [[ -f "$APP/Contents/MacOS/wx-mini-video" ]] || { echo 'Run go run ./build/macos first.' >&2; exit 1; }
+for item in ffmpeg/ffmpeg-amd64 ffmpeg/ffmpeg-arm64 ffmpeg/LICENSE.txt THIRD-PARTY-NOTICES.md; do
+    [[ -f "$PACKAGE/$item" && ! -L "$PACKAGE/$item" ]] || { echo "Missing or symlinked package file: $item" >&2; exit 1; }
+done
+python3 "$ROOT/build/verify-release-sources.py"
 [[ -z "$(find "$APP" -type l -print -quit)" ]] || { echo 'Unexpected symlink inside app.' >&2; exit 1; }
 while IFS= read -r -d '' item; do
     case "${item#"$APP"/}" in
@@ -30,5 +34,13 @@ mkdir "$WORK/wx-mini-video-macos"
 ditto "$APP" "$WORK/wx-mini-video-macos/wx-mini-video.app"
 cp "$ROOT/docs/macos-usage.md" "$WORK/wx-mini-video-macos/README.md"
 cp "$ROOT/internal/config/config.template.yaml" "$WORK/wx-mini-video-macos/wx-mini-video.yaml"
+mkdir "$WORK/wx-mini-video-macos/ffmpeg"
+for item in ffmpeg/ffmpeg-amd64 ffmpeg/ffmpeg-arm64 ffmpeg/LICENSE.txt; do
+    ditto "$PACKAGE/$item" "$WORK/wx-mini-video-macos/$item"
+done
+cp "$PACKAGE/THIRD-PARTY-NOTICES.md" "$WORK/wx-mini-video-macos/THIRD-PARTY-NOTICES.md"
 ditto -c -k --keepParent "$WORK/wx-mini-video-macos" "$ROOT/dist/wx-mini-video-macos-universal.zip"
+for item in ffmpeg/ffmpeg-amd64 ffmpeg/ffmpeg-arm64 ffmpeg/LICENSE.txt THIRD-PARTY-NOTICES.md; do
+    unzip -p "$ROOT/dist/wx-mini-video-macos-universal.zip" "wx-mini-video-macos/$item" | cmp - "$PACKAGE/$item"
+done
 echo 'Signed and notarized package created. Real WeChat acceptance is still required.'

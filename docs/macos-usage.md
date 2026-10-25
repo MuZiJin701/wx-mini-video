@@ -37,6 +37,8 @@
 
 ## 维护者构建与正式签名
 
+当前保留 Gyan/Martin 固定构建，但完整对应源码材料尚未齐备，完整包暂不公开发布。签名前会运行 `python3 build/verify-release-sources.py`，源码索引未核实即停止，不会继续签名、公证或打包为正式发布件。未具备 Mac 环境时可在干净构建后运行 `python3 build/verify-macos.py --package-only` 检查 ZIP 内容及权限；这不包含原生运行验收。
+
 在仓库根目录运行，Windows 和 macOS 均可构建未签名通用测试包，不需要新增 Go 依赖：
 
 ```text

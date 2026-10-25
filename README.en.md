@@ -13,6 +13,8 @@ Windows and macOS packages are available together in the [v0.1.8 Release](https:
 
 > Note: the v0.1.8 assets linked above still use the old layout (no bundled ffmpeg, and the Windows auto-download URL is no longer valid). Bundled ffmpeg, merged unconfirmed-media display, and related changes ship in the next version.
 
+> Complete packages are currently development builds. Corresponding FFmpeg source materials are incomplete, so public distribution is blocked. See the [third-party notice (Chinese)](THIRD-PARTY-NOTICES.md#对应源码与公开发布状态).
+
 Extract the whole Mac archive and open the `.app`; media is saved to `downloads/` beside it. Developer ID signing, notarization, and real Mac WeChat acceptance remain pending. First launch may require per-app system approval or the documented app move step. See the [macOS instructions (Chinese)](https://github.com/MuZiJin701/wx-mini-video/blob/main/docs/macos-usage.md). The steps below apply to Windows.
 
 ## Get started

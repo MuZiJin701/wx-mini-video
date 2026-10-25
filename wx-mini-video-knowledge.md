@@ -32,8 +32,8 @@ Windows 的 `PrepareConsole` 在配置、证书、代理初始化前检查实际
 
 1. 默认代理为 `127.0.0.1:2023`。从 HTTPS `servicewechat.com/<AppID>/<版本>/page-frame.html` 格式的 `Referer` 解析请求来源 AppID，完整匹配目标后才计入目标候选并缓存媒体；来源缺失、格式不符或其他 AppID 的媒体类响应作为**来源未确认**候选（`?` 标记）按类型并入候选列表（不写播放列表缓存、不自动下载），用户可查看和下载。目标候选不通过共享 CDN 或跨请求 URL 关联扩大范围。
 2. 发现阶段只登记 AppID，按 AppID 去重；即使只有一个也需选择。名称缺失时显示“名称未识别”，可补填，映射只在本次运行保留。发现阶段不产生目标候选、不缓存播放列表，但来源未确认媒体照常收集（与目标无关），确认目标后按类型显示（`?` 标记）；这样打开小程序时自动加载的第一个页面不会因目标尚未确认而丢失。
-3. 切换目标清空候选及进度，保留文件、历史、部分下载和缓存。存储用目标代次拒绝旧响应，提交候选和写缓存时再次检查；按 `c` 清空也会使清空前尚未接纳的响应失效，保留当前目标和本地文件。下载中不允许切换目标。
-4. 直接响应按 Content-Type 或 URL 后缀识别媒体。匹配目标的 JSON 接口可提供图片、直链视频和直链音频；JSON m3u8 链接跳过，等待实际播放列表响应。JSON 提取的跨域链接仅保留 User-Agent、Referer、Accept、Accept-Language，不转发接口 Cookie、Authorization 或其他自定义鉴权头；同源指 scheme 与 host（含端口）一致。后续真实媒体响应会更新其重放请求头与媒体元数据，保留 JSON 标题。URL 所在对象的 `title`、`videoTitle`、`audioTitle`、`mediaTitle`、`caption`、`subject`、`name` 可作为候选标题。JSON 另支持相邻字段拼接（如 `url` + `urlToken`）、无后缀但字段名强相关的媒体地址；目标 AppID 已匹配时，`application/octet-stream` 等未知类型且不小于 256 KB 的响应作为“未知文件”兜底候选，不自动缓存或下载。另对小程序的 H5 页面/脚本（HTML/JS，≤ 4 MB，含 `miniProgram`、`jweixin`、`ckplayer` 或 `<video` 标记）扫描内联的视频、m3u8 与音频地址，作为来源未确认候选按类型显示；Referer 取页面自身、Cookie 沿用页面请求，因此打开详情页即可出现候选，不依赖播放器真正发请求。扫描候选标记「H5 页面/脚本扫描（未播放验证）」，下载前未验证地址是否仍有效。
+3. 切换目标清空候选及进度，保留文件、历史、部分下载和缓存。存储用目标代次拒绝旧目标响应；来源未确认媒体使用独立清空代次，确认或切换目标不失效，清空列表使在途结果失效，提交候选和写缓存时再次检查；按 `c` 清空也会使清空前尚未接纳的响应失效，保留当前目标和本地文件。下载中不允许切换目标。
+4. 直接响应按 Content-Type 或 URL 后缀识别媒体。匹配目标的 JSON 接口可提供图片、直链视频和直链音频；JSON m3u8 链接跳过，等待实际播放列表响应。JSON 提取的跨域链接仅保留 User-Agent、Referer、Accept、Accept-Language，不转发接口 Cookie、Authorization 或其他自定义鉴权头；同源指 scheme 与 host（含端口）一致。后续真实媒体响应会更新其重放请求头与媒体元数据，保留 JSON 标题。URL 所在对象的 `title`、`videoTitle`、`audioTitle`、`mediaTitle`、`caption`、`subject`、`name` 可作为候选标题。JSON 另支持相邻字段拼接（如 `url` + `urlToken`）、无后缀但字段名强相关的媒体地址；目标 AppID 已匹配时，`application/octet-stream` 等未知类型且不小于 256 KB 的响应作为“未知文件”兜底候选，不自动缓存或下载。另对小程序的 H5 页面/脚本（HTML/JS，≤ 4 MB，含 `miniProgram`、`jweixin`、`ckplayer` 或 `<video` 标记）扫描内联的视频、m3u8 与音频地址，作为来源未确认候选按类型显示；Referer 取页面自身；仅同源媒体复用页面 Cookie/Authorization，跨源只保留公开请求元数据，真实媒体响应的鉴权头不会被后续页面扫描覆盖，因此打开详情页即可出现候选，不依赖播放器真正发请求。扫描候选标记「H5 页面/脚本扫描（未播放验证）」，下载前未验证地址是否仍有效。
 5. 直链先写带资源标识的 `.part` 和校验元数据；仅有强 ETag 时以 Range/If-Range 续传，服务器返回新实体时重下，没有校验依据时也重下。旧版同名 `.part` 保留但不复用。HTTP 分段响应从 Content-Range 取得完整长度；提交前核对响应声明的长度，不再凭嗅探长度或已有部分大小直接完成。成功记录追加到下载目录的 `history.jsonl`，包含路径、来源域名、大小和 UTC 时间。
 6. m3u8 使用已捕获播放列表，缺失时允许远程回补，最后由 ffmpeg 输出 mp4；音频 m3u8 也沿用此流程。捕获缓存保留原始相对引用，在下载阶段统一解析；预取缓存按候选及播放列表内容隔离，避免更新后的播放列表误用原位置的分片，并按来源限定请求头；ffmpeg 获取分片时，经仅在下载期间运行的 `127.0.0.1` 随机端口入口读取缓存播放列表、分片及子播放列表，由 Go 按来源重放鉴权头，入口仅接受带随机标识且已登记的资源路径。主播放列表沿用此方式获取其子播放列表，不作为普通分片预取。跨源重定向同样不携带凭据。
 
@@ -62,7 +62,7 @@ Windows 的 `PrepareConsole` 在配置、证书、代理初始化前检查实际
 
 下载目录也保存缓存、日志、仅含公开证书的 `WxMiniVideoRoot.cer` 和受管下载的 ffmpeg；随包 ffmpeg 位于程序旁的 `ffmpeg/`，私钥单独保存于本机用户目录。移动便携目录时一并保留 `downloads/`；使用外部配置或显式目录时需另行保留该目录。取舍见 [ADR 0002](docs/adr/0002-portable-runtime-data.md) 和 [ADR 0005](docs/adr/0005-local-ca-lifecycle.md)。
 
-ffmpeg 查找优先级为显式 `download.ffmpeg`、随包 ffmpeg、受管 ffmpeg。随包版本：Windows 为 gyan 9.0.2 essentials（包内 `ffmpeg\ffmpeg.exe`），macOS 为 Martin Riedl 9.0.2 的 amd64/arm64 原始二进制（包内 `ffmpeg/ffmpeg-amd64`、`ffmpeg/ffmpeg-arm64`，不做 lipo，运行时按 `runtime.GOARCH` 选择）。随包文件只做存在/可执行检查，并在启动时执行一次 `-version` 轻量探测；缺失或损坏时回退受管下载。受管下载使用候选源列表：Windows 首选 gyan 9.0.2、备用 BtbN 2026-09-30 月末 8.1 LGPL；macOS 沿用 Martin 两个地址。每个源固定 URL 与 SHA-256，可换源重试；旧 marker 因摘要变化自动失效。版本和摘要在 `internal/minidownload/ffmpeg.go`，更新时需同时修改。取舍见 [ADR 0007](docs/adr/0007-bundled-ffmpeg.md)。
+ffmpeg 查找优先级为显式 `download.ffmpeg`、随包 ffmpeg、受管 ffmpeg。随包版本：Windows 为 gyan 9.0.2 essentials（包内 `ffmpeg\ffmpeg.exe`），macOS 为 Martin Riedl 9.0.2 的 amd64/arm64 原始二进制（包内 `ffmpeg/ffmpeg-amd64`、`ffmpeg/ffmpeg-arm64`，不做 lipo，运行时按 `runtime.GOARCH` 选择）。随包文件做存在/可执行检查，并以 3 秒超时执行 `-version` 探测；缓存路径、大小和修改时间对应的结果，替换文件后重测；缺失或损坏时回退受管下载。受管下载使用候选源列表：Windows 首选 gyan 9.0.2、备用 BtbN 2026-09-30 月末 8.1 LGPL；macOS 沿用 Martin 两个地址。每个源固定 URL 与 SHA-256，可换源重试；旧 marker 因摘要变化自动失效。版本和摘要在 `internal/minidownload/ffmpeg.go`，更新时需同时修改。取舍见 [ADR 0007](docs/adr/0007-bundled-ffmpeg.md)。
 
 ## 证书风险与清理
 
@@ -131,7 +131,7 @@ cmd /c build\build.bat windows
 
 `windows` 构建唯一 Windows 包（联网下载并校验 gyan ffmpeg，缓存在 `dist/ffmpeg-cache/`），产物为 `dist\wx-mini-video-windows-amd64\` 和同名 zip，包内精确包含 `README.md`、`wx-mini-video.exe`、`wx-mini-video.yaml`、`ffmpeg\ffmpeg.exe`、`ffmpeg\LICENSE.txt`、`THIRD-PARTY-NOTICES.md`。脚本执行 `build\verify-package.ps1`。README 的图片和扩展文档使用在线链接；离线时仍可按文字步骤操作。`dist/`、下载数据和临时产物不提交。
 
-随包 ffmpeg 为 GPLv3 独立程序：发布前确认 `THIRD-PARTY-NOTICES.md` 与 `build/licenses/GPLv3.txt` 已提交并随包；GPLv3 §6 的对应源码义务按声明中的书面要约或托管方式履行。项目代码仍为 MIT + Commons Clause，两者分别标识，不能把 Commons Clause 施加到 ffmpeg。
+随包 ffmpeg 为 GPLv3 独立程序：发布前确认 `THIRD-PARTY-NOTICES.md` 与 `build/licenses/GPLv3.txt` 已提交并随包；网络分发按 GPLv3 §6(d) 落实完整对应源码获取入口，不能用实物分发的书面要约代替。当前材料未齐，完整包禁止公开发布；源码及依赖/构建材料人工核对后填写 `build/ffmpeg-corresponding-sources.json`，公开上传任何平台附件前必须运行 `python3 build/verify-release-sources.py`，实际下载验证源码归档摘要。开发构建可以继续，产物不自动具备公开分发条件。项目代码仍为 MIT + Commons Clause，两者分别标识，不能把 Commons Clause 施加到 ffmpeg。
 
 发布前完成检查并提交，再构建，核对 exe 的 `vcs.revision` 与目标提交一致、`vcs.modified=false`。推送、创建 Release 和上传附件须有明确授权；上传后核对 zip 的 SHA-256 与最新版本标记。合并发布先备份旧说明和附件，新包验证后再删除被替代的 Release，保留 Git 标签；具体版本历史只记在 CHANGELOG。
 

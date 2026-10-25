@@ -52,6 +52,7 @@ func CreateMiniProgramInterceptorPlugin(target miniprogram.Target, store *minipr
 			}
 			rawURL := contextURLString(req.URL)
 			appID := requestAppID(req.Header)
+			unattributedGeneration := store.UnattributedGeneration()
 			target, generation := store.Observe(appID)
 			contentType := ctx.GetResponseHeader("Content-Type")
 			contentLength := responseContentLength(ctx)
@@ -75,7 +76,7 @@ func CreateMiniProgramInterceptorPlugin(target miniprogram.Target, store *minipr
 				} else if captureUnattributed {
 					// 未归属列表与目标无关：发现阶段（尚未确认目标）也收集，
 					// 避免打开小程序时自动加载的第一个页面因目标为空而被丢弃。
-					store.AddUnattributed(miniprogram.Candidate{
+					store.AddUnattributedForGeneration(unattributedGeneration, miniprogram.Candidate{
 						SourceAppID:   appID,
 						Attribution:   miniprogram.AttributionUnattributed,
 						URL:           rawURL,
@@ -110,7 +111,7 @@ func CreateMiniProgramInterceptorPlugin(target miniprogram.Target, store *minipr
 					decision = "drop:disabled"
 					break
 				}
-				scanCandidates = scanPageMedia(store, rawURL, contentLength, headers, ctx)
+				scanCandidates = scanPageMedia(store, unattributedGeneration, rawURL, contentLength, headers, ctx)
 				if scanCandidates > 0 {
 					decision = "admit-unattributed"
 				} else {
@@ -534,7 +535,7 @@ func looksLikeMiniProgramPage(body []byte) bool {
 
 // scanPageMedia 从 H5 页面/脚本中提取内联媒体地址并收入未归属列表。
 // 播放器常常在播放时才请求媒体，命中缓存时甚至不产生请求；扫描页面可稳定得到候选。
-func scanPageMedia(store *miniprogram.Store, pageURL string, contentLength int64, headers map[string]string, ctx proxy.Context) int {
+func scanPageMedia(store *miniprogram.Store, generation uint64, pageURL string, contentLength int64, headers map[string]string, ctx proxy.Context) int {
 	if contentLength > pageScanMaxSize {
 		return 0
 	}
@@ -554,8 +555,9 @@ func scanPageMedia(store *miniprogram.Store, pageURL string, contentLength int64
 	candidates := miniprogram.MediaURLsInText(string(body))
 	for _, candidate := range candidates {
 		candidate.Attribution = miniprogram.AttributionUnattributed
-		candidate.Headers = pageHeaders
-		_, _ = store.AddUnattributed(candidate)
+		candidate.SourceURL = pageURL
+		candidate.Headers = miniprogram.HeadersForURL(pageHeaders, pageURL, candidate.URL)
+		_, _ = store.AddUnattributedForGeneration(generation, candidate)
 	}
 	return len(candidates)
 }
