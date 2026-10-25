@@ -15,6 +15,8 @@ Windows 与 macOS 包在同一个 [v0.1.8 Release](https://github.com/MuZiJin701
 
 > 当前完整包仍处于开发验证阶段；ffmpeg 对应源码材料未齐，尚不能公开发布。发布条件见 [第三方声明](THIRD-PARTY-NOTICES.md#对应源码与公开发布状态)。
 
+正在迁移到从官方源码自行构建的 ffmpeg；构建与验证方式见[源码构建说明](build/ffmpeg/README.md)。三种架构验证完成前，现有完整包的来源与发布状态保持不变。
+
 Mac 包完整解压后双击 `.app`，媒体保存在解压目录的 `downloads/`。签名、公证和真实 Mac 微信验收尚未完成；首次打开可能需要系统允许或移动应用的引导。详见 [macOS 测试版说明](https://github.com/MuZiJin701/wx-mini-video/blob/main/docs/macos-usage.md)。下面的开始步骤适用于 Windows。
 
 ## 开始使用

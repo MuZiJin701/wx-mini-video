@@ -12,7 +12,7 @@
 - **架构、配置、构建与排障：** `wx-mini-video-knowledge.md`。
 - **用户流程或发布说明：** `README.md`；macOS 使用见 `docs/macos-usage.md`。
 - **版本变更与发布合并：** `CHANGELOG.md`；发布操作见 `wx-mini-video-knowledge.md` 的“分发”。
-- **ffmpeg 随包、许可与源码义务：** `THIRD-PARTY-NOTICES.md`、`docs/adr/0007-bundled-ffmpeg.md`；需求背景见 `docs/bundled-ffmpeg-requirements.md`。
+- **ffmpeg 随包、许可与源码义务：** `THIRD-PARTY-NOTICES.md`、`docs/adr/0007-bundled-ffmpeg.md`；源码自建流程见 `build/ffmpeg/README.md` 与 `docs/adr/0010-source-built-ffmpeg.md`；需求背景见 `docs/bundled-ffmpeg-requirements.md`。
 - **Windows 启动与提权边界：** `docs/adr/0009-user-scoped-windows-runtime.md`；Terminal 首选背景见 `docs/adr/0004-windows-terminal-startup.md`。
 - **历史计划与背景：** `docs/archive/`。
 - **代码入口：** 启动看 `main.go` 和 `internal/app/`；TUI 看 `internal/tui/model.go`；嗅探看 `internal/interceptor/miniprogram.go`；下载看 `internal/minidownload/`；代理库 patch 看 `third_party/echo/`。
@@ -31,5 +31,6 @@
 - Go 代码修改后运行 `go test -count=1 ./...`、`go vet ./...`；修改 `third_party/echo/` 后额外运行 `go test -count=1 github.com/ltaoo/echo/...`。
 - Windows 分发改动后运行 `cmd /c build\build.bat windows`（唯一分发包，含随包 ffmpeg；需联网下载并校验 ffmpeg，缓存于 `dist/ffmpeg-cache/`，由 `build/fetch-ffmpeg.ps1` 下载）；包内只可包含 `README.md`、`wx-mini-video.exe`、`wx-mini-video.yaml`、`ffmpeg\ffmpeg.exe`、`ffmpeg\LICENSE.txt`、`THIRD-PARTY-NOTICES.md`。
 - macOS 分发改动后运行 `go run ./build/macos` 和 `python3 build/verify-macos.py`；通用包包含应用、配置、说明、`ffmpeg/ffmpeg-amd64`、`ffmpeg/ffmpeg-arm64`、`ffmpeg/LICENSE.txt` 与 `THIRD-PARTY-NOTICES.md`。
+- 修改 `build/ffmpeg/` 后运行 `python -B -m unittest discover -s build/ffmpeg -p "test_*.py"`；三架构完整构建与验证按 `build/ffmpeg/README.md` 执行。
 - 文档改动至少运行 `git diff --check`。
 - 每次完成修改后提交 Git；除非用户明确要求，不推送远程仓库。

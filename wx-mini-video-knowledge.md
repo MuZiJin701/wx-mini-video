@@ -123,6 +123,8 @@ Mac Release 更新时，下载通过验证的 Actions 原始通用 ZIP，不重�
 
 ## 分发
 
+ffmpeg 自建迁移：用户已确认采用固定 FFmpeg/OpenSSL 官方源码自行构建，见 [ADR 0010](docs/adr/0010-source-built-ffmpeg.md) 和[构建说明](build/ffmpeg/README.md)。新工作流 `.github/workflows/ffmpeg.yml` 仅手动执行，三种架构分别构建并归档二进制、源码和验证记录；它不发布 Release。三架构原生验收与稳定源码下载入口未就绪前，以下现行打包/受管来源及公开发布阻断继续保留。
+
 Windows 与 macOS 均只发布一个完整包，不提供不含 ffmpeg 的精简包。Windows 稳定包与 macOS 未签名测试包在同一 Release 并列提供，各自标注平台状态（最近已发布版本为 v0.1.8，当前开发版为 v0.1.9）。macOS 在仓库根目录执行 `go run ./build/macos`，产物为 `dist/wx-mini-video-macos-universal-unsigned.zip`；通用 `.app` 同时包含 amd64 与 arm64，包内包含应用、外部配置和说明、`.app` 外的 `ffmpeg/ffmpeg-amd64`、`ffmpeg/ffmpeg-arm64`、`ffmpeg/LICENSE.txt` 与 `THIRD-PARTY-NOTICES.md`，保留执行权限，不包含下载数据。签名与公证只覆盖 `.app`，包外 ffmpeg 未签名；用户须保留整个解压文件夹。
 
 共用 Release 入口不改变 Mac 的测试状态；正式 Mac 支持仍须完成 `build/sign-macos.sh` 的 Developer ID 签名、公证及双架构真机验收。后补附件不移动既有发布标签，也不替换已发布的 Windows 附件；发布说明须按平台记录各自的实际构建提交与 SHA-256，不能将 Mac 构建来源写成原 Windows 标签提交。上传前确认两种薄 Mach-O 的 `vcs.revision` 均等于发布说明中的 Mac 构建提交、`vcs.modified=false`；上传后下载核对 SHA-256，确认最新版本标记正确、两平台附件均存在且既有 Windows 附件未变化。当前基础版本号见 `main.go`，版本历史见 CHANGELOG。

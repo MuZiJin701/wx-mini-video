@@ -1,0 +1,43 @@
+name: FFmpeg source builds
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: FFmpeg · ${{ matrix.target }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: windows-2022
+            target: windows-amd64
+          - runner: macos-15-intel
+            target: darwin-amd64
+          - runner: macos-15
+            target: darwin-arm64
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.12'
+      - name: 校验下载与源码解包失败路径
+        run: python -B -m unittest discover -s build/ffmpeg -p "test_*.py"
+      - name: 构建并执行真实媒体验证
+        run: python -B build/ffmpeg/build.py ${{ matrix.target }}
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ffmpeg-${{ matrix.target }}
+          path: |
+            dist/ffmpeg-selfbuilt/${{ matrix.target }}/ffmpeg.zip
+            dist/ffmpeg-selfbuilt/${{ matrix.target }}/corresponding-source.tar.gz
+            dist/ffmpeg-selfbuilt/${{ matrix.target }}/build-info.json
+          if-no-files-found: error
+          retention-days: 30

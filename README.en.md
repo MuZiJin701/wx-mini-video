@@ -15,6 +15,8 @@ Windows and macOS packages are available together in the [v0.1.8 Release](https:
 
 > Complete packages are currently development builds. Corresponding FFmpeg source materials are incomplete, so public distribution is blocked. See the [third-party notice (Chinese)](THIRD-PARTY-NOTICES.md#对应源码与公开发布状态).
 
+Migration to FFmpeg built from official source is in progress; see the [build and verification guide (Chinese)](build/ffmpeg/README.md). Existing package sources and release restrictions remain in place until all three architectures pass validation.
+
 Extract the whole Mac archive and open the `.app`; media is saved to `downloads/` beside it. Developer ID signing, notarization, and real Mac WeChat acceptance remain pending. First launch may require per-app system approval or the documented app move step. See the [macOS instructions (Chinese)](https://github.com/MuZiJin701/wx-mini-video/blob/main/docs/macos-usage.md). The steps below apply to Windows.
 
 ## Get started
