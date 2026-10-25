@@ -6,9 +6,31 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/spf13/viper"
 
 	"wx_channel/pkg/certificate"
 )
+
+func TestSkipCertificateChecksAlsoSkipsLegacyRootLookup(t *testing.T) {
+	originalCheck := legacyRootPresent
+	t.Cleanup(func() { legacyRootPresent = originalCheck })
+	checked := false
+	legacyRootPresent = func() (bool, error) {
+		checked = true
+		return false, errors.New("keychain unavailable")
+	}
+	viper.Reset()
+	t.Cleanup(viper.Reset)
+	// Stop before preparing a real certificate or opening a proxy.
+	viper.Set("cert.file", "missing-test-cert.pem")
+	viper.Set("cert.key", "missing-test-key.pem")
+	m := testModel(t)
+	m.runtime.Settings.ProxySkipRootCert = true
+	msg := m.startProxy().(startMsg)
+	if checked || msg.legacy || msg.err == nil || !strings.Contains(msg.err.Error(), "读取 cert.file 失败") {
+		t.Fatalf("skip setting still accessed trust store: checked=%v legacy=%v err=%v", checked, msg.legacy, msg.err)
+	}
+}
 
 func TestQuitWaitsForStartupAndNeverStartsAfterQuit(t *testing.T) {
 	for _, finished := range []tea.Msg{startMsg{}, startMsg{legacy: true}, legacyCleanupMsg{}} {

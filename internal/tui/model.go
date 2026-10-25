@@ -640,7 +640,7 @@ func (m model) ensureProxy() (tea.Model, tea.Cmd) {
 
 func (m model) startProxy() tea.Msg {
 	startedAt := time.Now()
-	if !m.legacyChecked {
+	if !m.legacyChecked && !m.runtime.Settings.ProxySkipRootCert {
 		legacy, err := legacyRootPresent()
 		if err != nil {
 			return startMsg{err: fmt.Errorf("检查旧共享根证书失败: %w", err)}

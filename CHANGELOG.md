@@ -42,6 +42,7 @@
 
 ### 图标与分发
 
+- 修复 `proxy.skipInstallRootCert=true` 时启动仍检查旧共享证书的问题，隔离验收不再依赖用户钥匙串；macOS 启动检查失败时附带隔离运行日志，避免完整错误被前面的界面帧截断。
 - 修复 Windows 图标资源目录的相对偏移被错误重定位为 RVA，导致 exe 含 `.rsrc` 却无法显示图标的问题；新增真实链接后由 Windows 资源 API 读取图标组及全部帧的回归检查。
 - 复用本地参考项目 `wechat-channels-downloader` 的 logo：512×512 PNG 用于 TUI 品牌区；7 帧 ICO 经新增 `build/genicon` 生成 COFF 资源（`build.bat` 在 `go build` 前运行 `go run ./build/genicon`，输出仓库根 `wx-mini-video_windows_amd64.syso`，`*.syso` 被 `.gitignore` 忽略、不入库）嵌入 Windows exe；ICNS 由 `build/macos` 放入 `.app/Contents/Resources/logo.icns`，`Info.plist` 声明 `CFBundleIconFile`/`CFBundleIconName=logo`，`build/verify-macos.py` 断言图标与 plist。删除不再生成品牌图的 `build/genlogo`。
 - Windows 与 macOS 包内文件清单保持“单一完整包”不变（Windows 仍为 `README.md`、exe、配置、ffmpeg 与许可、第三方声明；macOS 通用包结构不变，仅新增 `.app` 内 `Resources/logo.icns`）。

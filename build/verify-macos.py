@@ -57,6 +57,14 @@ def write_isolated_config(directory):
     return config, downloads, home
 
 
+def startup_diagnostics(output, downloads):
+    log = pathlib.Path(downloads) / "wx-mini-video.log"
+    text = output.decode("utf-8", errors="replace")[-4000:]
+    if log.is_file():
+        text += "\n隔离运行日志:\n" + log.read_text(encoding="utf-8", errors="replace")[-4000:]
+    return text
+
+
 def check_tui(executable, cwd, config, downloads, home):
     import fcntl
     import pty
@@ -90,14 +98,14 @@ def check_tui(executable, cwd, config, downloads, home):
                 output.extend(chunk)
             text = output.decode("utf-8", errors="replace")
             if "代理启动失败" in text:
-                raise AssertionError("隔离配置下代理启动失败:\n" + text[:4000])
+                raise AssertionError("隔离配置下代理启动失败:\n" + startup_diagnostics(output, downloads))
             if "代理运行中" in text:
                 break
             if process.poll() is not None:
                 break
         text = output.decode("utf-8", errors="replace")
         assert "AppID" in text, text
-        assert "代理运行中" in text, "启动即发现未进入代理运行状态:\n" + text[:4000]
+        assert "代理运行中" in text, "启动即发现未进入代理运行状态:\n" + startup_diagnostics(output, downloads)
         # 证书必须生成在临时 HOME 内，证明没有触碰用户的证书目录。
         certificates = home / "Library/Application Support/wx-mini-video/certificates"
         assert certificates.is_dir(), f"证书目录未落在隔离 HOME: {certificates}"

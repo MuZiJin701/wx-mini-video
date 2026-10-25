@@ -66,7 +66,7 @@ TUI 为单主界面：品牌区（真图 logo 或块字符降级、右侧“外�
 | `capture.showUnattributed` | `true` | 是否收集并显示来源未确认媒体 |
 | `proxy.system` | `true` | 设置并恢复 Windows/macOS 系统代理 |
 | `proxy.hostname` / `proxy.port` | `127.0.0.1` / `2023` | 本地监听地址 |
-| `proxy.skipInstallRootCert` | `false` | 跳过根证书检查与自动安装 |
+| `proxy.skipInstallRootCert` | `false` | 跳过根证书及旧共享证书信任检查、自动安装；本地证书生成与公开证书导出仍执行 |
 | `proxy.upstreamProxy` | 空 | 上游代理 |
 | `target.appID` | 空 | 目标选择区输入框预填值；启动不会自动确认，空值不表示接收全部媒体 |
 | `cert.file` / `cert.key` | 空、空 | 必须成对配置的 PEM 证书与私钥；优先于自动生成证书 |
