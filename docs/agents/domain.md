@@ -10,6 +10,6 @@
 
 ## 布局与维护
 
-单上下文仓库：根目录 `GLOSSARY.md`，`docs/adr/`（当前 0001–0013），`wx-mini-video-knowledge.md`；历史计划与已实现需求的背景放 `docs/archive/`。
+单上下文仓库：根目录 [GLOSSARY.md](../../GLOSSARY.md)、[决策记录](../adr/)、[维护指南](../../wx-mini-video-knowledge.md)。TUI、目标选择与分类的已确认规格及验收状态见 [需求文档](../tui-alignment-requirements.md)；旧计划与历史规格保留在 `docs/archive/`，按开头的历史说明理解，不作为当前操作规则。
 
 `GLOSSARY.md` 只保存领域术语；实现细节、配置、规格和临时计划写入相应文档。只有决策难以逆转、缺少背景会令人意外且经过真实取舍时才新增 ADR；编号接续现有 ADR，替换已有决策时明确记录替代关系。

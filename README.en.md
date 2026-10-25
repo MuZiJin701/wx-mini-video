@@ -2,9 +2,9 @@
 
 Save images, direct videos, HTTP-FLV live streams, direct audio, and m3u8 media loaded by desktop WeChat Mini Programs on Windows (stable) and macOS (unsigned test build).
 
-[Download latest](https://github.com/MuZiJin701/wx-mini-video/releases/latest) · [简体中文](README.md)
+[Download latest](https://github.com/MuZiJin701/wx-mini-video/releases/latest) · [简体中文](https://github.com/MuZiJin701/wx-mini-video/blob/main/README.md)
 
-> This document describes the v0.2.0 source (discovery on startup, unified target area, six media categories, per-type download folders, HTTP-FLV live recording). Until v0.2.0 is released, the Release channel still serves v0.1.9; to upgrade, replace the exe and keep `wx-mini-video.yaml`, `ffmpeg/`, and `downloads/`.
+> This document describes the unreleased v0.2.0 source (discovery on startup, unified target area, six media categories, per-type download folders, HTTP-FLV live recording). The v0.1.9 packages linked below do not include these new features; build from source to try the current implementation. To upgrade, replace the exe and keep `wx-mini-video.yaml`, `ffmpeg/`, and `downloads/`.
 
 Windows and macOS packages are available together in the [v0.1.9 Release](https://github.com/MuZiJin701/wx-mini-video/releases/tag/v0.1.9):
 
@@ -13,13 +13,13 @@ Windows and macOS packages are available together in the [v0.1.9 Release](https:
 | Windows amd64 | [Windows ZIP](https://github.com/MuZiJin701/wx-mini-video/releases/download/v0.1.9/wx-mini-video-windows-amd64.zip) | Stable |
 | macOS 13+ · Apple Silicon / Intel | [Universal Mac ZIP](https://github.com/MuZiJin701/wx-mini-video/releases/download/v0.1.9/wx-mini-video-macos-universal-unsigned.zip) | Unsigned test build |
 
-Bundled ffmpeg is built from pinned official source (FFmpeg 9.0.2 + OpenSSL 3.5.9); corresponding source archives ship in the same Release (see the [third-party notice](THIRD-PARTY-NOTICES.md#对应源码)). Extract the whole Mac archive and open the `.app`; Developer ID signing, notarization, and real Mac WeChat acceptance remain pending. See the [macOS instructions](docs/macos-usage.md).
+Bundled ffmpeg is built from pinned official source (FFmpeg 9.0.2 + OpenSSL 3.5.9); corresponding source archives ship in the same Release (see the [third-party notice](THIRD-PARTY-NOTICES.md#对应源码corresponding-source)). Extract the whole Mac archive and open the `.app`; Developer ID signing, notarization, and real Mac WeChat acceptance remain pending. See the [macOS instructions](https://github.com/MuZiJin701/wx-mini-video/blob/main/docs/macos-usage.md).
 
 ## Get started
 
 1. Download `wx-mini-video-windows-amd64.zip`, **extract the whole archive**, and double-click `wx-mini-video.exe`; `ffmpeg\ffmpeg.exe` is already included.
-2. The app starts the proxy and keeps discovering Mini Programs as soon as it opens, showing "starting the proxy, discovering Mini Programs…" and the proxy status. A `target.appID` in the config only pre-fills the input field; it is **not** confirmed automatically at startup. The first proxy start generates and installs a root certificate unique to the current user; administrator (UAC) authorization is requested only when installing the certificate or removing the old shared root. If startup fails, click "Retry startup · r" or press `r`, or close the app with the footer "Quit · q" button.
-3. **Choose a target**: type a known AppID in the unified target area (cursor editing is supported), or open the Mini Program in desktop WeChat and pick it from the continuously updated "Discovered Mini Programs" list with `↑/↓` and `Enter`; clicking a discovered item confirms it directly. Discovery never selects a target automatically, overwrites your input, or takes focus. `Tab`/`Shift+Tab` cycle through the appearance control, input, discovered list, and confirm button.
+2. The app starts the proxy and keeps discovering Mini Programs as soon as it opens, showing "starting the proxy, discovering Mini Programs…" and the proxy status. A `target.appID` in the config only pre-fills the input field; it is **not** confirmed automatically at startup. The first proxy start generates and installs a root certificate unique to the current user; administrator (UAC) authorization is requested only when installing the certificate or removing the old shared root. If startup fails, click "Retry startup · r" or press `Ctrl+R`; `r` also works when the input is not focused. The footer "Quit · q" button closes the app.
+3. **Choose a target**: type a known AppID in the unified target area and press `Enter` (cursor editing is supported), or open the Mini Program in desktop WeChat, wait for the discovered list to update, use `Tab` to focus that list, then select with `↑/↓` and press `Enter`. Clicking a discovered item confirms it directly. Discovery never selects a target automatically, overwrites your input, or takes focus. `Tab`/`Shift+Tab` cycle through Appearance → Input → Discovered list (when populated) → Confirm → Cancel (when changing targets).
 4. After confirmation the full input field and discovered list collapse, leaving the target bar and the "Change target · s" button. Reload images or play video/audio in desktop WeChat. The media view opens on All; `1`–`6` switch All / Images / Videos / Audio / Live / Segmented media. Select with `↑/↓`, press `d`/`Enter` to download, and `o` to open the current Mini Program's folder. `✓` means the source is confirmed, `?` unconfirmed. HTTP-FLV live streams are marked "live"; downloading records continuously — press `x` to stop and save. If the stream drops, recorded content is saved automatically and the reason is reported.
 5. Press `q` or click the footer "Quit · q" button to quit and restore the previous system proxy; quitting during a download or recording asks for confirmation. The app stops and saves the in-progress work first; if saving fails, quitting is cancelled and the error UI stays open so you can handle it and quit again. If proxy restoration fails, press `r` to retry or `f` to force exit. In the target area `Esc` cancels a target change (or quits when no target is confirmed); while the input field has focus `q` is plain text, so use the footer button or `Ctrl+C`/`Ctrl+Q` to quit.
 
@@ -29,36 +29,21 @@ Since v0.2.0 the TUI has a single main surface: brand area (bitmap logo when sup
 
 The media view places eight clickable action buttons above the table, each labelled with its shortcut: Download · d, Stop · x, Details · i, Logs · l, Refresh · r, Open folder · o, Clear · c, Change target · s. Wide windows use three-line framed buttons that wrap as needed; narrower windows shrink to single-line chips. Disabled states follow the shortcuts: an empty list disables Download and Details, while downloading/recording disables another download and target changes but keeps Stop available.
 
-![Media list: select a candidate and download (live stream selected)](https://raw.githubusercontent.com/MuZiJin701/wx-mini-video/main/docs/images/使用界面.png)
+Confirmation follows the active control: `Enter` in the input confirms only the typed text, and empty input shows an error; `Enter` in the discovered list confirms only its selected item. The Confirm target button prefers a deliberately selected discovered item; editing the input switches the button back to the typed value. With no deliberate list selection and empty input, the button uses the current list item. Clicking Confirm or Cancel performs that button's action regardless of the previous keyboard focus. Printable characters such as `r`, `q`, and digits are text while the input is focused.
 
-<details>
-<summary>View workflow screenshots</summary>
-
-![Unified target area: AppID input and discovered list side by side](https://raw.githubusercontent.com/MuZiJin701/wx-mini-video/main/docs/images/首页.png)
-
-![Discovered Mini Programs: Tab moves focus, Enter or a click confirms](https://raw.githubusercontent.com/MuZiJin701/wx-mini-video/main/docs/images/已探测到.png)
-
-![Appearance dropdown: follow system / light / dark](https://raw.githubusercontent.com/MuZiJin701/wx-mini-video/main/docs/images/外观下拉.png)
-
-![Completed download: the status line shows the saved path and the drawer shows the local file](https://raw.githubusercontent.com/MuZiJin701/wx-mini-video/main/docs/images/下载完成.png)
-
-![Live recording: the status line shows the recorded size; press x to stop and save](https://raw.githubusercontent.com/MuZiJin701/wx-mini-video/main/docs/images/直播录制.png)
-
-![Log overlay: startup, discovery, and download progress](https://raw.githubusercontent.com/MuZiJin701/wx-mini-video/main/docs/images/日志浮层.png)
-
-</details>
+Generate interface previews from the source root with `go run -tags preview ./build/uipreview`; image conversion is described in the [maintainer guide (Chinese)](https://github.com/MuZiJin701/wx-mini-video/blob/main/wx-mini-video-knowledge.md#开发验证). Previews use the actual `View` renderer and sample states. Real WeChat traffic, terminal mouse interaction, and resizing still need acceptance testing on actual machines. Preview files stay local.
 
 ### Appearance dropdown
 
 The "Appearance <current mode> ▾" control in the brand area is clickable. In the target area, `Tab` can focus it: `←/→` cycle through the three modes directly, `Enter` or a click opens the dropdown, `↑/↓` plus `Enter` or a click selects Follow system / Light / Dark, and `Esc` closes it. In the media view, clicking the control opens the same dropdown. While the input field has focus, `←/→` only move the text cursor.
 
-The preference is written atomically to `downloads/ui.json` and reused on the next start. Follow-system mode reads the system appearance on the UI refresh timer, so no restart is needed; if the system preference cannot be read it falls back to dark. The bitmap logo requires terminal graphics support (Sixel in Windows Terminal 1.22+, or kitty); unsupported terminals, `NO_COLOR`, tmux/screen/SSH, or a short window fall back to the block-character mark, and very narrow windows hide the appearance control and brand image.
+The preference is written atomically to `downloads/ui.json` and reused on the next start. Follow-system mode reads the system appearance on the UI refresh timer, so no restart is needed. Windows falls back to dark if reading fails; macOS uses light when no dark preference is read. Select a mode manually to override this. The bitmap logo requires terminal graphics support (Sixel in Windows Terminal 1.22+, or kitty); unsupported terminals, `NO_COLOR`, tmux/screen/SSH, or a short window fall back to the block-character mark, and very narrow windows hide the appearance control and brand image.
 
 ## Media categories and live streams
 
 The category tabs are always `1 All / 2 Images / 3 Videos / 4 Audio / 5 Live / 6 Segmented media`, and the media view opens on All.
 
-- **Live is separate and mutually exclusive**: HTTP-FLV live candidates appear only under All and Live, never among ordinary Videos. JSON/H5 URLs are first marked as suspected live and displayed as "live"; once the real response proves a finite FLV file with a length, the candidate returns to Videos and selection follows candidate identity. If a live-status correction moves the selected item out of the current category, the selection is cleared with a notice so another resource cannot be downloaded by accident.
+- **Live is separate and mutually exclusive**: HTTP-FLV live candidates appear only under All and Live, never among ordinary Videos. `.flv` URLs extracted from JSON/H5 are first marked as suspected live and displayed as "live"; once the real response proves a finite FLV file with a length, the candidate returns to Videos and selection follows candidate identity. If a live-status correction moves the selected item out of the current category, the selection is cleared with a notice so another resource cannot be downloaded by accident.
 - **Segmented media**: the m3u8 category is displayed as "Segmented media"; details keep the m3u8/HLS format information and the note that the playlist is merged into mp4. HLS video, audio, and playlists all stay in this group.
 - **Unknown files** appear only under All; no extra category is added.
 - **Scope**: this release supports continuous recording of **HTTP-FLV only**. Continuous HLS (m3u8) live recording is **not supported**; a playlist without `#EXT-X-ENDLIST` may only be saved as the current snapshot and merged into mp4, which is not a complete live recording.
@@ -90,7 +75,7 @@ downloads/
 
 | Key | Action |
 | --- | --- |
-| `↑/↓` | Select a candidate (media view) or a discovered Mini Program (target area) |
+| `↑/↓` | Select a candidate (media view) or a discovered Mini Program (when that list has focus) |
 | `k/j` | Select a candidate in the media view (same as `↑/↓`) |
 | `d`, `Enter` | Download the selection; live streams start recording (in the target area, `Enter` confirms the focused action) |
 | `x` | Stop the current download; a live recording is saved as `.flv` |
@@ -98,7 +83,7 @@ downloads/
 | `1`–`6` | Categories: All / Images / Videos / Audio / Live / Segmented media |
 | `i`, `l` | Toggle the detail drawer / log overlay (`Esc` or a click closes) |
 | `c` | Clear the list (local files are kept) |
-| `r`, `Ctrl+R` | Retry proxy startup after a failure; otherwise refresh candidates and the discovered list |
+| `r`, `Ctrl+R` | Retry proxy startup after a failure; otherwise refresh candidates and the discovered list (use `Ctrl+R` while the input has focus) |
 | `o`, `Ctrl+O` | Open the current Mini Program folder (download root when no target or missing) |
 | `s` | Expand the target area to change targets (unavailable while downloading/recording) |
 | `q`, `Ctrl+Q`, `Ctrl+C` | Quit and restore the proxy (confirmation while downloading/recording; `q` is text while the input has focus) |
@@ -109,19 +94,19 @@ downloads/
 
 ## Before you start
 
-- Only one target is sniffed at a time. Discovery starts automatically but does not equal selection: `target.appID` only pre-fills the input, the runtime target stays empty until you confirm, and during discovery only Mini Programs and unconfirmed media are recorded — no target candidates are created (per [ADR 0008](docs/adr/0008-target-attribution.md)). Reload content after confirming a target to populate its candidates. Switching targets clears target candidates and progress but keeps local files and unconfirmed media; changing targets is blocked while downloading or recording.
-- **Target candidates** require the request source AppID to exactly match the target (`✓`). H5/web-view pages, native players, and CDNs often lack the Mini Program page-frame Referer, so such media is collected as unconfirmed (`?`) under its type category and may be downloaded at your discretion. The tool also scans H5 pages/scripts for inline media URLs, so opening a detail page can produce candidates without playback (marked "H5 page/script scan, unverified"). Set `capture.showUnattributed: false` to disable unconfirmed media.
+- Only one target is sniffed at a time. Discovery starts automatically but does not equal selection: `target.appID` only pre-fills the input, the runtime target stays empty until you confirm, and during discovery only Mini Programs and unconfirmed media are recorded — no target candidates are created (per [ADR 0008](https://github.com/MuZiJin701/wx-mini-video/blob/main/docs/adr/0008-target-attribution.md)). Reload content after confirming a target to populate its candidates. Switching targets clears target candidates and progress but keeps local files and unconfirmed media; changing targets is blocked while downloading or recording.
+- **Target candidates** require the request source AppID to exactly match the target (`✓`). H5/web-view pages, native players, and CDNs often lack the Mini Program page-frame Referer, so such media is collected as unconfirmed (`?`) under its type category and may be downloaded at your discretion. The tool also scans H5 pages/scripts for inline media URLs, so opening a Mini Program's H5 detail page in WeChat can produce candidates without playback (marked "H5 page/script scan, unverified"). Set `capture.showUnattributed: false` to disable unconfirmed media.
 - Images, direct videos, and direct audio are saved as-is without transcoding. **HTTP-FLV live streams** (`.flv` URL or `video/x-flv` without `Content-Length`) have no total size or end point and cannot resume; press `x` or confirm quit to stop and save `.flv`. If the stream drops unexpectedly, the recorded part is still saved and added to history; when saving fails, the real error is shown and the `.part` is kept for recovery. Retrying never overwrites an unsaved live recording, and streams confirmed as live only at download time are also saved as `.flv` under `直播/`. Play or remux the recording with ffmpeg/VLC. **Continuous HLS (m3u8) live recording is out of scope for this release.**
-- Windows and macOS both ship one complete package; m3u8 needs no network preparation. If the bundled ffmpeg is missing or corrupted the app downloads a managed fallback, and `download.ffmpeg` can point to an existing executable. The bundled ffmpeg is a separate GPLv3 program; see `THIRD-PARTY-NOTICES.md`.
+- Windows and macOS each ship one complete package; m3u8 needs no network preparation. If the bundled ffmpeg is missing or corrupted the app downloads a managed fallback, and `download.ffmpeg` can point to an existing executable. The self-built ffmpeg in release packages is a separate LGPLv3 program; see the [third-party notice](THIRD-PARTY-NOTICES.md).
 - The root certificate and private key are generated and reused in a restricted per-user location and are never shipped; re-establish trust after changing machine or Windows user. Exit only restores the proxy and does not remove the certificate. Direct downloads resume with Range when the server provides validation information; after a failure, retrying reuses the `.part` left by the same candidate (live recordings do not reuse old files). JSON cross-origin media does not carry interface credentials.
 
 ## Troubleshooting
 
 | Problem | What to do |
 | --- | --- |
-| No Mini Program discovered | Discovery starts automatically when the app opens; make sure "proxy running" is shown, then reopen the Mini Program. Press `r` to refresh/retry, or type the AppID in the target area. |
-| A Mini Program was found but not selected | Expected: discovery does not select. Choose it with `↑/↓` and press `Enter`, or click the discovered item; updates never overwrite input or change selection identity. |
-| The UI says proxy startup failed | Click "Retry startup · r" or press `r`; handle certificate/UAC prompts if it keeps failing; the footer "Quit · q" button exits. |
+| No Mini Program discovered | Discovery starts automatically when the app opens; make sure "proxy running" is shown, then reopen the Mini Program. Press `Ctrl+R` to refresh/retry, or type the AppID in the target area. |
+| A Mini Program was found but not selected | Expected: discovery does not select. Use `Tab` to focus the discovered list, select with `↑/↓`, and press `Enter`, or click the item directly. |
+| The UI says proxy startup failed | Click "Retry startup · r" or press `Ctrl+R` (`r` also works outside the input); handle certificate/UAC prompts if it keeps failing; the footer "Quit · q" button exits. |
 | No target media in the list | Press `1` to view All (including `?` unconfirmed media); reload media after confirming the target. |
 | Live download never ends | Expected: HTTP-FLV has no end point. Press `x` to stop and save `.flv`; remux to mp4 with ffmpeg if needed. |
 | Can HLS/m3u8 live streams be recorded? | Not in this release. HLS playlists are saved as Segmented media and merged from the current playlist; without `#EXT-X-ENDLIST` this may be a snapshot. |
@@ -137,6 +122,6 @@ downloads/
 | m3u8 download or merge failed | Make sure `ffmpeg/` is intact; the error names the `.ffmpeg/` log; see [troubleshooting (Chinese)](https://github.com/MuZiJin701/wx-mini-video/blob/main/wx-mini-video-knowledge.md#排障). |
 | Diagnosing sniffing | Start with `--debug`; the log is written to `wx-mini-video-debug.log`. Check for sensitive information before sharing. |
 
-[Maintainer guide (Chinese)](https://github.com/MuZiJin701/wx-mini-video/blob/main/wx-mini-video-knowledge.md) · [Version history](CHANGELOG.md)
+[Maintainer guide (Chinese)](https://github.com/MuZiJin701/wx-mini-video/blob/main/wx-mini-video-knowledge.md) · [Version history](https://github.com/MuZiJin701/wx-mini-video/blob/main/CHANGELOG.md)
 
 Only download content you have the right to access, and follow applicable laws and platform rules.

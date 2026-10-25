@@ -2,9 +2,9 @@
 
 在 Windows（稳定版）与 macOS（未签名测试版）上保存 PC 微信小程序加载的图片、直链视频、HTTP-FLV 直播流、直链音频和 m3u8 媒体。
 
-[下载最新版](https://github.com/MuZiJin701/wx-mini-video/releases/latest) · [English](README.en.md)
+[下载最新版](https://github.com/MuZiJin701/wx-mini-video/releases/latest) · [English](https://github.com/MuZiJin701/wx-mini-video/blob/main/README.en.md)
 
-> 本文档对应 v0.2.0 源码（启动即发现、统一目标选择区、6 个媒体分类、按类型下载目录、HTTP-FLV 直播录制）。v0.2.0 发布前 Release 仍为 v0.1.9；升级时替换 exe，保留 `wx-mini-video.yaml`、`ffmpeg/` 和 `downloads/`。
+> 本文档对应尚未发布的 v0.2.0 源码（启动即发现、统一目标选择区、6 个媒体分类、按类型下载目录、HTTP-FLV 直播录制）。下方 v0.1.9 下载包不包含这些新功能；体验当前实现需从源码构建。升级时替换 exe，保留 `wx-mini-video.yaml`、`ffmpeg/` 和 `downloads/`。
 
 Windows 与 macOS 包在同一 [v0.1.9 Release](https://github.com/MuZiJin701/wx-mini-video/releases/tag/v0.1.9) 并列提供：
 
@@ -13,13 +13,13 @@ Windows 与 macOS 包在同一 [v0.1.9 Release](https://github.com/MuZiJin701/wx
 | Windows amd64 | [Windows ZIP](https://github.com/MuZiJin701/wx-mini-video/releases/download/v0.1.9/wx-mini-video-windows-amd64.zip) | 稳定版 |
 | macOS 13+ · Apple Silicon / Intel | [Mac 通用 ZIP](https://github.com/MuZiJin701/wx-mini-video/releases/download/v0.1.9/wx-mini-video-macos-universal-unsigned.zip) | 未签名测试版 |
 
-随包 ffmpeg 由固定官方源码自建（FFmpeg 9.0.2 + OpenSSL 3.5.9）；对应源码归档与二进制在同一 Release 提供，说明见 [第三方声明](THIRD-PARTY-NOTICES.md#对应源码)。Mac 包完整解压后双击 `.app`；签名、公证和真实 Mac 微信验收尚未完成，详见 [macOS 测试版说明](docs/macos-usage.md)。
+随包 ffmpeg 由固定官方源码自建（FFmpeg 9.0.2 + OpenSSL 3.5.9）；对应源码归档与二进制在同一 Release 提供，说明见 [第三方声明](THIRD-PARTY-NOTICES.md#对应源码corresponding-source)。Mac 包完整解压后双击 `.app`；签名、公证和真实 Mac 微信验收尚未完成，详见 [macOS 测试版说明](https://github.com/MuZiJin701/wx-mini-video/blob/main/docs/macos-usage.md)。
 
 ## 开始使用
 
 1. 下载 `wx-mini-video-windows-amd64.zip`，**完整解压**后双击 `wx-mini-video.exe`；包内已附带 `ffmpeg\ffmpeg.exe`，无需另行配置。
-2. 程序打开即自动启动代理并持续发现小程序，界面显示“正在启动代理，自动发现小程序…”和代理运行状态。配置中的 `target.appID` 只会预填到输入框，**不会**在启动时自动确认目标。首次启动会生成并安装当前用户独立的根证书；只有安装根证书或清理旧共享证书时请求一次管理员授权（UAC），其余启动与代理设置不需要提权。启动失败时点击“重试启动 · r”或按 `r`，也可用页脚“退出 · q”关闭。
-3. **选择目标**：在统一目标选择区输入已知 AppID（支持光标编辑），或在 PC 微信打开目标小程序、等“已发现的小程序”列表持续更新后用 `↑/↓` 选择并按 `Enter`；用鼠标点击发现项即直接确认。发现不会自动选定目标，也不会覆盖输入或抢走焦点。`Tab`/`Shift+Tab` 在“外观 → 输入 → 发现列表 → 确认”等焦点间切换。
+2. 程序打开即自动启动代理并持续发现小程序，界面显示“正在启动代理，自动发现小程序…”和代理运行状态。配置中的 `target.appID` 只会预填到输入框，**不会**在启动时自动确认目标。首次启动会生成并安装当前用户独立的根证书；只有安装根证书或清理旧共享证书时请求管理员授权（UAC），其余启动与代理设置不需要提权。启动失败时点击“重试启动 · r”或按 `Ctrl+R`；输入框未聚焦时也可按 `r`。页脚“退出 · q”可关闭程序。
+3. **选择目标**：在统一目标选择区输入已知 AppID（支持光标编辑）并按 `Enter`，或在 PC 微信打开目标小程序、等“已发现的小程序”列表更新后，先用 `Tab` 聚焦列表，再用 `↑/↓` 选择并按 `Enter`；鼠标点击发现项即直接确认。发现不会自动选定目标，也不会覆盖输入或抢走焦点。`Tab`/`Shift+Tab` 在“外观 → 输入 → 发现列表（有结果时）→ 确认 → 取消（更换目标时）”间切换。
 4. 确认目标后，完整输入框与发现列表收起，只保留“目标 AppID”目标条和“更换目标 · s”按钮。在 PC 微信重新打开图片或播放视频、音频，媒体视图默认显示“全部”；`1`–`6` 切换全部 / 图片 / 视频 / 音频 / 直播 / 分段媒体。`↑/↓` 选中候选，`d`/`Enter` 下载，`o` 打开当前小程序目录。`✓` 表示来源已确认，`?` 表示来源未确认。HTTP-FLV 直播流标记为“直播流”，下载是持续录制，按 `x` 停止并保存；断流时会自动保存已录内容并提示原因。
 5. 使用完按 `q` 或点击页脚“退出 · q”退出并恢复原系统代理；下载或录制中退出需先确认。程序会先停止并保存现场，若保存失败会自动取消退出并保留错误界面，处理后可再次退出。恢复代理失败时按 `r` 重试或按 `f` 强制退出；目标选择区中 `Esc` 取消更换（未选目标时退出），输入框聚焦时 `q` 作为文本输入，可用页脚按钮或 `Ctrl+C`/`Ctrl+Q` 退出。
 
@@ -29,36 +29,21 @@ v0.2.0 起为单主界面：品牌区（真图 logo 或块字符降级、右侧�
 
 媒体视图的 8 个操作按钮排列在表格上方，可点击且标注快捷键：下载 · d、停止 · x、详情 · i、日志 · l、刷新 · r、打开目录 · o、清空 · c、更换目标 · s。宽窗口使用 3 行带边框按钮并按宽度自动换行，较窄窗口收缩为单行 chip；禁用状态与快捷键行为一致：空列表禁用下载与详情，下载/录制中禁用再次下载与更换目标、停止可用。
 
-![媒体列表：选择候选并下载（示例选中直播流）](https://raw.githubusercontent.com/MuZiJin701/wx-mini-video/main/docs/images/使用界面.png)
+目标选择区的确认按当前操作区分：输入框内 `Enter` 只确认输入文本，空输入会提示错误；发现列表内 `Enter` 只确认选中项。“确认目标”按钮优先采用用户主动选择的发现项，继续编辑输入后改为采用输入值；未主动选择且输入为空时才采用列表当前项。点击确认或取消按钮直接执行该按钮动作，不受此前键盘焦点影响。输入框内的 `r`、`q`、数字等可打印字符均作为文本。
 
-<details>
-<summary>查看操作截图</summary>
-
-![目标选择区：输入 AppID 与已发现列表同时存在](https://raw.githubusercontent.com/MuZiJin701/wx-mini-video/main/docs/images/首页.png)
-
-![已发现小程序：Tab 切换焦点，Enter 或点击确认](https://raw.githubusercontent.com/MuZiJin701/wx-mini-video/main/docs/images/已探测到.png)
-
-![外观下拉：跟随系统 / 浅色 / 深色](https://raw.githubusercontent.com/MuZiJin701/wx-mini-video/main/docs/images/外观下拉.png)
-
-![下载完成：状态行显示保存路径，详情显示本地文件](https://raw.githubusercontent.com/MuZiJin701/wx-mini-video/main/docs/images/下载完成.png)
-
-![直播录制：状态行显示已录大小，按 x 停止并保存](https://raw.githubusercontent.com/MuZiJin701/wx-mini-video/main/docs/images/直播录制.png)
-
-![日志浮层：显示启动、发现与下载过程](https://raw.githubusercontent.com/MuZiJin701/wx-mini-video/main/docs/images/日志浮层.png)
-
-</details>
+界面预览可在源码根目录运行 `go run -tags preview ./build/uipreview` 生成，图片转换步骤见[维护指南](https://github.com/MuZiJin701/wx-mini-video/blob/main/wx-mini-video-knowledge.md#开发验证)。预览使用实际 `View` 与样例状态；真实微信流量、终端鼠标交互与缩放仍需实机验收。预览文件只留本地。
 
 ### 外观下拉
 
 品牌区右侧“外观 <当前模式> ▾”可点击。目标选择区中按 `Tab` 可聚焦到外观控件，此时 `←/→` 直接循环切换三种外观，`Enter` 或点击展开下拉，用 `↑/↓` + `Enter` 或点击选择“跟随系统 / 浅色 / 深色”，`Esc` 关闭；媒体视图中点击该控件同样可以展开。输入框聚焦时 `←/→` 只移动文本光标，不再占用外观切换。
 
-外观偏好原子写入 `downloads/ui.json`，下次启动沿用；选择“跟随系统”时按界面刷新定时器持续读取系统明暗，无需重启。系统明暗读取失败时回退深色。品牌真图依赖终端图形能力（Windows Terminal 1.22+ 的 Sixel 或 kitty）；不支持、设置了 `NO_COLOR`、经 tmux/screen/SSH 或窗口过矮时自动降级为块字符图标，极窄窗口隐藏外观控件与品牌图。
+外观偏好原子写入 `downloads/ui.json`，下次启动沿用；选择“跟随系统”时按界面刷新定时器持续读取系统明暗，无需重启。Windows 读取失败时回退深色；macOS 未读到深色偏好时使用浅色，可手动选择覆盖。品牌真图依赖终端图形能力（Windows Terminal 1.22+ 的 Sixel 或 kitty）；不支持、设置了 `NO_COLOR`、经 tmux/screen/SSH 或窗口过矮时自动降级为块字符图标，极窄窗口隐藏外观控件与品牌图。
 
 ## 媒体分类与直播
 
 分类页签固定顺序为 `1 全部 / 2 图片 / 3 视频 / 4 音频 / 5 直播 / 6 分段媒体`，进入媒体视图默认“全部”。
 
-- **直播独立且互斥**：HTTP-FLV 直播候选只进入“全部”和“直播”，不再混入普通“视频”。JSON/H5 地址字段先标为疑似直播并显示“直播流”，真实响应确认是带长度的有限 FLV 文件后会归回“视频”，列表按候选身份保持选择；若直播状态被修正导致选中项移出当前分类，选中会被清空并提示重新选择，避免误操作另一条资源。
+- **直播独立且互斥**：HTTP-FLV 直播候选只进入“全部”和“直播”，不再混入普通“视频”。从 JSON/H5 提取的 `.flv` 地址先标为疑似直播并显示“直播流”，真实响应确认是带长度的有限 FLV 文件后会归回“视频”，列表按候选身份保持选择；若直播状态被修正导致选中项移出当前分类，选中会被清空并提示重新选择，避免误操作另一条资源。
 - **分段媒体**：m3u8 的分类显示名为“分段媒体”，详情保留 m3u8/HLS 格式信息与“由播放列表描述、合并为 mp4”；HLS 视频、音频与播放列表都保留在该分组。
 - **未知文件**只在“全部”中可见，不新增分类。
 - **支持范围**：本轮只支持 **HTTP-FLV 持续直播录制**。HLS（m3u8）持续直播录制**尚不支持**；无 `#EXT-X-ENDLIST` 的播放列表可能只保存当前快照并合并为 mp4，不能当作完整直播录制。
@@ -90,7 +75,7 @@ downloads/
 
 | 按键 | 操作 |
 | --- | --- |
-| `↑/↓` | 选择候选（媒体视图）或已发现小程序（目标选择区） |
+| `↑/↓` | 选择候选（媒体视图）或已发现小程序（发现列表聚焦时） |
 | `k/j` | 在媒体视图中选择候选（同 `↑/↓`） |
 | `d`、`Enter` | 下载选中项；直播流开始持续录制（目标区中 `Enter` 为确认焦点动作） |
 | `x` | 停止当前下载；直播录制保存已录内容为 `.flv` |
@@ -98,7 +83,7 @@ downloads/
 | `1`–`6` | 分类：全部 / 图片 / 视频 / 音频 / 直播 / 分段媒体 |
 | `i`、`l` | 详情抽屉 / 日志浮层开关（`Esc` 或点击关闭） |
 | `c` | 清空列表（保留本地文件） |
-| `r`、`Ctrl+R` | 代理启动失败时重试启动；否则刷新候选与发现列表 |
+| `r`、`Ctrl+R` | 代理启动失败时重试启动；否则刷新候选与发现列表（输入框聚焦时请用 `Ctrl+R`） |
 | `o`、`Ctrl+O` | 打开当前小程序目录（未选目标或目录不存在时打开下载根目录） |
 | `s` | 展开目标选择区更换目标（下载/录制中不可用） |
 | `q`、`Ctrl+Q`、`Ctrl+C` | 退出并恢复代理（下载/录制中需确认；输入框聚焦时 `q` 是文本输入） |
@@ -109,19 +94,19 @@ downloads/
 
 ## 使用前了解
 
-- 一次只嗅探一个目标。启动后自动发现，但发现不等于选定：配置里的 `target.appID` 只预填输入框，用户确认前运行时目标为空，发现阶段只登记小程序与来源未确认媒体、不产生目标候选（遵守 [ADR 0008](docs/adr/0008-target-attribution.md)）；确认后才开始收集目标候选。确认后需要重新加载内容才能补全目标候选。切换目标会清空目标候选和进度，保留本地文件与来源未确认媒体，下载/录制中禁止更换目标。
-- **目标候选**只接收来源 AppID 与目标完整匹配的媒体（`✓`）；H5/web-view、原生播放器或 CDN 常无小程序 page-frame Referer，这类媒体以 `?` 标记按类型并入分类，可自行判断下载。工具还会扫描 H5 页面/脚本中的内联媒体地址，打开详情页就可能出现候选（标记「H5 页面/脚本扫描（未播放验证）」）。可用 `capture.showUnattributed: false` 关闭来源未确认媒体。
+- 一次只嗅探一个目标。启动后自动发现，但发现不等于选定：配置里的 `target.appID` 只预填输入框，用户确认前运行时目标为空，发现阶段只登记小程序与来源未确认媒体、不产生目标候选（遵守 [ADR 0008](https://github.com/MuZiJin701/wx-mini-video/blob/main/docs/adr/0008-target-attribution.md)）；确认后才开始收集目标候选。确认后需要重新加载内容才能补全目标候选。切换目标会清空目标候选和进度，保留本地文件与来源未确认媒体，下载/录制中禁止更换目标。
+- **目标候选**只接收来源 AppID 与目标完整匹配的媒体（`✓`）；H5/web-view、原生播放器或 CDN 常无小程序 page-frame Referer，这类媒体以 `?` 标记按类型并入分类，可自行判断下载。工具还会扫描 H5 页面/脚本中的内联媒体地址，在微信打开小程序的 H5 详情页就可能出现候选（标记「H5 页面/脚本扫描（未播放验证）」）。可用 `capture.showUnattributed: false` 关闭来源未确认媒体。
 - 图片、直链视频和直链音频直接保存原文件，不转码。**HTTP-FLV 直播流**（`.flv` 地址或 `video/x-flv` 响应且无 `Content-Length`）没有总长度和结束点，不能续传；按 `x` 或确认退出停止并保存 `.flv`，异常断流（断网等）也会自动保存已录内容并写入历史；保存失败时显示真实错误并保留 `.part` 供恢复。重试不会覆盖上一次未保存的直播录制；只有下载时才确认的直播也会按 `.flv` 保存并归入 `直播/`。录制可用 ffmpeg/VLC 播放或转封装。**HLS（m3u8）持续直播录制不在本轮支持范围**。
-- Windows 与 macOS 只提供一个完整包，m3u8 无需联网准备；随包 ffmpeg 缺失或损坏时自动下载受管 ffmpeg 兜底，也可用 `download.ffmpeg` 指定已有可执行文件。随包 ffmpeg 是独立的 GPLv3 程序，许可与源码获取见 `THIRD-PARTY-NOTICES.md`。
+- Windows 与 macOS 各只提供一个完整包，m3u8 无需联网准备；随包 ffmpeg 缺失或损坏时自动下载受管 ffmpeg 兜底，也可用 `download.ffmpeg` 指定已有可执行文件。正式分发的自建 ffmpeg 是独立的 LGPLv3 程序，许可与源码获取见 [第三方声明](THIRD-PARTY-NOTICES.md)。
 - 根证书与私钥在本机当前用户受限目录生成并复用，不随包分发；换电脑或 Windows 用户后需重新建立信任，退出只恢复代理、不卸载证书。直链下载在服务器提供校验信息时按 Range 续传；失败后重试会复用同一候选遗留的 `.part`（直播录制不复用旧文件）。JSON 跨域媒体不携带接口鉴权信息。
 
 ## 遇到问题
 
 | 问题 | 处理方法 |
 | --- | --- |
-| 没有发现小程序 | 程序打开即自动发现，确认界面显示“代理运行中”后重新打开小程序；仍为空按 `r` 刷新/重试，或直接在目标区输入 AppID。 |
-| 发现了小程序但没有自动选定 | 正常：发现不等于选定。用 `↑/↓` 选中后按 `Enter`，或直接点击发现列表项确认；发现更新不会覆盖输入或改变选中身份。 |
-| 界面显示代理启动失败 | 点击“重试启动 · r”或按 `r`；反复失败先处理证书/UAC 提示；也可用页脚“退出 · q”退出。 |
+| 没有发现小程序 | 程序打开即自动发现，确认界面显示“代理运行中”后重新打开小程序；仍为空按 `Ctrl+R` 刷新/重试，或直接在目标区输入 AppID。 |
+| 发现了小程序但没有自动选定 | 正常：发现不等于选定。先 `Tab` 聚焦发现列表，再用 `↑/↓` 选中后按 `Enter`，或直接点击发现项确认。 |
+| 界面显示代理启动失败 | 点击“重试启动 · r”或按 `Ctrl+R`（输入框未聚焦时也可按 `r`）；反复失败先处理证书/UAC 提示；页脚“退出 · q”可退出。 |
 | 列表没有目标媒体 | 按 `1` 查看全部（含 `?` 标记的来源未确认媒体）；确认目标后重新加载媒体。 |
 | 直播流下载一直不结束 | 正常：HTTP-FLV 直播没有结束点，按 `x` 停止并保存 `.flv`；需要 mp4 时用 ffmpeg 转封装。 |
 | 能录制 HLS/m3u8 直播吗 | 本轮不支持。HLS 播放列表只按“分段媒体”保存当前列表并合并，无 `#EXT-X-ENDLIST` 时可能只是快照。 |
@@ -137,6 +122,6 @@ downloads/
 | m3u8 下载或合并失败 | 确认 `ffmpeg/` 未被隔离或删除；错误会给出 `.ffmpeg/` 日志路径，详见[排障](https://github.com/MuZiJin701/wx-mini-video/blob/main/wx-mini-video-knowledge.md#排障)。 |
 | 需要诊断嗅探 | 用 `--debug` 启动，日志写入 `wx-mini-video-debug.log`；分享前检查敏感信息。 |
 
-[维护指南：配置、构建与验收](https://github.com/MuZiJin701/wx-mini-video/blob/main/wx-mini-video-knowledge.md) · [版本记录](CHANGELOG.md)
+[维护指南：配置、构建与验收](https://github.com/MuZiJin701/wx-mini-video/blob/main/wx-mini-video-knowledge.md) · [版本记录](https://github.com/MuZiJin701/wx-mini-video/blob/main/CHANGELOG.md)
 
 仅保存你有权获取的内容，并遵守相关法律和平台规则。

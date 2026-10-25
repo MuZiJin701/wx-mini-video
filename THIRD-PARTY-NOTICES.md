@@ -48,7 +48,7 @@ FFmpeg 以 LGPLv3/GPLv3 授权发布。本项目按聚合方式分发项目程�
 
 ## 项目自身许可（独立标识）
 
-项目 `wx_channel` 自身代码采用 **MIT License + Commons Clause**，完整文本见仓库根目录 `LICENSE`。Commons Clause 仅限制“出售”本项目软件，不改变 MIT 授予的其他权利，也不影响随包 ffmpeg 的 LGPLv3/GPLv3 授权。
+项目 `wx-mini-video`（Go 模块名 `wx_channel`）自身代码采用 **MIT License + Commons Clause**，完整文本见仓库根目录 `LICENSE`。Commons Clause 仅限制“出售”本项目软件，不改变 MIT 授予的其他权利，也不影响随包 ffmpeg 的 LGPLv3/GPLv3 授权。
 
 ## 聚合分发说明
 

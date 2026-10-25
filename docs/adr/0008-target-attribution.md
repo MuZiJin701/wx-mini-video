@@ -2,6 +2,8 @@
 
 状态：已确认（2026-10-25）。修订 [ADR 0003](0003-target-appid-filtering.md)。
 
+后续分类修订：来源语义保持不变，v0.2.0 将直播独立、m3u8 分类显示名改为“分段媒体”，见 [ADR 0011](0011-single-main-surface-ui.md) 与 [ADR 0013](0013-live-stream-recording.md)。下文保留作出归属决策时的分类名称。
+
 ## 背景
 
 v0.1.4 起，目标归属只接受恰好为 `https://servicewechat.com/<AppID>/<版本>/page-frame.html` 的 Referer。真实场景中，视频常由 H5/web-view 外壳（页面内 `wx.miniProgram`）或原生播放器/CKPlayer 直接请求，Referer 是 H5 页面或为空；实测某课程站点的视频请求甚至对 page-frame Referer 返回 403。因此严格门禁会在分类之前把视频整体丢弃，表现为“视频探测不到”。v0.1.7 发布截图已是 168 条 JSON 图片、0 视频。

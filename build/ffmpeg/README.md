@@ -39,7 +39,15 @@ python3 -B build/ffmpeg/build.py darwin-arm64
 
 重新构建时，将 `recipe/` 放到一个空工作区的 `build/ffmpeg/`，将 `sources/` 下的归档复制到该工作区的 `dist/ffmpeg-build-cache/`，再运行同一命令。仍需对应操作系统的编译环境；Windows 工具链的固定二进制若无缓存，会从固定 URL 下载。构建日志记录编译器版本，不承诺跨工具链得到逐字节相同的二进制。
 
-Actions 附件只有 30 天保留期，不能充当长期公开源码下载入口。正式切换前须把已验收的二进制、对应源码及记录一起归档到稳定发布位置，并把入口、摘要和人工核对状态写回发布索引；现有 `build/verify-release-sources.py` 的阻断继续保留。
+Actions 附件只有 30 天保留期，不能充当长期公开源码下载入口。每次升级须把已验收的二进制、对应源码及记录一起归档到稳定发布位置，并把入口、摘要和人工核对状态写回 `build/ffmpeg-corresponding-sources.json`；现有 `build/verify-release-sources.py` 的阻断继续保留。
+
+## 接入应用完整包
+
+从已验收的 `ffmpeg.zip` 解出构建输入：Windows 目录包含 `ffmpeg.exe` 与同包的 `LICENSE.txt`；Mac 目录包含 Intel 产物改名的 `ffmpeg-amd64`、Apple Silicon 产物改名的 `ffmpeg-arm64`，以及覆盖两份产物的许可文本。保持二进制原始字节，核对摘要与各架构的 `build-info.json` 一致。
+
+将环境变量 `WXMV_FFMPEG_DIR` 指向对应目录后，在根目录执行 Windows 的 `cmd /c build\build.bat windows` 或 Mac 通用包的 `go run ./build/macos`。完整命令见[维护指南](../../wx-mini-video-knowledge.md#分发)。未设置该变量时两个入口仍会下载第三方预编译包，不会自动寻找 `dist/ffmpeg-selfbuilt/`，正式自建分发须显式指定。
+
+发布前执行 `python3 build/verify-release-sources.py`，并核对实际应用包内二进制、许可和第三方声明；该脚本只验证源码索引及其下载/构建记录，不检查应用 ZIP 中实际装入的是哪份 ffmpeg。
 
 ## 验证
 
