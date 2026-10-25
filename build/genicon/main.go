@@ -305,9 +305,9 @@ func buildResourceSection(icons *icoFile) (*resourceSection, error) {
 	// Type directory: RT_ICON then RT_GROUP_ICON (ascending ID).
 	putDirectory(rootOffset, 2)
 	put32(rootOffset+16, rtIcon)
-	putRVA(rootOffset+20, uint32(iconNamesOffset)|resourceSubdirFlag)
+	put32(rootOffset+20, uint32(iconNamesOffset)|resourceSubdirFlag)
 	put32(rootOffset+24, rtGroupIcon)
-	putRVA(rootOffset+28, uint32(groupNameOffset)|resourceSubdirFlag)
+	put32(rootOffset+28, uint32(groupNameOffset)|resourceSubdirFlag)
 
 	// One name entry per icon frame, and one for the single group icon.
 	putDirectory(iconNamesOffset, count)
@@ -315,12 +315,12 @@ func buildResourceSection(icons *icoFile) (*resourceSection, error) {
 		entryOffset := iconNamesOffset + resourceDirHeaderSize + index*resourceDirEntrySize
 		put32(entryOffset, uint32(firstIconID+index))
 		languageOffset := iconLanguagesOffset + (resourceDirHeaderSize+resourceDirEntrySize)*index
-		putRVA(entryOffset+4, uint32(languageOffset)|resourceSubdirFlag)
+		put32(entryOffset+4, uint32(languageOffset)|resourceSubdirFlag)
 	}
 	putDirectory(groupNameOffset, 1)
 	groupNameEntry := groupNameOffset + resourceDirHeaderSize
 	put32(groupNameEntry, groupIconID)
-	putRVA(groupNameEntry+4, uint32(groupLanguageOffset)|resourceSubdirFlag)
+	put32(groupNameEntry+4, uint32(groupLanguageOffset)|resourceSubdirFlag)
 
 	// Every icon and the group icon use a single en-US language entry.
 	for index := range frames {
@@ -328,12 +328,12 @@ func buildResourceSection(icons *icoFile) (*resourceSection, error) {
 		putDirectory(languageOffset, 1)
 		languageEntry := languageOffset + resourceDirHeaderSize
 		put32(languageEntry, languageID)
-		putRVA(languageEntry+4, uint32(dataEntriesOffset+resourceDataEntrySize*index))
+		put32(languageEntry+4, uint32(dataEntriesOffset+resourceDataEntrySize*index))
 	}
 	putDirectory(groupLanguageOffset, 1)
 	groupLanguageEntry := groupLanguageOffset + resourceDirHeaderSize
 	put32(groupLanguageEntry, languageID)
-	putRVA(groupLanguageEntry+4, uint32(dataEntriesOffset+resourceDataEntrySize*count))
+	put32(groupLanguageEntry+4, uint32(dataEntriesOffset+resourceDataEntrySize*count))
 
 	// Data entries point at the payload bytes and record their exact size.
 	for index, frame := range frames {

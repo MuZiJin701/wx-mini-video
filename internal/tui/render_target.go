@@ -17,7 +17,7 @@ func (m model) renderTargetArea(startY, height int, metrics ui.Metrics) []string
 	if width < 24 {
 		width = 24
 	}
-	compact := metrics.Short || metrics.Compact
+	compact := metrics.Width < 80 || metrics.Height < 24
 
 	heading := m.st.accent.Render("目标小程序")
 	hint := m.st.muted.Render(ui.Truncate("输入 AppID，或从下方已发现列表选择；启动即自动发现，发现不会自动选定目标。", width))
@@ -102,10 +102,13 @@ func (m model) renderTargetArea(startY, height int, metrics ui.Metrics) []string
 
 // targetActionButtons 返回目标选择区的确认/取消/重试按钮。
 func (m model) targetActionButtons() []actionButton {
-	buttons := make([]actionButton, 0, 3)
+	buttons := make([]actionButton, 0, 4)
 	if m.startErr != nil && !m.starting {
-		buttons = append(buttons, actionButton{label: "重试启动 · r", action: hitTargetRetry, enabled: true})
+		buttons = append(buttons, actionButton{label: "重试 · Ctrl+R", action: hitTargetRetry, enabled: true})
+	} else {
+		buttons = append(buttons, actionButton{label: "刷新 · Ctrl+R", action: hitActionRefresh, enabled: true})
 	}
+	buttons = append(buttons, actionButton{label: "目录 · Ctrl+O", action: hitActionOpenDir, enabled: true})
 	buttons = append(buttons, actionButton{
 		label:   "确认目标 · Enter",
 		action:  hitTargetConfirm,
@@ -131,7 +134,7 @@ func (m model) targetStatusLine(width int) string {
 	switch {
 	case m.startErr != nil:
 		style = m.st.errStyle
-		text = "代理启动失败：" + m.startErr.Error() + "（点击重试或按 r）"
+		text = "代理启动失败：" + m.startErr.Error() + "（点击重试或按 Ctrl+R）"
 	case m.starting:
 		text = "正在启动代理，自动发现小程序…"
 	case m.started:

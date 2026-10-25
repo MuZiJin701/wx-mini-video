@@ -138,11 +138,13 @@ func newStyles(p ui.Palette) styles {
 
 		button: base.
 			Foreground(p.Foreground).
+			Background(p.Panel).
 			Border(border, true, true, true, true).
 			BorderForeground(p.Line).
 			Padding(0, 1),
 		buttonFocused: base.
 			Foreground(p.Foreground).
+			Background(p.Panel).
 			Border(border, true, true, true, true).
 			BorderForeground(p.Foreground).
 			Bold(true).
@@ -155,6 +157,7 @@ func newStyles(p ui.Palette) styles {
 			Padding(0, 1),
 		buttonDisabled: base.
 			Foreground(p.Muted).
+			Background(p.Panel).
 			Border(border, true, true, true, true).
 			BorderForeground(p.Line).
 			Padding(0, 1),
@@ -173,7 +176,7 @@ func newStyles(p ui.Palette) styles {
 			Bold(true).
 			Padding(0, 1),
 		primaryHover: lipgloss.NewStyle().
-			Foreground(p.Background).
+			Foreground(p.ButtonFG).
 			Background(p.Accent).
 			Border(border, true, true, true, true).
 			BorderForeground(p.Foreground).

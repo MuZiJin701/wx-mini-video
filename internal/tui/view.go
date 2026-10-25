@@ -106,11 +106,11 @@ func (m model) logoSize(metrics ui.Metrics) (cols, rows int, ok bool) {
 	if m.painter == nil || !m.logoCap.Available() {
 		return 0, 0, false
 	}
-	if metrics.Height < 32 || metrics.Width < 60 {
+	if metrics.Height < 20 || metrics.Width < 60 {
 		return 0, 0, false
 	}
 	rows = 3
-	if metrics.Width >= ui.CompactWidth {
+	if metrics.Width >= ui.CompactWidth && !metrics.Short {
 		rows = 5
 	}
 	cellWidth, cellHeight := m.logoCap.CellWidth, m.logoCap.CellHeight
@@ -141,7 +141,11 @@ func (m model) syncLogo(metrics ui.Metrics) {
 		return
 	}
 	m.painter.SetEnabled(true)
-	m.painter.SetPlacement(1, metrics.BrandPadX, cols, rows)
+	row := 1
+	if metrics.Short {
+		row = 0
+	}
+	m.painter.SetPlacement(row, metrics.BrandPadX, cols, rows)
 }
 
 func (m model) singleLineScreen(line string) string {
@@ -190,7 +194,10 @@ func (m model) isHover(action hitAction, index int) bool {
 
 func (m model) brandHeight(metrics ui.Metrics) int {
 	if metrics.Short {
-		return 2
+		if metrics.Height < 20 {
+			return 2
+		}
+		return 3
 	}
 	height := 5
 	if _, rows, ok := m.logoSize(metrics); ok && rows+2 > height {
@@ -208,7 +215,7 @@ func (m model) renderBrand(startY int, metrics ui.Metrics) []string {
 	}
 
 	imageCols, imageRows, showImage := m.logoSize(metrics)
-	showMark := !showImage && !metrics.Narrow && !metrics.Short
+	showMark := !showImage && !metrics.Narrow && metrics.Height >= 20
 	var mark []string
 	markWidth := 0
 	if showMark {
@@ -394,7 +401,7 @@ func (m model) renderRibbon(metrics ui.Metrics) string {
 
 func (m model) footerHeight(metrics ui.Metrics) int {
 	if metrics.Short {
-		return 1
+		return 3
 	}
 	return 4
 }
@@ -407,30 +414,24 @@ func (m model) renderFooter() []string {
 
 	linkText := "GitHub · MuZiJin701/wx-mini-video ↗"
 	linkStyle := m.st.link
-	quitLabel := "退出 · q"
+	quitLabel := "退出 · Ctrl+Q"
 	quitWidth := buttonWidth(quitLabel, 16)
-
-	if metrics.Short {
-		link := linkStyle.Render(ui.Truncate(linkText, metrics.Width-2*padX-ui.Width(quitLabel)-4))
-		right := m.st.muted.Render(ui.Fit(" "+quitLabel+" ", quitWidth))
-		line := m.padLine(m.spaces(padX), link, m.spaces(metrics.Width-padX-2*ui.Width(link)-quitWidth), right, m.spaces(padX))
-		m.hits.add(metrics.Width-padX-quitWidth, top, quitWidth, 1, hitActionQuit, 0)
-		m.hits.add(padX, top, ui.Width(link), 1, hitGitHub, 0)
-		return []string{line}
-	}
 
 	quitLines := m.buttonLines(quitLabel, buttonSecondary, false, m.isHover(hitActionQuit, 0), quitWidth)
 	rows := make([]string, 0, height)
-	rows = append(rows, m.blankLine())
+	if !metrics.Short {
+		rows = append(rows, m.blankLine())
+	}
+	buttonTop := top + len(rows)
 	for i := 0; i < len(quitLines); i++ {
 		row := m.blankLine()
 		rightX := metrics.Width - padX - quitWidth
 		right := quitLines[i]
 		var left string
 		if i == 1 {
-			link := linkStyle.Render(linkText)
+			link := linkStyle.Render(ui.Truncate(linkText, rightX-padX-1))
 			left = link
-			m.hits.add(padX, top+1, ui.Width(link), 1, hitGitHub, 0)
+			m.hits.add(padX, buttonTop+1, ui.Width(link), 1, hitGitHub, 0)
 		}
 		leftWidth := ui.Width(left)
 		gap := rightX - padX - leftWidth
@@ -440,7 +441,7 @@ func (m model) renderFooter() []string {
 		row = m.padLine(m.spaces(padX), left, m.spaces(gap), right, m.spaces(padX))
 		rows = append(rows, row)
 	}
-	m.hits.add(metrics.Width-padX-quitWidth, top+1, quitWidth, len(quitLines), hitActionQuit, 0)
+	m.hits.add(metrics.Width-padX-quitWidth, buttonTop, quitWidth, len(quitLines), hitActionQuit, 0)
 	for len(rows) < height {
 		rows = append(rows, m.blankLine())
 	}

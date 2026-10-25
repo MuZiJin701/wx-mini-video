@@ -104,6 +104,7 @@ func (m model) confirmTarget(appID string) (tea.Model, tea.Cmd) {
 	m.showDetails = false
 	m.showLogs = false
 	m.category = categoryAll
+	m.mediaScrolled = false
 	m.selected = 0
 	m.selectedID = ""
 	m.candidates = nil
@@ -287,6 +288,7 @@ func (m model) hasCandidate() bool {
 }
 
 func (m *model) moveSelection(step int) {
+	m.mediaScrolled = false
 	visible := m.filteredCandidates()
 	if len(visible) == 0 {
 		m.selected = 0
@@ -375,6 +377,7 @@ func (m *model) toggleLogs() {
 }
 
 func (m *model) clearCandidates() {
+	m.mediaScrolled = false
 	m.runtime.ClearCandidates()
 	m.runtime.ClearProgress()
 	m.candidates = nil
@@ -506,6 +509,7 @@ func (m model) filteredCandidates() []miniprogram.Candidate {
 }
 
 func (m *model) setCategory(next category) {
+	m.mediaScrolled = false
 	m.category = next
 	m.selected = 0
 	m.selectedID = ""

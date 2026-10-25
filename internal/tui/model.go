@@ -103,6 +103,8 @@ type model struct {
 	otherCandidates []miniprogram.Candidate
 	selected        int
 	selectedID      string
+	mediaOffset     int
+	mediaScrolled   bool
 	showDetails     bool
 	showLogs        bool
 	logOffset       int
@@ -342,6 +344,17 @@ func (m model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	}
 	modal := m.confirmQuit || m.legacyPrompt
 	if !modal {
+		if msg.Button == tea.MouseButtonWheelUp || msg.Button == tea.MouseButtonWheelDown {
+			if m.appearanceOpen {
+				return m, nil
+			}
+			if !m.showLogs && !m.targetExpanded {
+				region, ok := m.hits.find(msg.X, msg.Y)
+				if !ok || region.action != hitRow {
+					return m, nil
+				}
+			}
+		}
 		switch msg.Button {
 		case tea.MouseButtonWheelUp:
 			return m.scrollBy(-3), nil
@@ -431,7 +444,21 @@ func (m model) scrollBy(delta int) model {
 	if !m.targetReady {
 		return m
 	}
-	m.moveSelection(delta)
+	rows, first := 0, len(m.filteredCandidates())
+	for _, region := range m.hits.regions {
+		if region.action == hitRow {
+			rows++
+			first = min(first, region.index)
+		}
+	}
+	if rows > 0 {
+		if !m.mediaScrolled {
+			m.mediaOffset = first
+		}
+		m.mediaScrolled = true
+		m.mediaOffset = max(0, min(m.mediaOffset+delta, len(m.filteredCandidates())-rows))
+		m.hits.clearHover()
+	}
 	return m
 }
 

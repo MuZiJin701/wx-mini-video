@@ -98,6 +98,7 @@ func renderFramedButton(style lipgloss.Style, label string, width int) []string 
 	if content < 1 {
 		content = 1
 	}
+	label = strings.Repeat(" ", max(0, (content-ui.Width(label))/2)) + label
 	rendered := style.Render(ui.Fit(label, content))
 	return strings.Split(rendered, "\n")
 }
@@ -148,7 +149,7 @@ func (m model) buttonWidthFor(button actionButton, compact bool) int {
 	if compact {
 		return ui.Width(button.label) + 2
 	}
-	return buttonWidth(button.label, 12)
+	return buttonWidth(button.label, 16)
 }
 
 func (m model) buttonStyleFor(button actionButton) lipgloss.Style {

@@ -108,7 +108,7 @@ func (m model) renderMedia(startY, height int, metrics ui.Metrics) []string {
 	rows = append(rows, m.renderCategoryTabs(y, metrics))
 	y++
 
-	compact := metrics.Short || metrics.Compact
+	compact := metrics.Width < 80 || metrics.Height < 24
 	actionRows, actionHits := m.renderButtons(m.mediaActionButtons(), left, metrics.ContentWidth, compact)
 	actionTop := len(rows)
 	for _, line := range actionRows {
@@ -286,6 +286,9 @@ func (m model) renderCandidateTable(columns []tableColumn, maxRows, startY, left
 	offset := 0
 	if len(visible) > maxRows {
 		offset = windowAnchor - maxRows/2
+		if m.mediaScrolled {
+			offset = m.mediaOffset
+		}
 		if offset < 0 {
 			offset = 0
 		}

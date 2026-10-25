@@ -197,7 +197,10 @@ func parseResourceSection(t *testing.T, section parsedCOFFSection) resourceView 
 			if name&resourceSubdirFlag != 0 {
 				t.Fatalf("资源目录项 @ %d 使用了字符串名称", entryOffset)
 			}
-			consumeRelocation(uint32(entryOffset + 4))
+			// Directory pointers are relative to the resource root, not image RVAs.
+			if relocations[uint32(entryOffset+4)] {
+				t.Fatalf("资源目录相对偏移 @ %d 不应重定位", entryOffset+4)
+			}
 			value := readU32(entryOffset + 4)
 			entry := resourceDirEntry{id: name}
 			if value&resourceSubdirFlag != 0 {

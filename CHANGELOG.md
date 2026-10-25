@@ -8,6 +8,9 @@
 
 ### 界面与交互
 
+- 小窗口品牌区保留 logo：60×20 起可显示真图，少于 32 行时缩小为 3 行；修复原先小于 32 行便完全隐藏品牌图的问题。
+- 按钮进一步对齐参考项目：面板底色、居中文字、至少 16 列；80×24 起保留三行边框，底栏退出不再退化为普通文字。目标选择区补齐常驻刷新/重试（Ctrl+R）与目录（Ctrl+O）按钮；停止按钮空闲时保持可见但禁用，有任务时可点击。修复底栏 GitHub 与退出按钮的命中坐标偏移。
+- 资源列表滚轮改为滚动视窗并保持选中项不变，连续滚动累积位移并限制边界；键盘导航重新定位选中项，切换分类重置滚动。按钮、底栏与外观下拉上的滚轮不再移动背后的资源列表。
 - 启动即发现：程序打开后自动启动代理并持续发现小程序，界面显示启动状态；首次证书检查/UAC/系统授权沿用现有流程，启动失败提供可点击“重试启动 · r”与页脚退出按钮。`target.appID` 只预填输入框，用户确认前运行时目标为空；确认后才 `SetTarget` 并开始收集目标候选。
 - 统一目标选择区：AppID 输入框（光标编辑：`←/→`、`Home/End`、`Backspace/Delete`、`Ctrl+U`）、确认按钮、启动/发现状态与持续更新的已发现列表同时存在；`Tab`/`Shift+Tab` 焦点顺序为外观 → 输入 → 发现列表（有结果时）→ 确认 → 取消（仅更换目标时）；`↑/↓` 导航列表，`Enter` 执行当前焦点对应的确认动作，鼠标点击发现列表项直接确认。发现结果不自动选定目标、不覆盖输入、不抢焦点，选中 AppID 按身份而非行号保持。确认后收起完整输入与列表，保留“目标 AppID”目标条与“更换目标 · s”；更换时展开同一区域，`Esc`/取消保留当前目标、候选与已输入内容；下载/录制中禁止更换目标。
 - 删除 `Ctrl+D` 手动/发现模式切换与目标选择覆盖层，AppID 输入与发现列表在同一区域并存。
@@ -37,6 +40,7 @@
 
 ### 图标与分发
 
+- 修复 Windows 图标资源目录的相对偏移被错误重定位为 RVA，导致 exe 含 `.rsrc` 却无法显示图标的问题；新增真实链接后由 Windows 资源 API 读取图标组及全部帧的回归检查。
 - 复用本地参考项目 `wechat-channels-downloader` 的 logo：512×512 PNG 用于 TUI 品牌区；7 帧 ICO 经新增 `build/genicon` 生成 COFF 资源（`build.bat` 在 `go build` 前运行 `go run ./build/genicon`，输出仓库根 `wx-mini-video_windows_amd64.syso`，`*.syso` 被 `.gitignore` 忽略、不入库）嵌入 Windows exe；ICNS 由 `build/macos` 放入 `.app/Contents/Resources/logo.icns`，`Info.plist` 声明 `CFBundleIconFile`/`CFBundleIconName=logo`，`build/verify-macos.py` 断言图标与 plist。删除不再生成品牌图的 `build/genlogo`。
 - Windows 与 macOS 包内文件清单保持“单一完整包”不变（Windows 仍为 `README.md`、exe、配置、ffmpeg 与许可、第三方声明；macOS 通用包结构不变，仅新增 `.app` 内 `Resources/logo.icns`）。
 
