@@ -13,6 +13,7 @@
 - **用户流程或发布说明：** `README.md`；macOS 使用见 `docs/macos-usage.md`。
 - **版本变更与发布合并：** `CHANGELOG.md`；发布操作见 `wx-mini-video-knowledge.md` 的“分发”。
 - **ffmpeg 随包、许可与源码义务：** `THIRD-PARTY-NOTICES.md`、`docs/adr/0007-bundled-ffmpeg.md`；需求背景见 `docs/bundled-ffmpeg-requirements.md`。
+- **Windows 启动与提权边界：** `docs/adr/0009-user-scoped-windows-runtime.md`；Terminal 首选背景见 `docs/adr/0004-windows-terminal-startup.md`。
 - **历史计划与背景：** `docs/archive/`。
 - **代码入口：** 启动看 `main.go` 和 `internal/app/`；TUI 看 `internal/tui/model.go`；嗅探看 `internal/interceptor/miniprogram.go`；下载看 `internal/minidownload/`；代理库 patch 看 `third_party/echo/`。
 

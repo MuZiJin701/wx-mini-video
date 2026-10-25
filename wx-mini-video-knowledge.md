@@ -8,7 +8,8 @@ Windows 优先的单二进制 Go TUI，使用 Bubble Tea 和 Echo 代理适配�
 
 | 路径 | 职责 |
 | --- | --- |
-| `main.go`、`pkg/system/console_windows.go` | UAC、Terminal 启动与退出 |
+| `main.go`、`pkg/system/console_windows.go` | Terminal 启动、提权子进程入口与启动错误提示 |
+| `pkg/certificate/` | 根证书生成/复用、信任检查、证书安装与旧证书清理（含 Windows 提权子进程） |
 | `internal/app/` | 代理、目标、候选和下载器的运行时编排 |
 | `internal/tui/` | 手动输入、发现、分类、下载与进度 |
 | `internal/interceptor/miniprogram.go` | 请求来源过滤、媒体识别和播放列表缓存 |
@@ -90,7 +91,7 @@ ffmpeg 查找优先级为显式 `download.ffmpeg`、随包 ffmpeg、受管 ffmpe
 | 证书失败 | 确认同意 UAC。理解上节风险后，可手动将下载目录的 `WxMiniVideoRoot.cer` 安装到根信任库；代理运行时也可访问 `http://127.0.0.1:2023/cert` 获取证书（改端口后相应调整）。 |
 | 没有候选或音频 | 核对目标 AppID，按 `1` 查看全部、`5` 查看音频，再重新加载媒体。缺失匹配 Referer 的媒体会以 `?` 标记按类型显示，不会成为目标候选；手动输入不能绕过。 |
 | 来源未确认媒体 | H5/web-view、原生播放器和 CDN 媒体常无小程序 page-frame Referer，会以 `?` 标记混入对应类型分类；下载沿用真实响应的 Referer/Cookie。来源未确认列表上限 500 条，按 `c` 清空。代理运行期间本机其他微信内容（如公众号文章图片）也可能出现，来源不可靠。 |
-| 需要诊断嗅探 | 以 `wx-mini-video.exe --debug` 启动（参数会随 UAC/Terminal 重启转发，不依赖环境变量继承），日志写入 `下载目录\wx-mini-video-debug.log`；记录归属判断与丢弃原因，URL query 与 Cookie 值不落盘，分享前仍需检查。环境变量 `WX_MINI_VIDEO_DEBUG=1` 仍可直接使用。 |
+| 需要诊断嗅探 | 以 `wx-mini-video.exe --debug` 启动（参数会随 Terminal 重启转发，不依赖环境变量继承），日志写入 `下载目录\wx-mini-video-debug.log`；记录归属判断与丢弃原因，URL query 与 Cookie 值不落盘，分享前仍需检查。环境变量 `WX_MINI_VIDEO_DEBUG=1` 仍可直接使用。 |
 | 资源过多 | 按 `c` 清空，再打开目标内容；使用分类缩小列表。 |
 | 中文缺失 | 使用 Windows Terminal，或给传统控制台选择支持中文的字体。程序不自动安装 Terminal 或更改默认终端。 |
 | m3u8 预取失败较多 | 将 `download.segmentConcurrency` 从 `6` 调低到 `4`，重新播放后重试。 |
@@ -138,12 +139,13 @@ cmd /c build\build.bat windows
 
 ## 真实 PC 微信验收
 
-当前只确认过管理员 Windows Terminal 中显示正常；完整 UAC/Terminal 重启链路、真实微信音频及请求来源覆盖仍待人工验收。macOS 已列为后续真机验收目标，当前尚未验收，检查项见 [macOS 测试版说明](docs/macos-usage.md)。
+当前只确认过普通用户 Windows Terminal 中显示正常；证书提权子进程、标准用户 + 独立管理员账号、真实微信音频及请求来源覆盖仍待人工验收。macOS 已列为后续真机验收目标，当前尚未验收，检查项见 [macOS 测试版说明](docs/macos-usage.md)。
 
-1. 双击启动并同意 UAC，确认进入管理员 Terminal；已在管理员 Terminal 中不重复开窗。检查取消 UAC、无 Terminal、中文/空格路径和显式配置文件。发现两个小程序，确认 AppID 去重，未选择前无媒体候选或缓存。
+1. 双击启动，确认在 Windows Terminal 中运行；已在 Terminal 中不重复开窗；无 Terminal 时保留当前控制台。检查中文/空格路径和显式配置文件。首次安装根证书时应出现一次 UAC；取消后应给出可理解错误，重新启动可再次请求。发现两个小程序，确认 AppID 去重，未选择前无媒体候选或缓存。
 2. 分别用手动输入和发现选择目标，补填名称后重新加载图片、直链视频、直链音频和 m3u8。检查分类、标题、后缀、原文件保存和 m3u8 输出；核对 Referer 与目标一致，来源缺失的媒体应以 `?` 标记按类型显示并可下载，记录 `✓`/`?` 标记，不放宽目标过滤。
 3. 同时操作其他小程序，确认其媒体不进入目标候选；来源未确认媒体允许出现其他来源内容，但应标记 `?` 并说明来源不可靠。匹配 JSON 的图片、直链视频和音频可出现，JSON m3u8 继续跳过。
 4. 按 `s` 切换目标，确认旧候选和进度清空、本地文件保留，旧响应不重新填充列表。下载中切换应被拒绝且下载继续。
 5. 从发现和媒体界面退出，核对原代理恢复；另检查异常退出后按排障步骤恢复。证书不会随退出卸载。验收记录不包含 Cookie、鉴权头值或带签名的完整媒体 URL。
 6. 确认 m3u8 首次下载无需联网准备 ffmpeg；删除 `ffmpeg/` 后确认自动回退受管下载并给出可理解提示。
 7. 设置 `WX_MINI_VIDEO_DEBUG=1` 后确认生成 `wx-mini-video-debug.log`，其中不含 URL query 或 Cookie 值。
+8. 在“标准用户运行微信 + 用另一个管理员账号提权”的机器上验证：程序以普通用户启动；首次安装根证书出现 UAC 后代理作用于当前用户；微信流量可被捕获；退出后代理恢复到该用户的原始设置。同时验证“同账号管理员”机器只需一次 UAC。
