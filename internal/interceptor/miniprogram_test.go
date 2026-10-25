@@ -162,6 +162,9 @@ func TestMiniProgramPluginAddsDirectM3U8Response(t *testing.T) {
 	if got[0].CachedPath == "" {
 		t.Fatalf("candidate = %#v, want cached playlist", got[0])
 	}
+	if got, want := filepath.Base(filepath.Dir(got[0].CachedPath)), miniprogram.DirSegments; got != want {
+		t.Fatalf("cached playlist dir = %q, want %q", got, want)
+	}
 }
 
 func TestMiniProgramDiscoveryCollectsOnlyUnattributedMedia(t *testing.T) {

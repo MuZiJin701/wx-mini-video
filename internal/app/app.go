@@ -47,6 +47,7 @@ func NewRuntime(cfg *config.Config) *Runtime {
 		Downloader: downloader,
 	}
 	downloader.OnProgress = r.setProgress
+	downloader.OnLiveResolved = r.setLiveResolved
 	return r
 }
 
@@ -193,6 +194,14 @@ func (r *Runtime) setProgress(progress minidownload.Progress) {
 	r.progressMu.Unlock()
 }
 
+// setLiveResolved 把下载阶段确认的直播状态回写到候选存储，
+// 供界面按候选身份维持选择：疑似直播确认是有限文件后归回视频，反之亦然。
+func (r *Runtime) setLiveResolved(candidateID string, live bool) {
+	if r.Store != nil {
+		r.Store.SetLive(candidateID, live)
+	}
+}
+
 // downloadDirForTarget 返回应打开的目录：目标目录存在时打开目标目录，否则回落下载根目录。
 func (r *Runtime) downloadDirForTarget(targetAppID string) string {
 	root := r.Settings.DownloadDir
@@ -307,11 +316,7 @@ func configuredFFmpegPath(configured string) string {
 }
 
 func needsFFmpeg(candidate miniprogram.Candidate) bool {
-	if candidate.Kind == "m3u8" {
-		return true
-	}
-	kind, _ := miniprogram.Classify("", candidate.URL)
-	return kind == "m3u8"
+	return miniprogram.IsM3U8(candidate)
 }
 
 func (r *Runtime) ProxyAddr() string {

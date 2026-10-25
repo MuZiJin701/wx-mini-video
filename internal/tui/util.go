@@ -11,7 +11,7 @@ import (
 	"wx_channel/internal/miniprogram"
 )
 
-var categories = []category{categoryAll, categoryImage, categoryVideo, categoryM3U8, categoryAudio}
+var categories = []category{categoryAll, categoryImage, categoryVideo, categoryAudio, categoryLive, categorySegments}
 
 func categoryDisplay(value category) string {
 	switch value {
@@ -21,12 +21,34 @@ func categoryDisplay(value category) string {
 		return "图片"
 	case categoryVideo:
 		return "视频"
-	case categoryM3U8:
-		return "m3u8"
 	case categoryAudio:
 		return "音频"
+	case categoryLive:
+		return "直播"
+	case categorySegments:
+		return "分段媒体"
 	default:
 		return string(value)
+	}
+}
+
+// candidateCategory 返回候选在界面上的分类。直播与普通视频互斥：Live 候选只进
+// “直播”和“全部”，不混入视频；有限 FLV（Live=false）按视频显示。未知文件只进“全部”。
+func candidateCategory(candidate miniprogram.Candidate) category {
+	if candidate.Live {
+		return categoryLive
+	}
+	switch miniprogram.MediaKind(candidate) {
+	case "m3u8":
+		return categorySegments
+	case "image":
+		return categoryImage
+	case "video":
+		return categoryVideo
+	case "audio":
+		return categoryAudio
+	default:
+		return ""
 	}
 }
 
@@ -39,7 +61,9 @@ func kindDisplay(kind string) string {
 	case "audio":
 		return "音频"
 	case "m3u8":
-		return "m3u8"
+		return "分段媒体"
+	case "live":
+		return "直播流"
 	case "file":
 		return "其他"
 	default:
@@ -50,7 +74,8 @@ func kindDisplay(kind string) string {
 	}
 }
 
-// candidateKindDisplay 在“类型”列和日志里显示媒体类型；疑似 HTTP-FLV 直播流单独标为直播流。
+// candidateKindDisplay 在“类型”列和日志里显示媒体类型；疑似 HTTP-FLV 直播流单独
+// 标为直播流，m3u8 分类改称分段媒体。
 func candidateKindDisplay(candidate miniprogram.Candidate) string {
 	if candidate.Live {
 		return "直播流"
@@ -102,7 +127,13 @@ func candidateBasis(candidate miniprogram.Candidate) string {
 		return "字段名推断（低置信）"
 	}
 	if candidate.Live {
-		return "HTTP-FLV 直播流（URL/响应识别）"
+		if candidate.Source == "response" {
+			return "HTTP-FLV 直播流（响应识别，下载即持续录制）"
+		}
+		return "疑似 HTTP-FLV 直播流（URL/字段推断，下载时按实际响应确认）"
+	}
+	if miniprogram.MediaKind(candidate) == "m3u8" {
+		return "m3u8/HLS 分段媒体（由播放列表描述）"
 	}
 	if candidate.Kind == "file" {
 		return "未知二进制兜底（≥256KB）"

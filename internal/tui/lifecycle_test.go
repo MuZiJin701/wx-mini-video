@@ -32,7 +32,7 @@ func TestQuitWaitsForStartupAndNeverStartsAfterQuit(t *testing.T) {
 
 func TestStopFailureRequiresRetryOrExplicitForce(t *testing.T) {
 	for _, prepare := range []func(*model){
-		func(m *model) { m.targetReady = true },
+		func(m *model) { m.targetReady = true; m.targetExpanded = false },
 		func(m *model) {},
 	} {
 		m := testModel(t)
@@ -44,7 +44,7 @@ func TestStopFailureRequiresRetryOrExplicitForce(t *testing.T) {
 		}
 		next, cmd = m.Update(stopMsg{err: errors.New("restore failed")})
 		m = next.(model)
-		if cmd != nil || !strings.Contains(m.View(), "按 r 重试") {
+		if cmd != nil || !strings.Contains(m.View(), "重试恢复并退出") {
 			t.Fatal("cleanup error was hidden or quit automatically")
 		}
 		_, cmd = targetKey(m, tea.KeyRunes, "q")

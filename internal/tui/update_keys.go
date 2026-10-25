@@ -5,7 +5,6 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"wx_channel/internal/minidownload"
 	"wx_channel/internal/tui/ui"
 )
 
@@ -14,8 +13,8 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	if m.stopErr != nil {
 		switch key {
-		case "r":
-			return m.requestQuit()
+		case "r", "enter":
+			return m.beginStop()
 		case "f":
 			return m, tea.Quit
 		}
@@ -51,77 +50,168 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	}
-	if m.showTargets {
-		return m.handleTargetOverlayKey(msg)
+	if m.appearanceOpen {
+		switch key {
+		case "up", "k":
+			if m.appearanceIdx > 0 {
+				m.appearanceIdx--
+			}
+		case "down", "j":
+			if m.appearanceIdx < len(appearanceModes())-1 {
+				m.appearanceIdx++
+			}
+		case "enter":
+			return m.applyAppearanceSelection()
+		case "esc":
+			m.appearanceOpen = false
+		case "q", "ctrl+q", "ctrl+c":
+			return m.requestQuit()
+		}
+		return m, nil
 	}
 
 	switch key {
-	case "ctrl+q":
+	case "ctrl+q", "ctrl+c":
 		return m.requestQuit()
 	case "ctrl+o":
 		return m, m.openDirectory()
 	case "ctrl+r":
 		return m.retryOrRefresh()
-	case "left":
-		return m, m.cycleAppearance(-1)
-	case "right":
-		return m, m.cycleAppearance(1)
 	}
 
+	if m.targetExpanded {
+		return m.handleTargetAreaKey(msg)
+	}
 	if m.showLogs {
 		return m.handleLogKey(msg)
-	}
-	if !m.targetReady {
-		return m.handleTargetInputKey(msg)
 	}
 	return m.handleMediaKey(msg)
 }
 
-func (m model) handleTargetInputKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch msg.String() {
-	case "ctrl+c", "esc":
-		return m.requestQuit()
-	case "ctrl+d":
-		m.openTargetOverlay()
-		return m.ensureProxy()
-	case "backspace", "ctrl+h":
-		m.appIDInput = trimLastRune(m.appIDInput)
-		m.inputErr = ""
+// handleTargetAreaKey 处理统一目标选择区的键盘：Tab 切换焦点，输入框按文本编辑，
+// 列表用上下方向键导航，Enter 执行当前焦点对应的确认动作。
+func (m model) handleTargetAreaKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	key := msg.String()
+	switch key {
+	case "tab":
+		m.cycleFocus(1)
 		return m, nil
-	case "enter":
-		return m.confirmTargetInput()
-	default:
-		if len(msg.Runes) == 0 {
+	case "shift+tab":
+		m.cycleFocus(-1)
+		return m, nil
+	case "esc":
+		if m.targetReady {
+			m.cancelTargetSwitch()
 			return m, nil
 		}
-		m.appIDInput += string(msg.Runes)
+		return m.requestQuit()
+	case "up", "down":
+		if m.focus == focusPrograms {
+			step := 1
+			if key == "up" {
+				step = -1
+			}
+			m.selectProgram(step)
+			return m, nil
+		}
+	case "left", "right":
+		if m.focus == focusAppearance {
+			step := 1
+			if key == "left" {
+				step = -1
+			}
+			return m, m.cycleAppearance(step)
+		}
+	case "enter":
+		switch m.focus {
+		case focusPrograms:
+			return m.confirmSelectedProgram()
+		case focusCancel:
+			m.cancelTargetSwitch()
+			return m, nil
+		case focusAppearance:
+			m.openAppearanceDropdown()
+			return m, nil
+		default:
+			return m.confirmFocusedTarget()
+		}
+	}
+	if m.focus == focusInput {
+		return m.handleInputKey(msg)
+	}
+	// 目标选择区中未聚焦输入框时，仍允许 q 退出、r 重试启动。
+	switch key {
+	case "q":
+		return m.requestQuit()
+	case "r":
+		return m.retryOrRefresh()
+	}
+	return m, nil
+}
+
+// handleInputKey 把可打印字符与编辑键交给 AppID 输入框，业务单键不得吞掉输入。
+func (m model) handleInputKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	runes := []rune(m.appIDInput)
+	cursor := m.inputCursor
+	if cursor < 0 {
+		cursor = 0
+	}
+	if cursor > len(runes) {
+		cursor = len(runes)
+	}
+	switch msg.String() {
+	case "backspace", "ctrl+h":
+		if cursor > 0 {
+			runes = append(runes[:cursor-1], runes[cursor:]...)
+			cursor--
+		}
+		m.appIDInput = string(runes)
+		m.inputCursor = cursor
+		m.inputErr = ""
+		return m, nil
+	case "delete":
+		if cursor < len(runes) {
+			runes = append(runes[:cursor], runes[cursor+1:]...)
+		}
+		m.appIDInput = string(runes)
+		m.inputCursor = cursor
+		m.inputErr = ""
+		return m, nil
+	case "left":
+		if cursor > 0 {
+			cursor--
+		}
+		m.inputCursor = cursor
+		return m, nil
+	case "right":
+		if cursor < len(runes) {
+			cursor++
+		}
+		m.inputCursor = cursor
+		return m, nil
+	case "home", "ctrl+a":
+		m.inputCursor = 0
+		return m, nil
+	case "end", "ctrl+e":
+		m.inputCursor = len(runes)
+		return m, nil
+	case "ctrl+u":
+		m.appIDInput = ""
+		m.inputCursor = 0
 		m.inputErr = ""
 		return m, nil
 	}
-}
-
-func (m model) handleTargetOverlayKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch msg.String() {
-	case "esc", "ctrl+d":
-		m.showTargets = false
+	if len(msg.Runes) == 0 {
 		return m, nil
-	case "q", "ctrl+c":
-		return m.requestQuit()
-	case "up", "k":
-		if m.programIdx > 0 {
-			m.programIdx--
-		}
-	case "down", "j":
-		if m.programIdx < len(m.programs)-1 {
-			m.programIdx++
-		}
-	case "enter":
-		return m.confirmSelectedProgram()
-	case "r":
-		m.programs = m.runtime.Store.Programs()
-		m.clampProgramIndex()
-		return m.ensureProxy()
 	}
+	insert := []rune(string(msg.Runes))
+	updated := make([]rune, 0, len(runes)+len(insert))
+	updated = append(updated, runes[:cursor]...)
+	updated = append(updated, insert...)
+	updated = append(updated, runes[cursor:]...)
+	m.appIDInput = string(updated)
+	m.inputCursor = cursor + len(insert)
+	m.inputErr = ""
 	return m, nil
 }
 
@@ -158,19 +248,21 @@ func (m model) handleLogKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 func (m model) handleMediaKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
-	case "q", "ctrl+c":
+	case "q":
 		return m.requestQuit()
 	case "esc":
 		if m.showDetails {
 			m.showDetails = false
+		} else if m.showLogs {
+			m.showLogs = false
 		}
 		return m, nil
-	case "s", "ctrl+d":
+	case "s":
 		if m.downloading {
 			m.setNotice("下载正在进行，完成后才能切换目标。", 5*time.Second)
 			return m, nil
 		}
-		m.openTargetOverlay()
+		m.openTargetEditor()
 		return m, nil
 	case "tab":
 		m.nextCategory(1)
@@ -183,62 +275,31 @@ func (m model) handleMediaKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "3":
 		m.setCategory(categoryVideo)
 	case "4":
-		m.setCategory(categoryM3U8)
-	case "5":
 		m.setCategory(categoryAudio)
+	case "5":
+		m.setCategory(categoryLive)
+	case "6":
+		m.setCategory(categorySegments)
 	case "up", "k":
-		if m.selected > 0 {
-			m.selected--
-		}
+		m.moveSelection(-1)
 	case "down", "j":
-		if m.selected < len(m.filteredCandidates())-1 {
-			m.selected++
-		}
+		m.moveSelection(1)
 	case "r":
 		return m.retryOrRefresh()
 	case "c":
-		m.runtime.ClearCandidates()
-		m.runtime.ClearProgress()
-		m.candidates = nil
-		m.otherCandidates = nil
-		m.selected = 0
-		m.progress = minidownload.Progress{}
-		m.addLog("已清空候选资源（含来源未确认媒体）")
-		m.setNotice("已清空候选资源，本地文件保留。", 4*time.Second)
+		m.clearCandidates()
 	case "l":
-		m.showLogs = !m.showLogs
-		if m.showLogs {
-			m.showDetails = false
-		}
+		m.toggleLogs()
 	case "i":
-		m.showDetails = !m.showDetails
-		if m.showDetails {
-			m.showLogs = false
-		}
+		m.toggleDetails()
 	case "o":
 		return m, m.openDirectory()
 	case "x":
-		if m.downloading {
-			if m.downloadCancel != nil {
-				m.downloadCancel()
-			}
-			m.setNotice("正在停止下载…", 8*time.Second)
-		}
+		m.stopDownload()
 	case "d", "enter":
-		visible := m.filteredCandidates()
-		if !m.downloading && len(visible) > 0 {
-			return m.startDownload(visible[m.selected])
-		}
+		return m.downloadSelected()
 	}
 	return m, nil
-}
-
-func trimLastRune(value string) string {
-	runes := []rune(value)
-	if len(runes) == 0 {
-		return value
-	}
-	return string(runes[:len(runes)-1])
 }
 
 func (m *model) clampLogOffset() {
@@ -250,17 +311,19 @@ func (m *model) clampLogOffset() {
 	}
 }
 
-func (m *model) clampProgramIndex() {
-	if len(m.programs) == 0 {
-		m.programIdx = 0
+func (m *model) clampProgramSelection() {
+	if m.selectedProgram == "" {
+		if m.focus == focusPrograms && len(m.programs) > 0 {
+			m.selectedProgram = m.programs[0].AppID
+		}
 		return
 	}
-	if m.programIdx >= len(m.programs) {
-		m.programIdx = len(m.programs) - 1
+	for _, program := range m.programs {
+		if program.AppID == m.selectedProgram {
+			return
+		}
 	}
-	if m.programIdx < 0 {
-		m.programIdx = 0
-	}
+	m.selectedProgram = ""
 }
 
 func (m model) retryOrRefresh() (tea.Model, tea.Cmd) {
@@ -269,6 +332,7 @@ func (m model) retryOrRefresh() (tea.Model, tea.Cmd) {
 	}
 	m.refresh()
 	m.addLog("已刷新候选资源")
+	m.setNotice("已刷新候选资源与发现列表。", 4*time.Second)
 	return m, nil
 }
 

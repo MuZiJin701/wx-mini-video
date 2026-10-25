@@ -24,7 +24,7 @@ func init() {
 }
 
 // PreviewKinds 是文档预览支持的界面名称。
-var PreviewKinds = []string{"home", "waiting", "discovered", "media", "recording", "downloaded", "logs"}
+var PreviewKinds = []string{"home", "discovered", "appearance", "media", "recording", "downloaded", "logs"}
 
 // RenderPreview 渲染一个固定尺寸的界面预览。
 func RenderPreview(kind string, width, height int) (string, error) {
@@ -55,43 +55,64 @@ func buildPreviewModel(kind string, width, height int) (model, error) {
 		appearance = ui.AppearanceLight
 	}
 	m := model{
-		runtime:    runtime,
-		hits:       newHitState(),
-		downloaded: make(map[string]string),
-		width:      width,
-		height:     height,
-		category:   categoryVideo,
-		appearance: appearance,
-		logs:       previewLogs(),
+		runtime:         runtime,
+		hits:            newHitState(),
+		downloaded:      make(map[string]string),
+		width:           width,
+		height:          height,
+		category:        categoryAll,
+		appearance:      appearance,
+		targetExpanded:  true,
+		focus:           focusInput,
+		appIDInput:      "wx6ab29f61bd262656",
+		inputCursor:     len([]rune("wx6ab29f61bd262656")),
+		selectedProgram: "wx6ab29f61bd262656",
+		logs:            previewLogs(),
 	}
 	m.applyTheme()
 
+	now := time.Now()
+	programs := []miniprogram.Program{
+		{AppID: "wx6ab29f61bd262656", FirstSeen: now.Add(-3 * time.Minute), LastSeen: now.Add(-12 * time.Second)},
+		{AppID: "wx1d2e3f4051627384", FirstSeen: now.Add(-9 * time.Minute), LastSeen: now.Add(-2 * time.Minute)},
+	}
+
 	switch kind {
 	case "home":
+		m.starting = true
 		m.appIDInput = ""
-	case "waiting":
-		m.showTargets = true
+		m.inputCursor = 0
+		m.selectedProgram = ""
 	case "discovered":
-		now := time.Now()
-		m.programs = []miniprogram.Program{
-			{AppID: "wx6ab29f61bd262656", FirstSeen: now.Add(-3 * time.Minute), LastSeen: now.Add(-12 * time.Second)},
-			{AppID: "wx1d2e3f4051627384", FirstSeen: now.Add(-9 * time.Minute), LastSeen: now.Add(-2 * time.Minute)},
-		}
-		m.showTargets = true
-		m.programIdx = 0
+		m.started = true
+		m.programs = programs
+		m.selectedProgram = programs[0].AppID
+		m.focus = focusPrograms
+		m.appIDInput = ""
+		m.inputCursor = 0
+	case "appearance":
+		m.started = true
+		m.programs = programs
+		m.selectedProgram = programs[0].AppID
+		m.appIDInput = ""
+		m.inputCursor = 0
+		m.appearanceOpen = true
+		m.appearanceIdx = appearanceIndex(appearance)
 	case "media":
 		m.targetReady = true
+		m.targetExpanded = false
 		m.started = true
-		m.category = categoryAll
 		m.candidates = previewCandidates()
 		m.selected = previewLiveIndex(m.candidates)
+		m.selectedID = m.candidates[m.selected].ID
 		m.showDetails = true
 	case "recording":
 		m.targetReady = true
+		m.targetExpanded = false
 		m.started = true
-		m.category = categoryAll
 		m.candidates = previewCandidates()
 		m.selected = previewLiveIndex(m.candidates)
+		m.selectedID = m.candidates[m.selected].ID
 		m.downloading = true
 		m.downloadLive = true
 		m.downloadID = m.candidates[m.selected].ID
@@ -103,17 +124,19 @@ func buildPreviewModel(kind string, width, height int) (model, error) {
 		}
 	case "downloaded":
 		m.targetReady = true
+		m.targetExpanded = false
 		m.started = true
-		m.category = categoryAll
 		m.candidates = previewCandidates()
 		m.selected = 0
-		m.downloaded[m.candidates[0].ID] = "downloads/wx6ab29f61bd262656/视频/视频_20261025-130512_9f8e7d6c.mp4"
+		m.selectedID = m.candidates[0].ID
+		m.downloaded[m.candidates[0].ID] = "downloads/wx6ab29f61bd262656/图片/图片_20261025-130512_9f8e7d6c.jpg"
 		m.lastSavedPath = m.downloaded[m.candidates[0].ID]
 		m.progress = minidownload.Progress{Status: "done", Path: m.lastSavedPath}
 		m.setNotice("已保存 → "+m.relativeDownloadPath(m.lastSavedPath), time.Hour)
 		m.showDetails = true
 	case "logs":
 		m.targetReady = true
+		m.targetExpanded = false
 		m.started = true
 		m.candidates = previewCandidates()
 		m.showLogs = true
@@ -127,17 +150,17 @@ func previewLogs() []string {
 	return []string{
 		"13:00:01 自检通过: 下载目录可写",
 		"13:00:01 自检通过: 代理端口可用 127.0.0.1:2023",
-		"13:00:01 自检提示: 首次下载 m3u8 时会准备受管 ffmpeg",
+		"13:00:01 自检提示: 首次下载分段媒体时会准备受管 ffmpeg",
 		"13:00:02 正在启动代理...",
 		"13:00:03 代理已启动: 127.0.0.1:2023 (耗时 590ms)",
 		"13:00:04 终端图片能力: sixel，像素格 10x20（品牌 logo 使用真图）",
 		"13:00:12 已选定目标 wx6ab29f61bd262656，请重新打开图片或播放视频或音频",
 		"13:00:31 检测到来源未确认媒体，已按类型并入列表（以 ? 标记）",
-		"13:01:08 开始下载: 来源已确认 视频 甄选自营 · 封面",
-		"13:01:12 下载完成: downloads/wx6ab29f61bd262656/视频/视频_20261025-130512_9f8e7d6c.mp4",
+		"13:01:08 开始下载: 来源已确认 图片 甄选自营 · 封面",
+		"13:01:12 下载完成: downloads/wx6ab29f61bd262656/图片/图片_20261025-130512_9f8e7d6c.jpg",
 		"13:01:20 开始下载: 来源已确认 直播流 东方甄选直播 · 双11专场",
 		"13:01:20 识别为直播流：会持续录制且不会自动结束，按 x 停止并保存",
-		"13:02:41 已停止录制: downloads/wx6ab29f61bd262656/视频/视频_20261025-130241_00000003.flv",
+		"13:02:41 已停止录制: downloads/wx6ab29f61bd262656/直播/直播_20261025-130241_00000003.flv",
 	}
 }
 

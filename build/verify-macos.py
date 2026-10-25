@@ -61,6 +61,7 @@ def main():
     archive = root / "dist/wx-mini-video-macos-universal-unsigned.zip"
     prefix = "wx-mini-video-macos/"
     executable_name = "wx-mini-video.app/Contents/MacOS/wx-mini-video"
+    bundle_icon_bytes = (root / "build/icons/logo.icns").read_bytes()
     ffmpeg_arches = (("amd64", 0x01000007), ("arm64", 0x0100000C))
     selfbuilt = os.environ.get("WXMV_FFMPEG_DIR")
     expected_license = (
@@ -70,6 +71,7 @@ def main():
     expected = {prefix + name for name in (
         "README.md", "wx-mini-video.yaml", "THIRD-PARTY-NOTICES.md",
         "wx-mini-video.app/Contents/Info.plist", executable_name,
+        "wx-mini-video.app/Contents/Resources/logo.icns",
         "ffmpeg/ffmpeg-amd64", "ffmpeg/ffmpeg-arm64", "ffmpeg/LICENSE.txt",
     )}
     with zipfile.ZipFile(archive) as package:
@@ -80,8 +82,12 @@ def main():
         assert package.read(prefix + "ffmpeg/LICENSE.txt") == expected_license
         assert package.read(prefix + "THIRD-PARTY-NOTICES.md") == (root / "THIRD-PARTY-NOTICES.md").read_bytes()
         assert (package.getinfo(prefix + executable_name).external_attr >> 16) & 0o777 == 0o755
+        bundle_icon = prefix + "wx-mini-video.app/Contents/Resources/logo.icns"
+        assert package.read(bundle_icon) == bundle_icon_bytes
         plist = plistlib.loads(package.read(prefix + "wx-mini-video.app/Contents/Info.plist"))
         assert plist["LSMinimumSystemVersion"] == "13.0"
+        assert plist["CFBundleIconFile"] == "logo"
+        assert plist["CFBundleIconName"] == "logo"
         binary = package.read(prefix + executable_name)
         assert struct.unpack_from(">II", binary) == (0xCAFEBABE, 2)
         commit = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
@@ -107,7 +113,7 @@ def main():
             assert len(ffmpeg_binary) > 10 * 1024 * 1024, name
         assert package.read(prefix + "ffmpeg/ffmpeg-amd64") != package.read(prefix + "ffmpeg/ffmpeg-arm64")
     if "--package-only" in sys.argv[1:]:
-        print("已通过 ZIP、双架构、随包 ffmpeg、许可、构建来源与权限检查；未执行 macOS 原生启动")
+        print("已通过 ZIP、双架构、随包 ffmpeg、许可、构建来源、应用图标与权限检查；未执行 macOS 原生启动")
         return
     with tempfile.TemporaryDirectory(prefix="wx-mini-video 测试 ") as directory:
         subprocess.run(["/usr/bin/ditto", "-x", "-k", str(archive), directory], check=True)
@@ -116,6 +122,7 @@ def main():
         assert executable.stat().st_mode & 0o777 == 0o755
         subprocess.run(["/usr/bin/lipo", str(executable), "-verify_arch", "x86_64", "arm64"], check=True)
         subprocess.run(["/usr/bin/plutil", "-lint", str(portable / "wx-mini-video.app/Contents/Info.plist")], check=True)
+        assert (portable / "wx-mini-video.app/Contents/Resources/logo.icns").read_bytes() == bundle_icon_bytes
         for arch, lipo_arch in (("amd64", "x86_64"), ("arm64", "arm64")):
             ffmpeg_path = portable / f"ffmpeg/ffmpeg-{arch}"
             assert ffmpeg_path.stat().st_mode & 0o777 == 0o755, ffmpeg_path
@@ -125,7 +132,7 @@ def main():
         moved = portable.with_name("移动后的便携目录")
         portable.rename(moved)
         check_tui(moved / executable_name, directory)
-    print("已通过 ZIP、双架构、随包 ffmpeg、许可、构建来源、权限、中文空格路径和移动目录后的 TUI 启动/退出检查")
+    print("已通过 ZIP、双架构、随包 ffmpeg、许可、构建来源、应用图标、权限、中文空格路径和移动目录后的 TUI 启动/退出检查")
 
 
 if __name__ == "__main__":

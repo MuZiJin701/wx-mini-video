@@ -470,3 +470,56 @@ func TestCandidateLiveJSONTag(t *testing.T) {
 		t.Fatalf("marshaled candidate = %q, want live tag", data)
 	}
 }
+
+func TestStoreSetLiveUpdatesTargetAndUnattributed(t *testing.T) {
+	store := NewStore()
+	store.SetTarget(Target{AppID: "wx123"})
+	_, generation := store.Observe("wx123")
+	mediaURL := "https://play-t-live.example.com/7559_esd.flv"
+
+	// 未归属列表按 URL 去重，候选 ID 不带 AppID；目标列表的 ID 带 AppID。
+	if _, ok := store.AddUnattributed(Candidate{URL: mediaURL, Kind: "video", Suffix: ".flv", Live: true}); !ok {
+		t.Fatal("unattributed candidate should be admitted")
+	}
+	if _, ok := store.AddForTarget(generation, Candidate{AppID: "wx123", URL: mediaURL, Kind: "video", Suffix: ".flv", Live: true}, nil); !ok {
+		t.Fatal("target candidate should be admitted")
+	}
+	targetID := CandidateID("wx123", mediaURL)
+	unattributedID := CandidateID("", mediaURL)
+	if targetID == unattributedID {
+		t.Fatal("test requires distinct target/unattributed IDs")
+	}
+
+	if !store.SetLive(targetID, false) {
+		t.Fatal("SetLive on a target candidate should report a hit")
+	}
+	if target, ok := store.Get(targetID); !ok || target.Live {
+		t.Fatalf("target candidate Live = %#v, want finite video", target)
+	}
+	unattributed := store.Unattributed()
+	if len(unattributed) != 1 || unattributed[0].Live {
+		t.Fatalf("unattributed candidate Live = %#v, want propagated finite video", unattributed)
+	}
+
+	// 反向回写（有限文件确认为直播）同样按 URL 传播到另一处列表。
+	if !store.SetLive(unattributedID, true) {
+		t.Fatal("SetLive on an unattributed candidate should report a hit")
+	}
+	if target, _ := store.Get(targetID); !target.Live {
+		t.Fatalf("target candidate Live = %v, want propagated live", target.Live)
+	}
+	if got := store.Unattributed(); len(got) != 1 || !got[0].Live {
+		t.Fatalf("unattributed candidate = %#v, want live", got)
+	}
+
+	// 命中但值未变化时仍返回 true；未知 ID 返回 false。
+	if !store.SetLive(targetID, true) {
+		t.Fatal("SetLive should report a hit even when the value is unchanged")
+	}
+	if store.SetLive("missing-candidate", true) {
+		t.Fatal("SetLive should report no hit for an unknown candidate")
+	}
+	if store.SetLive("   ", true) {
+		t.Fatal("SetLive should ignore blank candidate IDs")
+	}
+}

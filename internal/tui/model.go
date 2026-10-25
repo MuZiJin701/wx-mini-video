@@ -26,6 +26,8 @@ type startMsg struct {
 	legacy   bool
 }
 
+type startupMsg struct{}
+
 type tickMsg time.Time
 
 type downloadMsg struct {
@@ -41,11 +43,24 @@ type logMsg string
 type category string
 
 const (
-	categoryAll   category = "all"
-	categoryImage category = "image"
-	categoryVideo category = "video"
-	categoryM3U8  category = "m3u8"
-	categoryAudio category = "audio"
+	categoryAll      category = "all"
+	categoryImage    category = "image"
+	categoryVideo    category = "video"
+	categoryAudio    category = "audio"
+	categoryLive     category = "live"
+	categorySegments category = "segments"
+)
+
+// focusArea 是键盘焦点所在的界面区域。
+type focusArea int
+
+const (
+	focusNone focusArea = iota
+	focusAppearance
+	focusInput
+	focusPrograms
+	focusConfirm
+	focusCancel
 )
 
 type model struct {
@@ -60,12 +75,19 @@ type model struct {
 	st         styles
 	hits       *hitState
 
-	targetReady bool
-	appIDInput  string
-	inputErr    string
-	showTargets bool
-	programs    []miniprogram.Program
-	programIdx  int
+	// 目标选择区：输入与发现列表同时存在，确认后收起。
+	targetReady     bool
+	targetExpanded  bool
+	appIDInput      string
+	inputCursor     int
+	inputErr        string
+	focus           focusArea
+	programs        []miniprogram.Program
+	selectedProgram string // 按 AppID 保持选中身份，避免列表重排改选
+
+	// 外观下拉
+	appearanceOpen bool
+	appearanceIdx  int
 
 	started      bool
 	starting     bool
@@ -77,6 +99,7 @@ type model struct {
 	candidates      []miniprogram.Candidate
 	otherCandidates []miniprogram.Candidate
 	selected        int
+	selectedID      string
 	showDetails     bool
 	showLogs        bool
 	logOffset       int
@@ -108,15 +131,19 @@ type model struct {
 func Run(runtime *app.Runtime) error {
 	capability := logo.Probe()
 	appearance := ui.LoadAppearance(runtime.Settings.DownloadDir)
+	prefill := prepareDiscoveryTarget(runtime, runtime.Settings.Target.AppID)
 	m := model{
-		runtime:    runtime,
-		appearance: appearance,
-		hits:       newHitState(),
-		downloaded: make(map[string]string),
-		category:   categoryVideo,
-		appIDInput: runtime.Settings.Target.AppID,
-		logs:       make([]string, 0, 64),
-		logoCap:    capability,
+		runtime:        runtime,
+		appearance:     appearance,
+		hits:           newHitState(),
+		downloaded:     make(map[string]string),
+		category:       categoryAll,
+		appIDInput:     prefill,
+		inputCursor:    len([]rune(prefill)),
+		targetExpanded: true,
+		focus:          focusInput,
+		logs:           make([]string, 0, 64),
+		logoCap:        capability,
 	}
 	var output io.Writer = os.Stdout
 	if capability.Available() {
@@ -139,7 +166,8 @@ func Run(runtime *app.Runtime) error {
 }
 
 func (m model) Init() tea.Cmd {
-	return tick()
+	// 启动即发现：程序打开后自动启动代理，发现结果只供选择，不自动确认目标。
+	return tea.Batch(tick(), func() tea.Msg { return startupMsg{} })
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -148,6 +176,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = v.Width
 		m.height = v.Height
 		m.metrics = ui.ComputeMetrics(v.Width, v.Height)
+	case startupMsg:
+		return m.ensureProxy()
 	case tea.KeyMsg:
 		return m.handleKey(v)
 	case tea.MouseMsg:
@@ -165,7 +195,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.startErr = v.err
 		if v.err != nil {
 			m.addLog("代理启动失败: " + v.err.Error())
-			m.setNotice("代理启动失败："+v.err.Error(), 8*time.Second)
+			m.setNotice("代理启动失败："+v.err.Error()+"（按 r 重试）", 8*time.Second)
 		} else {
 			m.addLog(fmt.Sprintf("代理已启动: %s (耗时 %s)", m.runtime.ProxyAddr(), v.duration.Round(time.Millisecond)))
 			if runtime.GOOS == "darwin" && m.runtime.Settings.ProxySystem {
@@ -223,7 +253,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.progress = m.runtime.DownloadProgress()
 		if programs := m.runtime.Store.Programs(); programs != nil {
 			m.programs = programs
-			m.clampProgramIndex()
+			m.clampProgramSelection()
 		}
 		m.expireNotice()
 		if m.appearance == ui.AppearanceSystem {
@@ -292,10 +322,21 @@ func (m model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	if m.hits == nil {
 		return m, nil
 	}
-	if m.stopping || m.stopErr != nil || m.networkPause {
+	// 代理恢复失败界面只允许它的两个按钮，避免用户误触其他区域。
+	if m.stopErr != nil {
+		if msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft {
+			region, ok := m.hits.find(msg.X, msg.Y)
+			if ok {
+				if region.action == hitStopRetry || region.action == hitStopForce {
+					return m.activateHit(region)
+				}
+			}
+		}
 		return m, nil
 	}
-	// 退出确认与旧证书确认是模态覆盖层：只允许命中它们自己的按钮，其余鼠标事件忽略。
+	if m.stopping || m.networkPause {
+		return m, nil
+	}
 	modal := m.confirmQuit || m.legacyPrompt
 	if !modal {
 		switch msg.Button {
@@ -308,6 +349,14 @@ func (m model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	switch msg.Action {
 	case tea.MouseActionMotion:
 		region, ok := m.hits.find(msg.X, msg.Y)
+		if m.appearanceOpen {
+			if ok && (region.action == hitAppearanceOption || region.action == hitAppearanceControl) {
+				m.hits.setHover(region.action, region.index)
+			} else {
+				m.hits.clearHover()
+			}
+			return m, nil
+		}
 		if ok && (!modal || overlayHitAction(region.action)) {
 			m.hits.setHover(region.action, region.index)
 		} else {
@@ -325,11 +374,20 @@ func (m model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 			}
 			return m.activateHit(region)
 		}
+		if m.appearanceOpen {
+			if ok {
+				switch region.action {
+				case hitAppearanceOption, hitAppearanceControl:
+					return m.activateHit(region)
+				}
+			}
+			m.appearanceOpen = false
+			return m, nil
+		}
 		if !ok {
-			if m.showLogs || m.showDetails || m.showTargets {
+			if m.showLogs || m.showDetails {
 				m.showLogs = false
 				m.showDetails = false
-				m.showTargets = false
 			}
 			return m, nil
 		}
@@ -360,43 +418,61 @@ func (m model) scrollBy(delta int) model {
 		}
 		return m
 	}
+	if m.targetExpanded {
+		if len(m.programs) == 0 {
+			return m
+		}
+		m.selectProgram(programDirection(delta))
+		return m
+	}
 	if !m.targetReady {
 		return m
 	}
-	visible := m.filteredCandidates()
-	if len(visible) == 0 {
-		return m
-	}
-	m.selected += delta
-	if m.selected < 0 {
-		m.selected = 0
-	}
-	if m.selected >= len(visible) {
-		m.selected = len(visible) - 1
-	}
+	m.moveSelection(delta)
 	return m
+}
+
+// programDirection 把滚轮增量折算成发现列表的移动步数（正数向下）。
+func programDirection(delta int) int {
+	if delta > 0 {
+		return 1
+	}
+	if delta < 0 {
+		return -1
+	}
+	return 0
 }
 
 func (m model) activateHit(region hitRegion) (tea.Model, tea.Cmd) {
 	switch region.action {
-	case hitAppearanceSystem:
-		return m, m.setAppearance(ui.AppearanceSystem)
-	case hitAppearanceLight:
-		return m, m.setAppearance(ui.AppearanceLight)
-	case hitAppearanceDark:
-		return m, m.setAppearance(ui.AppearanceDark)
-	case hitStart:
-		return m.confirmTargetInput()
-	case hitDiscover:
-		m.openTargetOverlay()
-		return m.ensureProxy()
-	case hitTargetSwitch:
-		if m.downloading {
-			m.setNotice("下载正在进行，完成后才能切换目标。", 5*time.Second)
-			return m, nil
+	case hitAppearanceControl:
+		if m.appearanceOpen {
+			m.appearanceOpen = false
+		} else {
+			m.openAppearanceDropdown()
 		}
-		m.openTargetOverlay()
 		return m, nil
+	case hitAppearanceOption:
+		m.appearanceIdx = region.index
+		return m.applyAppearanceSelection()
+	case hitTargetInput:
+		m.focus = focusInput
+		m.inputCursor = len([]rune(m.appIDInput))
+		return m, nil
+	case hitTargetProgram:
+		if region.index >= 0 && region.index < len(m.programs) {
+			m.selectedProgram = m.programs[region.index].AppID
+			m.focus = focusPrograms
+			return m.confirmSelectedProgram()
+		}
+		return m, nil
+	case hitTargetConfirm:
+		return m.confirmFocusedTarget()
+	case hitTargetCancel:
+		m.cancelTargetSwitch()
+		return m, nil
+	case hitTargetRetry:
+		return m.ensureProxy()
 	case hitTab:
 		if region.index >= 0 && region.index < len(categories) {
 			m.setCategory(categories[region.index])
@@ -404,26 +480,33 @@ func (m model) activateHit(region hitRegion) (tea.Model, tea.Cmd) {
 		return m, nil
 	case hitRow:
 		return m.activateRow(region.index)
-	case hitQuit:
+	case hitActionDownload:
+		return m.downloadSelected()
+	case hitActionStop:
+		m.stopDownload()
+		return m, nil
+	case hitActionDetails:
+		m.toggleDetails()
+		return m, nil
+	case hitActionLogs:
+		m.toggleLogs()
+		return m, nil
+	case hitActionRefresh:
+		return m.retryOrRefresh()
+	case hitActionOpenDir:
+		return m, m.openDirectory()
+	case hitActionClear:
+		m.clearCandidates()
+		return m, nil
+	case hitActionTargetSwitch:
+		m.openTargetEditor()
+		return m, nil
+	case hitActionQuit:
 		return m.requestQuit()
 	case hitGitHub:
 		return m, m.openRepository()
-	case hitOpenDir:
-		return m, m.openDirectory()
-	case hitRetryProxy:
-		return m.ensureProxy()
-	case hitOverlayProgram:
-		if region.index >= 0 && region.index < len(m.programs) {
-			m.programIdx = region.index
-			return m.confirmSelectedProgram()
-		}
-		return m, nil
-	case hitOverlayConfirm:
-		return m.confirmSelectedProgram()
-	case hitOverlayCancel, hitDrawerClose:
-		m.showTargets = false
+	case hitDrawerClose:
 		m.showDetails = false
-		m.confirmQuit = false
 		return m, nil
 	case hitLogClose:
 		m.showLogs = false
@@ -431,6 +514,11 @@ func (m model) activateHit(region hitRegion) (tea.Model, tea.Cmd) {
 	case hitQuitConfirm:
 		m.confirmQuit = false
 		return m.confirmQuitNow()
+	case hitOverlayCancel:
+		m.confirmQuit = false
+		m.showDetails = false
+		m.showLogs = false
+		return m, nil
 	case hitLegacyClean:
 		m.legacyPrompt = false
 		m.starting = true
@@ -441,6 +529,10 @@ func (m model) activateHit(region hitRegion) (tea.Model, tea.Cmd) {
 		m.legacyWarning = "旧共享根证书尚未清理，其系统信任风险仍然存在。"
 		m.starting = true
 		return m, m.startProxy
+	case hitStopRetry:
+		return m.beginStop()
+	case hitStopForce:
+		return m, tea.Quit
 	default:
 		return m, nil
 	}
@@ -453,6 +545,7 @@ func (m model) activateRow(index int) (tea.Model, tea.Cmd) {
 	}
 	candidate := visible[index]
 	m.selected = index
+	m.selectedID = candidate.ID
 	now := time.Now().UnixMilli()
 	if m.hits.lastClickID == candidate.ID && m.hits.lastClickAt >= 0 && now-m.hits.lastClickAt < 500 {
 		m.hits.lastClickID = ""

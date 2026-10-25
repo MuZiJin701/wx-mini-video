@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 
 	"wx_channel/internal/minidownload"
@@ -74,7 +75,9 @@ func TestPackagePreservesExecutableModeAndExcludesRuntimeData(t *testing.T) {
 	}
 	documents := []string{
 		"README.md", "wx-mini-video.yaml", "THIRD-PARTY-NOTICES.md",
-		"wx-mini-video.app/Contents/Info.plist", "ffmpeg/LICENSE.txt",
+		"wx-mini-video.app/Contents/Info.plist",
+		"wx-mini-video.app/Contents/Resources/logo.icns",
+		"ffmpeg/LICENSE.txt",
 	}
 	for _, name := range append(append([]string{}, executables...), append(append([]string{}, documents...), "downloads/private.pem")...) {
 		path := filepath.Join(root, filepath.FromSlash(name))
@@ -194,5 +197,59 @@ func TestEnsureFFmpegArchiveRejectsChecksumMismatch(t *testing.T) {
 	}
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
 		t.Fatalf("unverified archive left behind: %v", err)
+	}
+}
+
+func TestCopyAppIconInstallsBundleIcon(t *testing.T) {
+	root := t.TempDir()
+	icon := []byte("icns-test-icon-bytes")
+	source := filepath.Join(root, "build", "icons", "logo.icns")
+	if err := os.MkdirAll(filepath.Dir(source), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(source, icon, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	app := filepath.Join(root, "wx-mini-video.app", "Contents")
+	if err := os.MkdirAll(app, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := copyAppIcon(root, app); err != nil {
+		t.Fatal(err)
+	}
+	installed := filepath.Join(app, "Resources", "logo.icns")
+	data, err := os.ReadFile(installed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(data, icon) {
+		t.Fatal("已安装的应用图标与 build/icons/logo.icns 不一致")
+	}
+	info, err := os.Stat(installed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if runtime.GOOS != "windows" && info.Mode().Perm() != 0o644 {
+		t.Fatalf("已安装的应用图标权限 = %v, want 0644", info.Mode().Perm())
+	}
+	if err := os.Remove(source); err != nil {
+		t.Fatal(err)
+	}
+	if err := copyAppIcon(root, app); err == nil {
+		t.Fatal("缺少 build/icons/logo.icns 时 copyAppIcon 未报错")
+	}
+}
+
+func TestInfoPlistDeclaresBundleIcon(t *testing.T) {
+	plist := infoPlist("0.2.0")
+	for _, want := range []string{
+		"<key>CFBundleIconFile</key><string>logo</string>",
+		"<key>CFBundleIconName</key><string>logo</string>",
+		"<key>CFBundleShortVersionString</key><string>0.2.0</string>",
+		"<key>CFBundleVersion</key><string>0.2.0</string>",
+	} {
+		if !strings.Contains(plist, want) {
+			t.Fatalf("Info.plist 缺少 %q", want)
+		}
 	}
 }

@@ -17,6 +17,9 @@ func TestMediaKind(t *testing.T) {
 		{name: "audio", candidate: Candidate{Kind: "audio", URL: "https://cdn.example.com/a.m4a"}, want: "audio"},
 		{name: "m3u8 kind", candidate: Candidate{Kind: "m3u8", URL: "https://cdn.example.com/live"}, want: "m3u8"},
 		{name: "m3u8 extension wins", candidate: Candidate{Kind: "video", URL: "https://cdn.example.com/live/index.m3u8?token=1"}, want: "m3u8"},
+		{name: "live wins over video kind", candidate: Candidate{Kind: "video", Live: true, URL: "https://cdn.example.com/live/7559_esd.flv"}, want: "live"},
+		{name: "live wins over suffixless video", candidate: Candidate{Kind: "video", Live: true, URL: "https://cdn.example.com/media/live-stream"}, want: "live"},
+		{name: "finite flv stays video", candidate: Candidate{Kind: "video", URL: "https://cdn.example.com/clip.flv"}, want: "video"},
 		{name: "file kind", candidate: Candidate{Kind: "file", URL: "https://cdn.example.com/a.bin"}, want: "file"},
 		{name: "unknown kind", candidate: Candidate{Kind: "", URL: "https://cdn.example.com/a"}, want: "file"},
 	}
@@ -29,17 +32,52 @@ func TestMediaKind(t *testing.T) {
 	}
 }
 
+func TestIsM3U8(t *testing.T) {
+	tests := []struct {
+		name      string
+		candidate Candidate
+		want      bool
+	}{
+		{name: "m3u8 kind", candidate: Candidate{Kind: "m3u8", URL: "https://cdn.example.com/play"}, want: true},
+		{name: "m3u8 extension", candidate: Candidate{Kind: "video", URL: "https://cdn.example.com/index.m3u8?token=1"}, want: true},
+		{name: "live flag does not reroute m3u8", candidate: Candidate{Kind: "m3u8", Live: true, URL: "https://cdn.example.com/index.m3u8"}, want: true},
+		{name: "flv video", candidate: Candidate{Kind: "video", Live: true, URL: "https://cdn.example.com/a.flv"}, want: false},
+		{name: "plain video", candidate: Candidate{Kind: "video", URL: "https://cdn.example.com/a.mp4"}, want: false},
+		{name: "image", candidate: Candidate{Kind: "image", URL: "https://cdn.example.com/a.jpg"}, want: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := IsM3U8(tt.candidate); got != tt.want {
+				t.Fatalf("IsM3U8() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestTypeDir(t *testing.T) {
 	for kind, want := range map[string]string{
 		"image": DirImages,
 		"video": DirVideos,
 		"audio": DirAudios,
-		"m3u8":  DirM3U8,
+		"live":  DirLive,
+		"m3u8":  DirSegments,
 		"file":  DirOther,
 		"":      DirOther,
 	} {
 		if got := TypeDir(kind); got != want {
 			t.Fatalf("TypeDir(%q) = %q, want %q", kind, got, want)
+		}
+	}
+	for kind, want := range map[string]string{
+		"image": "图片",
+		"video": "视频",
+		"audio": "音频",
+		"live":  "直播",
+		"m3u8":  "分段媒体",
+		"file":  "其他",
+	} {
+		if got := TypeDir(kind); got != want {
+			t.Fatalf("TypeDir(%q) = %q, want literal %q", kind, got, want)
 		}
 	}
 }
@@ -119,10 +157,22 @@ func TestMediaSubdir(t *testing.T) {
 			want:        filepath.Join("wxCandidate", DirAudios),
 		},
 		{
-			name:        "m3u8 by extension",
+			name:        "m3u8 by extension goes to segments",
 			candidate:   Candidate{Kind: "video", URL: "https://cdn.example.com/live/index.m3u8"},
 			targetAppID: "wxTarget",
-			want:        filepath.Join("wxTarget", DirM3U8),
+			want:        filepath.Join("wxTarget", DirSegments),
+		},
+		{
+			name:        "live candidate goes to live dir",
+			candidate:   Candidate{Kind: "video", Live: true, URL: "https://cdn.example.com/7559_esd.flv"},
+			targetAppID: "wxTarget",
+			want:        filepath.Join("wxTarget", DirLive),
+		},
+		{
+			name:        "finite flv stays in videos",
+			candidate:   Candidate{Kind: "video", URL: "https://cdn.example.com/clip.flv"},
+			targetAppID: "wxTarget",
+			want:        filepath.Join("wxTarget", DirVideos),
 		},
 		{
 			name:      "file goes to other",

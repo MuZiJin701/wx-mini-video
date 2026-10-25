@@ -25,7 +25,7 @@ func (m model) View() string {
 	}
 	if m.networkPause {
 		m.disableLogo()
-		return m.singleLineScreen(m.st.muted.Render("网络已变化，正在停止嗅探并恢复原代理..."))
+		return m.singleLineScreen(m.st.muted.Render("网络已变化，正在停止嗅探并恢复原代理；恢复后按 r 重新启动代理。"))
 	}
 	if m.stopping {
 		m.disableLogo()
@@ -46,8 +46,8 @@ func (m model) View() string {
 	}
 
 	var main []string
-	if !m.targetReady {
-		main = m.renderTargetCard(mainTop, mainHeight, metrics)
+	if m.targetExpanded {
+		main = m.renderTargetArea(mainTop, mainHeight, metrics)
 	} else {
 		main = m.renderMedia(mainTop, mainHeight, metrics)
 	}
@@ -74,9 +74,10 @@ func (m model) View() string {
 		_, x, y := m.overlayPane(canvas, pane)
 		m.addPaneHits(x, y, hits)
 	}
-	if m.showTargets {
-		pane, hits := m.targetOverlayPane(metrics)
-		_, x, y := m.overlayPane(canvas, pane)
+	if m.appearanceOpen {
+		pane, hits := m.appearanceDropdownPane(metrics)
+		x, y := m.appearanceDropdownOrigin(pane, metrics)
+		_, x, y = m.overlayAt(canvas, pane, x, y)
 		m.addPaneHits(x, y, hits)
 	}
 	if m.showLogs {
@@ -97,7 +98,7 @@ func (m model) disableLogo() {
 
 // overlayOpen 报告是否存在会遮挡品牌区的覆盖层。
 func (m model) overlayOpen() bool {
-	return m.confirmQuit || m.legacyPrompt || m.showTargets || m.showLogs
+	return m.confirmQuit || m.legacyPrompt || m.showLogs || m.appearanceOpen
 }
 
 // logoSize 计算真图 logo 的单元格尺寸；不可用或空间不足时返回 ok=false。
@@ -173,18 +174,7 @@ func (m model) overlayPane(canvas []string, pane []string) ([]string, int, int) 
 	if y < 0 {
 		y = 0
 	}
-	for i, line := range pane {
-		row := y + i
-		if row < 0 || row >= len(canvas) {
-			continue
-		}
-		right := m.screenWidth() - x - ui.Width(line)
-		if right < 0 {
-			right = 0
-		}
-		canvas[row] = m.padLine(m.spaces(x), line, m.spaces(right))
-	}
-	return canvas, x, y
+	return m.overlayAt(canvas, pane, x, y)
 }
 
 func (m *model) addPaneHits(x, y int, hits []paneHit) {
@@ -230,9 +220,7 @@ func (m model) renderBrand(startY int, metrics ui.Metrics) []string {
 		leftWidth = imageCols + ui.BrandGap
 	}
 
-	compact := metrics.Compact
-	segments, segWidth := m.appearanceSegments(compact)
-	appearance := m.renderAppearanceControl(segments, compact)
+	appearance, appearanceWidth := m.appearanceControl(metrics)
 	segY := startY + 1
 	if metrics.Short {
 		segY = startY
@@ -247,9 +235,6 @@ func (m model) renderBrand(startY int, metrics ui.Metrics) []string {
 		textLines = []string{m.st.title.Render("微信小程序媒体下载")}
 	} else if metrics.Compact {
 		textLines = textLines[:2]
-	}
-	if metrics.Narrow {
-		appearance = ""
 	}
 
 	rows := make([]string, 0, height)
@@ -282,9 +267,9 @@ func (m model) renderBrand(startY int, metrics ui.Metrics) []string {
 		}
 		right := ""
 		rightWidth := 0
-		if i == 0 {
+		if i == 0 && appearance != "" {
 			right = appearance
-			rightWidth = segWidth
+			rightWidth = appearanceWidth
 		}
 		textAvail := contentWidth - leftWidth - rightWidth - 1
 		if textAvail < 8 {
@@ -310,77 +295,92 @@ func (m model) renderBrand(startY int, metrics ui.Metrics) []string {
 
 	// 记录外观控件的点击区域。
 	if appearance != "" {
-		x := metrics.Width - padX - segWidth
-		m.hits.add(x, segY, segWidth, 1, hitAppearanceSystem, 0)
-		offset := 0
-		for _, segment := range segments {
-			m.hits.add(x+offset, segY, segment.width, 1, segment.action, 0)
-			offset += segment.width
-		}
+		x := metrics.Width - padX - appearanceWidth
+		m.hits.add(x, segY, appearanceWidth, 1, hitAppearanceControl, 0)
 	}
 	return rows
 }
 
-type appearanceSegment struct {
-	label  string
-	width  int
-	action hitAction
-	active bool
+// appearanceControl 渲染品牌区右侧的外观下拉控件（单行 chip）。
+func (m model) appearanceControl(metrics ui.Metrics) (string, int) {
+	if metrics.Narrow {
+		return "", 0
+	}
+	label := "外观 " + m.appearance.DisplayName() + " ▾"
+	if metrics.Compact {
+		label = m.appearance.DisplayName() + " ▾"
+	}
+	focused := m.focus == focusAppearance || m.appearanceOpen
+	button := actionButton{label: label, action: hitAppearanceControl, enabled: true, focused: focused}
+	rendered := m.chipStyleFor(button).Render(label)
+	return rendered, ui.Width(rendered)
 }
 
-func (m model) appearanceSegments(compact bool) ([]appearanceSegment, int) {
-	labels := []struct {
-		label  string
-		action hitAction
-		mode   ui.AppearanceMode
-	}{
-		{"系统", hitAppearanceSystem, ui.AppearanceSystem},
-		{"浅色", hitAppearanceLight, ui.AppearanceLight},
-		{"深色", hitAppearanceDark, ui.AppearanceDark},
+// appearanceDropdownPane 渲染外观下拉的选项面板。
+func (m model) appearanceDropdownPane(metrics ui.Metrics) ([]string, []paneHit) {
+	width := 18
+	if width > metrics.Width-2 {
+		width = metrics.Width - 2
 	}
-	if !compact {
-		labels[0].label = "跟随系统"
+	if width < 14 {
+		width = 14
 	}
-	segments := make([]appearanceSegment, 0, len(labels))
-	total := 0
-	for _, item := range labels {
-		width := ui.Width(item.label) + 2
-		segments = append(segments, appearanceSegment{
-			label:  item.label,
-			width:  width,
-			action: item.action,
-			active: m.appearance == item.mode,
-		})
-		total += width
+	inner := width - 2
+	title := "外观"
+	pane := []string{
+		m.st.frameLine.Render("┌" + strings.Repeat("─", inner) + "┐"),
+		m.st.frameLine.Render("│") + m.st.panelTitle.Render(ui.Fit(" "+title, inner)) + m.st.frameLine.Render("│"),
+		m.st.frameLine.Render("├" + strings.Repeat("─", inner) + "┤"),
 	}
-	if len(segments) > 1 {
-		total += len(segments) - 1
+	var hits []paneHit
+	for i, mode := range appearanceModes() {
+		marker := "  "
+		if mode == m.appearance {
+			marker = "● "
+		}
+		label := marker + mode.DisplayName()
+		style := m.st.dropdownItem
+		switch {
+		case m.isHover(hitAppearanceOption, i):
+			style = m.st.dropdownHover
+		case i == m.appearanceIdx:
+			style = m.st.dropdownActive
+		}
+		pane = append(pane, m.st.frameLine.Render("│")+m.interiorLine(" "+label, inner, style)+m.st.frameLine.Render("│"))
+		hits = append(hits, paneHit{x: 1, y: 3 + i, w: inner, h: 1, action: hitAppearanceOption, index: i})
 	}
-	if !compact {
-		total += 5 // "外观 "
-	}
-	return segments, total
+	pane = append(pane, m.st.frameLine.Render("└"+strings.Repeat("─", inner)+"┘"))
+	return pane, hits
 }
 
-func (m model) renderAppearanceControl(segments []appearanceSegment, compact bool) string {
-	var b strings.Builder
-	if !compact {
-		b.WriteString(m.st.muted.Render("外观 "))
+// appearanceDropdownOrigin 计算下拉面板相对屏幕的左上角坐标：优先贴在控件下方，
+// 空间不足时放到上方。
+func (m model) appearanceDropdownOrigin(pane []string, metrics ui.Metrics) (int, int) {
+	x := metrics.Width - metrics.BrandPadX - 18
+	y := 2
+	if region, ok := findHitRegion(m.hits, hitAppearanceControl); ok {
+		x = region.x
+		y = region.y + 1
 	}
-	for i, segment := range segments {
-		style := m.st.tabInactive
-		if segment.active {
-			style = m.st.tabActive
-		}
-		if m.isHover(segment.action, 0) && !segment.active {
-			style = m.st.buttonHover
-		}
-		if i > 0 {
-			b.WriteString(" ")
-		}
-		b.WriteString(style.Render(" " + segment.label + " "))
+	if y+len(pane) > m.screenHeight() {
+		y = m.screenHeight() - len(pane)
 	}
-	return b.String()
+	if y < 0 {
+		y = 0
+	}
+	return x, y
+}
+
+func findHitRegion(hits *hitState, action hitAction) (hitRegion, bool) {
+	if hits == nil {
+		return hitRegion{}, false
+	}
+	for _, region := range hits.regions {
+		if region.action == action {
+			return region, true
+		}
+	}
+	return hitRegion{}, false
 }
 
 func (m model) renderRibbon(metrics ui.Metrics) string {
@@ -407,19 +407,19 @@ func (m model) renderFooter() []string {
 
 	linkText := "GitHub · MuZiJin701/wx-mini-video ↗"
 	linkStyle := m.st.link
-	quitLabel := "退出 · Ctrl+Q"
+	quitLabel := "退出 · q"
 	quitWidth := buttonWidth(quitLabel, 16)
 
 	if metrics.Short {
 		link := linkStyle.Render(ui.Truncate(linkText, metrics.Width-2*padX-ui.Width(quitLabel)-4))
 		right := m.st.muted.Render(ui.Fit(" "+quitLabel+" ", quitWidth))
 		line := m.padLine(m.spaces(padX), link, m.spaces(metrics.Width-padX-2*ui.Width(link)-quitWidth), right, m.spaces(padX))
-		m.hits.add(metrics.Width-padX-quitWidth, top, quitWidth, 1, hitQuit, 0)
+		m.hits.add(metrics.Width-padX-quitWidth, top, quitWidth, 1, hitActionQuit, 0)
 		m.hits.add(padX, top, ui.Width(link), 1, hitGitHub, 0)
 		return []string{line}
 	}
 
-	quitLines := m.buttonLines(quitLabel, buttonSecondary, false, m.isHover(hitQuit, 0), quitWidth)
+	quitLines := m.buttonLines(quitLabel, buttonSecondary, false, m.isHover(hitActionQuit, 0), quitWidth)
 	rows := make([]string, 0, height)
 	rows = append(rows, m.blankLine())
 	for i := 0; i < len(quitLines); i++ {
@@ -440,7 +440,7 @@ func (m model) renderFooter() []string {
 		row = m.padLine(m.spaces(padX), left, m.spaces(gap), right, m.spaces(padX))
 		rows = append(rows, row)
 	}
-	m.hits.add(metrics.Width-padX-quitWidth, top+1, quitWidth, len(quitLines), hitQuit, 0)
+	m.hits.add(metrics.Width-padX-quitWidth, top+1, quitWidth, len(quitLines), hitActionQuit, 0)
 	for len(rows) < height {
 		rows = append(rows, m.blankLine())
 	}
@@ -450,9 +450,15 @@ func (m model) renderFooter() []string {
 	return rows
 }
 
+// viewStopError 渲染代理恢复失败界面，并提供可点击的重试与强制退出按钮。
 func (m model) viewStopError() string {
 	metrics := ui.ComputeMetrics(m.screenWidth(), m.screenHeight())
 	message := "系统代理可能仍指向本工具，网络可能不可用。"
+	retryLabel := "重试恢复并退出 · r"
+	forceLabel := "强制退出 · f"
+	retryWidth := buttonWidth(retryLabel, 20)
+	forceWidth := buttonWidth(forceLabel, 16)
+	compact := metrics.Short
 	lines := []string{
 		"",
 		m.st.errStyle.Render("退出未完成：恢复系统代理或关闭代理失败"),
@@ -460,8 +466,24 @@ func (m model) viewStopError() string {
 		m.st.text.Render(ui.Truncate(m.stopErr.Error(), metrics.Width-2*metrics.BrandPadX)),
 		"",
 		m.st.text.Render(message),
-		m.st.text.Render("按 r 重试恢复并退出；按 f 明确强制退出（需要自行恢复网络设置）。"),
 	}
+	buttonTop := len(lines)
+	if compact {
+		retry := m.chipText(retryLabel, hitStopRetry, true, true)
+		force := m.chipText(forceLabel, hitStopForce, false, true)
+		lines = append(lines, retry+" "+force)
+		m.hits.add(metrics.BrandPadX, buttonTop, ui.Width(retry), 1, hitStopRetry, 0)
+		m.hits.add(metrics.BrandPadX+ui.Width(retry)+1, buttonTop, ui.Width(force), 1, hitStopForce, 0)
+	} else {
+		retry := m.buttonLines(retryLabel, buttonPrimary, false, m.isHover(hitStopRetry, 0), retryWidth)
+		force := m.buttonLines(forceLabel, buttonSecondary, false, m.isHover(hitStopForce, 0), forceWidth)
+		rows := joinButtons(retry, force)
+		lines = append(lines, rows...)
+		m.hits.add(metrics.BrandPadX, buttonTop, retryWidth, 3, hitStopRetry, 0)
+		m.hits.add(metrics.BrandPadX+retryWidth+1, buttonTop, forceWidth, 3, hitStopForce, 0)
+	}
+	lines = append(lines, "")
+	lines = append(lines, m.st.muted.Render(ui.Truncate("按 r 重试恢复并退出；按 f 明确强制退出（需要自行恢复网络设置）。", metrics.Width-2*metrics.BrandPadX)))
 	canvas := make([]string, 0, m.screenHeight())
 	for _, line := range lines {
 		canvas = append(canvas, m.padLine(m.spaces(metrics.BrandPadX), line))

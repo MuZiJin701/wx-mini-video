@@ -68,10 +68,13 @@ type DownloadHistory struct {
 }
 
 type Downloader struct {
-	Dir                string
-	FFmpegPath         string
-	Client             *http.Client
-	OnProgress         func(Progress)
+	Dir        string
+	FFmpegPath string
+	Client     *http.Client
+	OnProgress func(Progress)
+	// OnLiveResolved 在下载前已知直播、以及下载后按实际响应修正直播状态时回调，
+	// 供界面按候选身份回写 Live 标记；candidateID 是候选 ID，live 是最终判定。
+	OnLiveResolved     func(candidateID string, live bool)
 	SegmentConcurrency int
 	SegmentRetries     int
 	KeepSegments       bool
@@ -135,7 +138,7 @@ func OutputName(candidate miniprogram.Candidate, preferred string) string {
 		name = defaultOutputName(candidate, now())
 	}
 	ext := strings.ToLower(filepath.Ext(name))
-	if candidate.Kind == "m3u8" || miniprogram.MediaKind(candidate) == "m3u8" {
+	if miniprogram.IsM3U8(candidate) {
 		if ext != "" {
 			name = strings.TrimSuffix(name, filepath.Ext(name))
 		}
@@ -145,6 +148,9 @@ func OutputName(candidate miniprogram.Candidate, preferred string) string {
 	if suffix == "" {
 		_, suffix = miniprogram.Classify("", candidate.URL)
 	}
+	if suffix == "" && miniprogram.MediaKind(candidate) == "live" {
+		suffix = ".flv"
+	}
 	if suffix != "" && !strings.EqualFold(filepath.Ext(name), suffix) {
 		name += suffix
 	}
@@ -152,6 +158,7 @@ func OutputName(candidate miniprogram.Candidate, preferred string) string {
 }
 
 // defaultOutputName 按「类型_YYYYMMDD-HHMMSS_候选ID前8位.扩展名」生成默认文件名。
+// 类型前缀取最终类型目录名：直播录制为 直播_，有限 FLV 为 视频_，分段媒体为 分段媒体_。
 func defaultOutputName(candidate miniprogram.Candidate, startedAt time.Time) string {
 	kind := miniprogram.MediaKind(candidate)
 	suffix := ".mp4"
@@ -159,6 +166,9 @@ func defaultOutputName(candidate miniprogram.Candidate, startedAt time.Time) str
 		suffix = candidate.Suffix
 		if suffix == "" {
 			_, suffix = miniprogram.Classify("", candidate.URL)
+		}
+		if suffix == "" && kind == "live" {
+			suffix = ".flv"
 		}
 		if suffix == "" {
 			suffix = ".bin"
@@ -276,6 +286,10 @@ func (d *Downloader) Download(ctx context.Context, candidate miniprogram.Candida
 	if err := os.MkdirAll(d.Dir, 0o755); err != nil {
 		return "", fmt.Errorf("创建下载根目录 %s 失败: %w", d.Dir, err)
 	}
+	// 下载前已知的直播标记先回写：界面可以立即按“直播”更新该候选的展示与分类。
+	if candidate.Live {
+		d.notifyLiveResolved(candidate.ID, true)
+	}
 	subdir := miniprogram.MediaSubdir(candidate, targetAppID)
 	if !filepath.IsLocal(subdir) {
 		return "", fmt.Errorf("下载子目录不安全: %q", subdir)
@@ -296,17 +310,26 @@ func (d *Downloader) Download(ctx context.Context, candidate miniprogram.Candida
 	} else {
 		name, targetPath = availableOutputPath(bucket, OutputName(candidate, preferredName), candidate, strings.TrimSpace(preferredName) == "")
 	}
+	initialKind := miniprogram.MediaKind(candidate)
+	isM3U8 := miniprogram.IsM3U8(candidate)
 	d.emit(Progress{ID: candidate.ID, Name: name, Path: targetPath, Status: "starting", Total: candidate.ContentLength, Live: candidate.Live})
 	var live bool
 	var err error
-	if miniprogram.MediaKind(candidate) == "m3u8" {
+	if isM3U8 {
 		err = d.downloadM3U8(ctx, candidate, targetPath)
 	} else {
 		live, err = d.downloadDirect(ctx, candidate, targetPath)
 	}
-	// 只有下载时才确认为直播的候选，产物按实际内容改成 .flv 后缀。
-	if live && fileExists(targetPath) {
-		targetPath, name = correctLiveSuffix(bucket, targetPath, candidate)
+	// 按实际响应把成品归入最终类型目录：直播录音进 直播/，确认是有限文件的 FLV 回到 视频/。
+	// .part 仍留在初始目录以保持续传语义，这里只处理已提交的成品。
+	finalKind := resolvedKind(initialKind, isM3U8, live)
+	targetPath, name = d.finalizeOutputPath(candidate, preferredName, targetAppID, targetPath, name, initialKind, finalKind)
+	// 只有下载真正拿到响应并完成（含直播停止/断流保存）时才回写修正；
+	// 请求失败或用户提前取消时无法确认实际类型，保留候选原有标记。
+	resolved := err == nil || errors.Is(err, ErrRecordingStopped) || errors.Is(err, ErrRecordingInterrupted)
+	if !isM3U8 && resolved && live != candidate.Live {
+		// 下载阶段确认的直播状态与候选原有标记不一致时回写，界面按候选身份保持选择。
+		d.notifyLiveResolved(candidate.ID, live)
 	}
 	// 只有真正的取消错误才折算为“已停止”；保存/重命名等失败必须原样暴露给用户。
 	if err != nil && ctx.Err() != nil && isContextCancellation(err) &&
@@ -314,13 +337,40 @@ func (d *Downloader) Download(ctx context.Context, candidate miniprogram.Candida
 		err = ErrDownloadStopped
 	}
 	if err == nil || errors.Is(err, ErrRecordingStopped) || errors.Is(err, ErrRecordingInterrupted) {
-		_ = d.appendHistory(candidate, targetPath, targetAppID)
+		_ = d.appendHistory(candidate, targetPath, targetAppID, finalKind)
 	}
-	d.finishProgress(candidate, name, targetPath, live, err)
+	d.finishProgress(candidate, name, targetPath, live, finalKind, err)
 	return targetPath, err
 }
 
-func (d *Downloader) finishProgress(candidate miniprogram.Candidate, name, outputPath string, live bool, err error) {
+// resolvedKind 合并初始分类与下载阶段的实际结果：只有视频/直播之间需要互相修正，
+// 图片、音频、分段媒体与其他文件保持原分类。
+func resolvedKind(initialKind string, isM3U8 bool, live bool) string {
+	if isM3U8 {
+		return "m3u8"
+	}
+	switch initialKind {
+	case "live":
+		if !live {
+			return "video"
+		}
+		return "live"
+	case "video":
+		if live {
+			return "live"
+		}
+	}
+	return initialKind
+}
+
+func (d *Downloader) notifyLiveResolved(candidateID string, live bool) {
+	if d.OnLiveResolved == nil || strings.TrimSpace(candidateID) == "" {
+		return
+	}
+	d.OnLiveResolved(candidateID, live)
+}
+
+func (d *Downloader) finishProgress(candidate miniprogram.Candidate, name, outputPath string, live bool, finalKind string, err error) {
 	status := "done"
 	errText := ""
 	downloadedPath := outputPath
@@ -344,7 +394,7 @@ func (d *Downloader) finishProgress(candidate miniprogram.Candidate, name, outpu
 		}
 	}
 	total := candidate.ContentLength
-	if err == nil && candidate.Kind != "m3u8" {
+	if err == nil && finalKind != "m3u8" {
 		total = fileSize(outputPath)
 	}
 	d.emit(Progress{
@@ -1084,18 +1134,55 @@ func availableOutputPath(bucket, name string, candidate miniprogram.Candidate, a
 	}
 }
 
-// correctLiveSuffix 把只有下载时才确认为直播的产物改成 .flv 后缀；目标同样避开成品与遗留 .part。
-func correctLiveSuffix(bucket, targetPath string, candidate miniprogram.Candidate) (string, string) {
-	if strings.EqualFold(filepath.Ext(targetPath), ".flv") {
-		return targetPath, filepath.Base(targetPath)
+// finalizeOutputPath 按下载阶段确认的实际类型把已提交的成品移动到最终类型目录，
+// 并按默认命名规则修正类型前缀与直播所需的 .flv 后缀。
+// 只处理已存在的成品：普通下载被停止或失败时成品尚未提交，.part 仍留在初始目录以保持续传语义。
+// 跨目录调整先选一个不冲突的名称，绝不覆盖目标目录里已有的成品或同候选未保存录制。
+func (d *Downloader) finalizeOutputPath(candidate miniprogram.Candidate, preferredName, targetAppID, targetPath, currentName, initialKind, finalKind string) (string, string) {
+	if !fileExists(targetPath) {
+		return targetPath, currentName
 	}
+	initialBucket := filepath.Dir(targetPath)
 	base := filepath.Base(targetPath)
-	correctedName := strings.TrimSuffix(base, filepath.Ext(base)) + ".flv"
-	_, correctedPath := availableOutputPath(bucket, correctedName, candidate, true)
-	if err := os.Rename(targetPath, correctedPath); err != nil {
-		return targetPath, base
+	finalBucket := initialBucket
+	if finalKind != initialKind {
+		adjusted := candidate
+		adjusted.Live = finalKind == "live"
+		finalBucket = filepath.Join(d.Dir, miniprogram.MediaSubdir(adjusted, targetAppID))
 	}
-	return correctedPath, filepath.Base(correctedPath)
+	name := base
+	if finalKind != initialKind && strings.TrimSpace(preferredName) == "" {
+		name = renameTypePrefix(name, initialKind, finalKind)
+	}
+	if finalKind == "live" && !strings.EqualFold(filepath.Ext(name), ".flv") {
+		name = strings.TrimSuffix(name, filepath.Ext(name)) + ".flv"
+	}
+	if finalBucket == initialBucket && name == base {
+		return targetPath, currentName
+	}
+	if finalBucket != initialBucket {
+		if err := os.MkdirAll(finalBucket, 0o755); err != nil {
+			return targetPath, currentName
+		}
+	}
+	finalName, finalPath := availableOutputPath(finalBucket, name, candidate, true)
+	if finalPath == targetPath {
+		return targetPath, currentName
+	}
+	if err := os.Rename(targetPath, finalPath); err != nil {
+		// 移动失败时保留已下载内容在初始目录，避免因分类整理丢失成品。
+		return targetPath, currentName
+	}
+	return finalPath, finalName
+}
+
+// renameTypePrefix 把默认文件名开头的类型前缀从初始类型改为最终类型（直播_ ↔ 视频_）。
+func renameTypePrefix(name, initialKind, finalKind string) string {
+	oldPrefix := miniprogram.TypeDir(initialKind) + "_"
+	if !strings.HasPrefix(name, oldPrefix) {
+		return name
+	}
+	return miniprogram.TypeDir(finalKind) + "_" + strings.TrimPrefix(name, oldPrefix)
 }
 
 func (p partialDownload) validator() string {
@@ -1328,7 +1415,7 @@ func commitPartFile(partPath, outputPath string) error {
 	return os.Rename(partPath, outputPath)
 }
 
-func (d *Downloader) appendHistory(candidate miniprogram.Candidate, outputPath, targetAppID string) error {
+func (d *Downloader) appendHistory(candidate miniprogram.Candidate, outputPath, targetAppID, kind string) error {
 	sourceDomain := ""
 	if parsed, err := url.Parse(candidate.URL); err == nil {
 		sourceDomain = parsed.Hostname()
@@ -1341,7 +1428,7 @@ func (d *Downloader) appendHistory(candidate miniprogram.Candidate, outputPath, 
 		Path:         outputPath,
 		AppID:        archiveAppID,
 		SourceAppID:  candidate.SourceAppID,
-		Kind:         miniprogram.MediaKind(candidate),
+		Kind:         kind,
 		Attribution:  candidate.Attribution,
 		SourceDomain: sourceDomain,
 		Size:         fileSize(outputPath),

@@ -11,17 +11,21 @@ import (
 
 // 下载产物的一级分类目录，与界面分类保持一致。
 const (
-	DirImages = "图片"
-	DirVideos = "视频"
-	DirAudios = "音频"
-	DirM3U8   = "m3u8"
-	DirOther  = "其他"
+	DirImages   = "图片"
+	DirVideos   = "视频"
+	DirAudios   = "音频"
+	DirLive     = "直播"
+	DirSegments = "分段媒体"
+	DirOther    = "其他"
 )
 
-// MediaKind 把候选归一到五个下载分类对应的类型：
-// image/video/audio 原样保留，kind 或 URL 扩展名表明是 m3u8 时归为 m3u8，
-// file 及其他未知类型统一归为 file（目录 其他）。
+// MediaKind 把候选归一到六个下载分类对应的类型：
+// 直播标记（Live）优先归为 live；否则 kind 或 URL 扩展名表明是 m3u8 时归为 m3u8；
+// image/video/audio 原样保留，file 及其他未知类型统一归为 file（目录 其他）。
 func MediaKind(c Candidate) string {
+	if c.Live {
+		return "live"
+	}
 	if u, err := url.Parse(c.URL); err == nil && strings.EqualFold(path.Ext(u.Path), ".m3u8") {
 		return "m3u8"
 	}
@@ -33,6 +37,16 @@ func MediaKind(c Candidate) string {
 	}
 }
 
+// IsM3U8 判断候选是否应由 m3u8 合并流程处理。
+// 直播标记只针对 HTTP-FLV 录制，不能因为候选被标记为直播就把 m3u8 地址当直链下载。
+func IsM3U8(c Candidate) bool {
+	if c.Kind == "m3u8" {
+		return true
+	}
+	kind, _ := Classify("", c.URL)
+	return kind == "m3u8"
+}
+
 // TypeDir 返回媒体类型对应的下载分类目录名。
 func TypeDir(kind string) string {
 	switch kind {
@@ -42,8 +56,10 @@ func TypeDir(kind string) string {
 		return DirVideos
 	case "audio":
 		return DirAudios
+	case "live":
+		return DirLive
 	case "m3u8":
-		return DirM3U8
+		return DirSegments
 	default:
 		return DirOther
 	}
@@ -100,6 +116,7 @@ func NormalizeTargetAppID(raw string) (string, error) {
 
 // MediaSubdir 返回候选的下载子目录：<归属 AppID>/<资源类型>。
 // 已确认候选使用自身 AppID；来源未确认候选使用下载时的当前目标 AppID。
+// 疑似直播按 Live 先归入 直播；实际响应确认是有限文件后由下载器移到 视频。
 func MediaSubdir(c Candidate, targetAppID string) string {
 	appID := strings.TrimSpace(c.AppID)
 	if appID == "" {

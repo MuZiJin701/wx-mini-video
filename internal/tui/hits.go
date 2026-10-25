@@ -5,26 +5,43 @@ type hitAction int
 
 const (
 	hitNone hitAction = iota
-	hitAppearanceSystem
-	hitAppearanceLight
-	hitAppearanceDark
-	hitStart
-	hitDiscover
-	hitTargetSwitch
-	hitTab
-	hitRow
-	hitQuit
+
+	// 品牌区外观下拉
+	hitAppearanceControl
+	hitAppearanceOption // index 为外观选项下标
+
+	// 目标选择区
+	hitTargetInput
+	hitTargetProgram // index 为发现列表下标
+	hitTargetConfirm
+	hitTargetCancel
+	hitTargetRetry
+
+	// 媒体视图
+	hitTab // index 为分类下标
+	hitRow // index 为可见候选下标
+
+	hitActionDownload
+	hitActionStop
+	hitActionDetails
+	hitActionLogs
+	hitActionRefresh
+	hitActionOpenDir
+	hitActionClear
+	hitActionTargetSwitch
+	hitActionQuit
 	hitGitHub
-	hitOpenDir
-	hitRetryProxy
-	hitOverlayProgram
-	hitOverlayConfirm
-	hitOverlayCancel
+
 	hitDrawerClose
 	hitLogClose
+
+	// 模态覆盖层与恢复失败界面
 	hitQuitConfirm
+	hitOverlayCancel
 	hitLegacyClean
 	hitLegacyKeep
+	hitStopRetry
+	hitStopForce
 )
 
 type rect struct {

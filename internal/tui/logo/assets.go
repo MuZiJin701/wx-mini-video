@@ -9,8 +9,9 @@ import (
 	"sync"
 )
 
-// logoPNG is embedded from the generated brand asset. It stays inside the
-// binary and is not copied into release directories.
+// logoPNG is embedded from the shared brand asset (reused from the reference
+// project). It stays inside the binary and is not copied into release
+// directories.
 //
 //go:embed assets/logo.png
 var logoPNG []byte

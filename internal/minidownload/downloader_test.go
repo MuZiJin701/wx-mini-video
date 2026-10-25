@@ -624,6 +624,9 @@ func TestDownloadM3U8FallsBackToRemotePlaylistWithSessionHeaders(t *testing.T) {
 	if err != nil || !strings.Contains(string(cached), "#EXTM3U") {
 		t.Fatalf("remote fallback playlist = %q, %v; want cached playlist", cached, err)
 	}
+	if got, want := filepath.Base(filepath.Dir(output)), miniprogram.DirSegments; got != want {
+		t.Fatalf("playlist cache dir = %q, want %q", got, want)
+	}
 }
 
 func TestDownloadM3U8FailsWithoutFFmpeg(t *testing.T) {
@@ -778,7 +781,7 @@ func TestDownloadUnattributedCandidateUsesCurrentTargetAndCopyToken(t *testing.T
 	}
 }
 
-func TestDownloadM3U8NameUsesMP4AndM3U8Bucket(t *testing.T) {
+func TestDownloadM3U8NameUsesMP4AndSegmentsBucket(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte("#EXTM3U\n#EXT-X-ENDLIST\n"))
 	}))
@@ -802,16 +805,16 @@ func TestDownloadM3U8NameUsesMP4AndM3U8Bucket(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "未找到 ffmpeg") {
 		t.Fatalf("Download() error = %v, want ffmpeg missing error", err)
 	}
-	if got, want := filepath.Base(output), "m3u8_20261025-130733_5a4b3c2d.mp4"; got != want {
+	if got, want := filepath.Base(output), "分段媒体_20261025-130733_5a4b3c2d.mp4"; got != want {
 		t.Fatalf("output filename = %q, want %q", got, want)
 	}
-	if got, want := filepath.Dir(output), filepath.Join(d.Dir, "wx789", miniprogram.DirM3U8); got != want {
+	if got, want := filepath.Dir(output), filepath.Join(d.Dir, "wx789", miniprogram.DirSegments); got != want {
 		t.Fatalf("output dir = %q, want %q", got, want)
 	}
 }
 
 func testBucket(d *Downloader) string {
-	return filepath.Join(d.Dir, "wx123", miniprogram.DirM3U8)
+	return filepath.Join(d.Dir, "wx123", miniprogram.DirSegments)
 }
 
 func stubDownloadClock(t *testing.T, at time.Time) {
@@ -885,6 +888,12 @@ func TestDownloadRecordsLiveFLVUntilStopped(t *testing.T) {
 	if filepath.Ext(got.output) != ".flv" {
 		t.Fatalf("recording output = %q, want .flv suffix", got.output)
 	}
+	if wantDir := filepath.Join(d.Dir, "_unknown", miniprogram.DirLive); filepath.Dir(got.output) != wantDir {
+		t.Fatalf("recording dir = %q, want %q", filepath.Dir(got.output), wantDir)
+	}
+	if gotName := filepath.Base(got.output); !strings.HasPrefix(gotName, "直播_") {
+		t.Fatalf("recording name = %q, want 直播_ prefix", gotName)
+	}
 	data, err := os.ReadFile(got.output)
 	if err != nil {
 		t.Fatalf("recording output missing: %v", err)
@@ -894,6 +903,17 @@ func TestDownloadRecordsLiveFLVUntilStopped(t *testing.T) {
 	}
 	if fileExists(partialPath(got.output, candidate)) {
 		t.Fatal("recording .part file should be renamed after stopping")
+	}
+	history, readErr := os.ReadFile(filepath.Join(d.Dir, "history.jsonl"))
+	if readErr != nil {
+		t.Fatalf("history missing for stopped recording: %v", readErr)
+	}
+	var record DownloadHistory
+	if err := json.Unmarshal([]byte(strings.TrimSpace(string(history))), &record); err != nil {
+		t.Fatalf("history record invalid: %v", err)
+	}
+	if record.Path != got.output || record.Kind != "live" {
+		t.Fatalf("history record = %#v, want live recording at %q", record, got.output)
 	}
 }
 
@@ -908,6 +928,7 @@ func TestDownloadFiniteFLVIgnoresLiveHint(t *testing.T) {
 
 	var progress []Progress
 	d := New(t.TempDir())
+	stubDownloadClock(t, time.Date(2026, 10, 25, 13, 0, 0, 0, time.Local))
 	d.OnProgress = func(p Progress) { progress = append(progress, p) }
 	candidate := miniprogram.Candidate{
 		ID:     "finite-flv",
@@ -924,9 +945,34 @@ func TestDownloadFiniteFLVIgnoresLiveHint(t *testing.T) {
 	if err != nil || len(got) != len(body) {
 		t.Fatalf("finite flv output = %d bytes (err %v), want %d", len(got), err, len(body))
 	}
+	// 疑似直播按 直播/ 选名，实际响应为有限文件后移动到 视频/，默认前缀同步改为 视频_。
+	if wantDir := filepath.Join(d.Dir, "_unknown", miniprogram.DirVideos); filepath.Dir(output) != wantDir {
+		t.Fatalf("finite flv dir = %q, want %q", filepath.Dir(output), wantDir)
+	}
+	if gotName, want := filepath.Base(output), "视频_20261025-130000_finite-f.flv"; gotName != want {
+		t.Fatalf("finite flv name = %q, want %q", gotName, want)
+	}
+	if stale := filepath.Join(d.Dir, "_unknown", miniprogram.DirLive, "直播_20261025-130000_finite-f.flv"); fileExists(stale) {
+		t.Fatalf("finite flv left a stale file at %q", stale)
+	}
+
 	last := progress[len(progress)-1]
 	if last.Status != "done" || last.Live {
 		t.Fatalf("last progress = %#v, want done without live flag", last)
+	}
+	if last.Path != output {
+		t.Fatalf("progress path = %q, want final path %q", last.Path, output)
+	}
+	history, readErr := os.ReadFile(filepath.Join(d.Dir, "history.jsonl"))
+	if readErr != nil {
+		t.Fatalf("history missing: %v", readErr)
+	}
+	var record DownloadHistory
+	if err := json.Unmarshal([]byte(strings.TrimSpace(string(history))), &record); err != nil {
+		t.Fatalf("history record invalid: %v", err)
+	}
+	if record.Path != output || record.Kind != "video" || record.Size != int64(len(body)) {
+		t.Fatalf("history record = %#v, want video at final path %q", record, output)
 	}
 }
 
@@ -937,10 +983,14 @@ func TestOutputNameKeepsSingleFLVSuffix(t *testing.T) {
 	}
 	name := OutputName(candidate, "")
 	if filepath.Ext(name) != ".flv" || strings.Count(name, ".flv") != 1 {
-		t.Fatalf("default flv name = %q, want exactly one .flv suffix", name)
+		t.Fatalf("default live flv name = %q, want exactly one .flv suffix", name)
 	}
-	if !strings.HasPrefix(name, "视频_") {
-		t.Fatalf("default flv name = %q, want video type prefix", name)
+	if !strings.HasPrefix(name, "直播_") {
+		t.Fatalf("default live flv name = %q, want live type prefix", name)
+	}
+	finite := miniprogram.Candidate{ID: "a187d7aeff6f", Kind: "video", Suffix: ".flv"}
+	if got := OutputName(finite, ""); !strings.HasPrefix(got, "视频_") || filepath.Ext(got) != ".flv" {
+		t.Fatalf("default finite flv name = %q, want video prefix and .flv suffix", got)
 	}
 }
 
@@ -965,6 +1015,9 @@ func TestDownloadLiveInterruptedKeepsRecording(t *testing.T) {
 	if !errors.Is(err, ErrRecordingInterrupted) {
 		t.Fatalf("error = %v, want ErrRecordingInterrupted", err)
 	}
+	if wantDir := filepath.Join(d.Dir, "wx123", miniprogram.DirLive); filepath.Dir(output) != wantDir {
+		t.Fatalf("interrupted recording dir = %q, want %q", filepath.Dir(output), wantDir)
+	}
 	data, readErr := os.ReadFile(output)
 	if readErr != nil || len(data) == 0 || string(data[:3]) != "FLV" {
 		t.Fatalf("interrupted recording not saved: %v, %d bytes", readErr, len(data))
@@ -981,8 +1034,8 @@ func TestDownloadLiveInterruptedKeepsRecording(t *testing.T) {
 	if err := json.Unmarshal([]byte(lines[len(lines)-1]), &record); err != nil {
 		t.Fatalf("history record invalid: %v", err)
 	}
-	if record.Path != output || record.Size == 0 {
-		t.Fatalf("history record = %#v, want saved interrupted recording", record)
+	if record.Path != output || record.Size == 0 || record.Kind != "live" {
+		t.Fatalf("history record = %#v, want saved live interrupted recording", record)
 	}
 }
 
@@ -1008,8 +1061,8 @@ func TestDownloadStopReportsSaveFailure(t *testing.T) {
 	d := New(t.TempDir())
 	stubDownloadClock(t, time.Date(2026, 10, 25, 13, 0, 0, 0, time.Local))
 	candidate := miniprogram.Candidate{ID: "stop-save-fail", AppID: "wx123", URL: ts.URL + "/live/stop_save_fail.flv", Kind: "video", Suffix: ".flv", Live: true}
-	// 用非空目录预占最终路径，使提交重命名必然失败。
-	blocked := filepath.Join(d.Dir, "wx123", miniprogram.DirVideos, OutputName(candidate, ""))
+	// 用非空目录预占最终路径，使提交重命名必然失败。疑似直播先按 直播/ 选名。
+	blocked := filepath.Join(d.Dir, "wx123", miniprogram.DirLive, OutputName(candidate, ""))
 	if err := os.MkdirAll(filepath.Join(blocked, "inner"), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -1176,13 +1229,16 @@ func TestLiveDownloadLateDetectionUsesFLVSuffix(t *testing.T) {
 	frame := append([]byte("FLV\x01\x05\x00\x00\x00\x09"), bytes.Repeat([]byte("NEW"), 64)...)
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "video/x-flv")
-		flusher := w.(http.Flusher)
+		flusher, _ := w.(http.Flusher)
 		_, _ = w.Write(frame)
-		flusher.Flush()
+		if flusher != nil {
+			flusher.Flush()
+		}
 	}))
 	defer ts.Close()
 
 	d := New(t.TempDir())
+	stubDownloadClock(t, time.Date(2026, 10, 25, 13, 0, 0, 0, time.Local))
 	candidate := miniprogram.Candidate{ID: "late-live", URL: ts.URL + "/media/live-stream", Kind: "video", Suffix: ".mp4"}
 	output, err := d.Download(context.Background(), candidate, "", "")
 	if err != nil {
@@ -1191,12 +1247,30 @@ func TestLiveDownloadLateDetectionUsesFLVSuffix(t *testing.T) {
 	if filepath.Ext(output) != ".flv" {
 		t.Fatalf("output = %q, want .flv suffix for confirmed live FLV", output)
 	}
-	if fileExists(strings.TrimSuffix(output, ".flv") + ".mp4") {
-		t.Fatalf("stale .mp4 file left behind for live FLV: %q", output)
+	// 初始按 视频/ 选名，下载时确认直播后移动到 直播/，默认前缀同步改为 直播_。
+	if wantDir := filepath.Join(d.Dir, "_unknown", miniprogram.DirLive); filepath.Dir(output) != wantDir {
+		t.Fatalf("late live dir = %q, want %q", filepath.Dir(output), wantDir)
+	}
+	if gotName, want := filepath.Base(output), "直播_20261025-130000_late-liv.flv"; gotName != want {
+		t.Fatalf("late live name = %q, want %q", gotName, want)
+	}
+	if stale := filepath.Join(d.Dir, "_unknown", miniprogram.DirVideos, "视频_20261025-130000_late-liv.mp4"); fileExists(stale) {
+		t.Fatalf("stale .mp4 file left behind for live FLV: %q", stale)
 	}
 	data, err := os.ReadFile(output)
 	if err != nil || !bytes.HasPrefix(data, []byte("FLV")) {
 		t.Fatalf("output is not FLV: err=%v", err)
+	}
+	history, readErr := os.ReadFile(filepath.Join(d.Dir, "history.jsonl"))
+	if readErr != nil {
+		t.Fatalf("history missing for late-detected live: %v", readErr)
+	}
+	var record DownloadHistory
+	if err := json.Unmarshal([]byte(strings.TrimSpace(string(history))), &record); err != nil {
+		t.Fatalf("history record invalid: %v", err)
+	}
+	if record.Path != output || record.Kind != "live" {
+		t.Fatalf("history record = %#v, want live at %q", record, output)
 	}
 }
 
@@ -1215,7 +1289,7 @@ func TestRetryAvoidsFinalAndPartialNameCollisions(t *testing.T) {
 	d := New(t.TempDir())
 	stubDownloadClock(t, time.Date(2026, 10, 25, 13, 0, 0, 0, time.Local))
 	candidate := miniprogram.Candidate{ID: "collision-retry", URL: ts.URL + "/live/stream", Kind: "video", Suffix: ".flv", Live: true}
-	bucket := filepath.Join(d.Dir, "_unknown", miniprogram.DirVideos)
+	bucket := filepath.Join(d.Dir, "_unknown", miniprogram.DirLive)
 	if err := os.MkdirAll(bucket, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -1255,5 +1329,281 @@ func TestRetryAvoidsFinalAndPartialNameCollisions(t *testing.T) {
 	finalData, err := os.ReadFile(output)
 	if err != nil || !bytes.Contains(finalData, []byte("NEW")) {
 		t.Fatalf("new recording content invalid: err=%v", err)
+	}
+}
+
+func TestDownloadUnknownFileUsesOtherDir(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/octet-stream")
+		_, _ = w.Write([]byte("unknown-payload"))
+	}))
+	defer ts.Close()
+
+	d := New(t.TempDir())
+	stubDownloadClock(t, time.Date(2026, 10, 25, 13, 0, 0, 0, time.Local))
+	candidate := miniprogram.Candidate{ID: "file-candidate", Kind: "file", Suffix: ".bin", URL: ts.URL + "/download/asset"}
+	output, err := d.Download(context.Background(), candidate, "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := filepath.Base(output), "其他_20261025-130000_file-can.bin"; got != want {
+		t.Fatalf("unknown file name = %q, want %q", got, want)
+	}
+	if got, want := filepath.Dir(output), filepath.Join(d.Dir, "_unknown", miniprogram.DirOther); got != want {
+		t.Fatalf("unknown file dir = %q, want %q", got, want)
+	}
+	history, readErr := os.ReadFile(filepath.Join(d.Dir, "history.jsonl"))
+	if readErr != nil {
+		t.Fatalf("history missing: %v", readErr)
+	}
+	var record DownloadHistory
+	if err := json.Unmarshal([]byte(strings.TrimSpace(string(history))), &record); err != nil {
+		t.Fatalf("history record invalid: %v", err)
+	}
+	if record.Path != output || record.Kind != "file" {
+		t.Fatalf("history record = %#v, want file kind at %q", record, output)
+	}
+}
+
+// TestDownloadSuspectedLiveMoveDoesNotOverwriteTargets 覆盖跨目录调整的重名保护：
+// 疑似直播按 直播/ 选名，确认是有限文件后要移到 视频/；目标目录里已有成品和
+// 未保存录制时，最终文件必须换名落位，不能覆盖任何既有内容。
+func TestDownloadSuspectedLiveMoveDoesNotOverwriteTargets(t *testing.T) {
+	body := append([]byte("FLV\x01\x05\x00\x00\x00\x09"), bytes.Repeat([]byte("NEW"), 64)...)
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "video/x-flv")
+		w.Header().Set("Content-Length", strconv.Itoa(len(body)))
+		_, _ = w.Write(body)
+	}))
+	defer ts.Close()
+
+	d := New(t.TempDir())
+	stubDownloadClock(t, time.Date(2026, 10, 25, 13, 0, 0, 0, time.Local))
+	candidate := miniprogram.Candidate{ID: "collide123456", URL: ts.URL + "/clip.flv", Kind: "video", Suffix: ".flv", Live: true}
+	bucket := filepath.Join(d.Dir, "_unknown", miniprogram.DirVideos)
+	if err := os.MkdirAll(bucket, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	existingPath := filepath.Join(bucket, "视频_20261025-130000_collide1.flv")
+	if err := os.WriteFile(existingPath, []byte("OLD-FINAL"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	unsavedPart := filepath.Join(bucket, "视频_20261025-130000_collide1_2.flv"+partialSuffix(candidate))
+	unsavedData := append([]byte("FLV\x01\x05\x00\x00\x00\x09"), []byte("OLD-UNSAVED")...)
+	if err := os.WriteFile(unsavedPart, unsavedData, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	output, err := d.Download(context.Background(), candidate, "", "")
+	if err != nil {
+		t.Fatalf("download failed: %v", err)
+	}
+	if got, want := filepath.Base(output), "视频_20261025-130000_collide1_3.flv"; got != want {
+		t.Fatalf("moved file name = %q, want %q", got, want)
+	}
+	if saved, readErr := os.ReadFile(existingPath); readErr != nil || string(saved) != "OLD-FINAL" {
+		t.Fatalf("existing final file changed: err=%v data=%q", readErr, saved)
+	}
+	if kept, readErr := os.ReadFile(unsavedPart); readErr != nil || !bytes.Equal(kept, unsavedData) {
+		t.Fatalf("unsaved recording changed: err=%v data=%q", readErr, kept)
+	}
+	moved, readErr := os.ReadFile(output)
+	if readErr != nil || !bytes.Equal(moved, body) {
+		t.Fatalf("moved finite flv content invalid: err=%v", readErr)
+	}
+	history, readErr := os.ReadFile(filepath.Join(d.Dir, "history.jsonl"))
+	if readErr != nil {
+		t.Fatalf("history missing: %v", readErr)
+	}
+	var record DownloadHistory
+	if err := json.Unmarshal([]byte(strings.TrimSpace(string(history))), &record); err != nil {
+		t.Fatalf("history record invalid: %v", err)
+	}
+	if record.Path != output || record.Kind != "video" {
+		t.Fatalf("history record = %#v, want video at %q", record, output)
+	}
+}
+
+// TestDownloadM3U8KeepsArtifactsInSegmentsDir 确认 m3u8 合并产物、播放列表缓存与
+// .segments 分片目录都位于 <AppID>/分段媒体/ 下。
+func TestDownloadM3U8KeepsArtifactsInSegmentsDir(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("segment-bytes"))
+	}))
+	defer ts.Close()
+
+	d := New(t.TempDir())
+	d.FFmpegPath = fakeCopyFFmpeg(t, d.Dir)
+	d.DownloadMode = "prefetch"
+	d.KeepSegments = true
+	stubDownloadClock(t, time.Date(2026, 10, 25, 13, 0, 0, 0, time.Local))
+	playlist := filepath.Join(d.Dir, "captured.m3u8")
+	body := "#EXTM3U\n#EXTINF:1.000,\n" + ts.URL + "/seg1.ts\n#EXT-X-ENDLIST\n"
+	if err := os.WriteFile(playlist, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	candidate := miniprogram.Candidate{ID: "seg-bucket", AppID: "wx789", Kind: "m3u8", URL: ts.URL + "/playlist.m3u8", CachedPath: playlist}
+	output, err := d.Download(context.Background(), candidate, "", "wx789")
+	if err != nil {
+		t.Fatalf("m3u8 download failed: %v", err)
+	}
+	wantDir := filepath.Join(d.Dir, "wx789", miniprogram.DirSegments)
+	if filepath.Dir(output) != wantDir {
+		t.Fatalf("m3u8 output dir = %q, want %q", filepath.Dir(output), wantDir)
+	}
+	if !strings.HasPrefix(filepath.Base(output), miniprogram.DirSegments+"_") {
+		t.Fatalf("m3u8 output name = %q, want 分段媒体_ prefix", filepath.Base(output))
+	}
+	segmentsDir := filepath.Join(wantDir, ".segments", candidate.ID)
+	entries, readErr := os.ReadDir(segmentsDir)
+	if readErr != nil || len(entries) != 1 {
+		t.Fatalf(".segments dir = %q, entries %v, err %v", segmentsDir, entries, readErr)
+	}
+	if _, statErr := os.Stat(filepath.Join(segmentsDir, entries[0].Name(), "seg_000001.ts")); statErr != nil {
+		t.Fatalf("download segment missing under %q: %v", segmentsDir, statErr)
+	}
+	if _, statErr := os.Stat(filepath.Join(segmentsDir, entries[0].Name(), "playlist.m3u8")); statErr != nil {
+		t.Fatalf("localized playlist missing under %q: %v", segmentsDir, statErr)
+	}
+	if _, statErr := os.Stat(filepath.Join(d.Dir, ".segments")); !os.IsNotExist(statErr) {
+		t.Fatal(".segments must not be created in the download root")
+	}
+	history, readErr := os.ReadFile(filepath.Join(d.Dir, "history.jsonl"))
+	if readErr != nil {
+		t.Fatalf("history missing: %v", readErr)
+	}
+	var record DownloadHistory
+	if err := json.Unmarshal([]byte(strings.TrimSpace(string(history))), &record); err != nil {
+		t.Fatalf("history record invalid: %v", err)
+	}
+	if record.Path != output || record.Kind != "m3u8" {
+		t.Fatalf("history record = %#v, want m3u8 at %q", record, output)
+	}
+}
+
+// fakeCopyFFmpeg 生成一个把 -i 输入原样复制到输出文件的假 ffmpeg，
+// 用于在不依赖真实 ffmpeg 的情况下验证 m3u8 落盘位置。
+func fakeCopyFFmpeg(t *testing.T, dir string) string {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		path := filepath.Join(dir, "copy-ffmpeg.cmd")
+		script := "@echo off\r\n" +
+			"setlocal enabledelayedexpansion\r\n" +
+			"set \"input=\"\r\n" +
+			"set \"output=\"\r\n" +
+			"set \"prev=\"\r\n" +
+			"for %%a in (%*) do (\r\n" +
+			"  if \"!prev!\"==\"-i\" set \"input=%%a\"\r\n" +
+			"  set \"prev=%%a\"\r\n" +
+			"  set \"output=%%a\"\r\n" +
+			")\r\n" +
+			"copy /y \"!input!\" \"!output!\" >nul\r\n"
+		if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		return path
+	}
+	path := filepath.Join(dir, "copy-ffmpeg")
+	script := "#!/bin/sh\nprev=\"\"\ninput=\"\"\noutput=\"\"\nfor arg in \"$@\"; do\n" +
+		"  if [ \"$prev\" = \"-i\" ]; then input=\"$arg\"; fi\n" +
+		"  prev=\"$arg\"\n  output=\"$arg\"\ndone\ncp \"$input\" \"$output\"\n"
+	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+// TestDownloadReportsLiveResolution 覆盖直播状态回写回调：下载前已知直播立即回调，
+// 实际响应修正标记时再回调一次；状态未变化时不重复回调。
+func TestDownloadReportsLiveResolution(t *testing.T) {
+	frame := append([]byte("FLV\x01\x05\x00\x00\x00\x09"), bytes.Repeat([]byte("X"), 32)...)
+	stream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "video/x-flv")
+		flusher, _ := w.(http.Flusher)
+		_, _ = w.Write(frame)
+		if flusher != nil {
+			flusher.Flush()
+		}
+	}))
+	defer stream.Close()
+	finite := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "video/x-flv")
+		w.Header().Set("Content-Length", strconv.Itoa(len(frame)))
+		_, _ = w.Write(frame)
+	}))
+	defer finite.Close()
+
+	cases := []struct {
+		name      string
+		candidate miniprogram.Candidate
+		want      []bool
+	}{
+		{
+			name:      "suspected live confirmed finite",
+			candidate: miniprogram.Candidate{ID: "cb-finite", URL: finite.URL + "/clip.flv", Kind: "video", Suffix: ".flv", Live: true},
+			want:      []bool{true, false},
+		},
+		{
+			name:      "finite candidate detected live",
+			candidate: miniprogram.Candidate{ID: "cb-late", URL: stream.URL + "/media/live-stream", Kind: "video", Suffix: ".mp4"},
+			want:      []bool{true},
+		},
+		{
+			name:      "known live stays live",
+			candidate: miniprogram.Candidate{ID: "cb-live", URL: stream.URL + "/live/7559_esd.flv", Kind: "video", Suffix: ".flv", Live: true},
+			want:      []bool{true},
+		},
+	}
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			d := New(t.TempDir())
+			var mu sync.Mutex
+			var got []bool
+			d.OnLiveResolved = func(candidateID string, live bool) {
+				if candidateID != tt.candidate.ID {
+					t.Errorf("callback candidateID = %q, want %q", candidateID, tt.candidate.ID)
+				}
+				mu.Lock()
+				got = append(got, live)
+				mu.Unlock()
+			}
+			if _, err := d.Download(context.Background(), tt.candidate, "", ""); err != nil {
+				t.Fatalf("download failed: %v", err)
+			}
+			mu.Lock()
+			defer mu.Unlock()
+			if len(got) != len(tt.want) {
+				t.Fatalf("live callbacks = %v, want %v", got, tt.want)
+			}
+			for i := range tt.want {
+				if got[i] != tt.want[i] {
+					t.Fatalf("live callbacks = %v, want %v", got, tt.want)
+				}
+			}
+		})
+	}
+}
+
+// TestDownloadCancelBeforeResponseKeepsLiveHint 确认请求未拿到响应就被取消时不会回写“非直播”，
+// 避免把还没确认的疑似直播错误改成有限视频。
+func TestDownloadCancelBeforeResponseKeepsLiveHint(t *testing.T) {
+	d := New(t.TempDir())
+	var mu sync.Mutex
+	var got []bool
+	d.OnLiveResolved = func(candidateID string, live bool) {
+		mu.Lock()
+		got = append(got, live)
+		mu.Unlock()
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err := d.Download(ctx, miniprogram.Candidate{ID: "cancel-live", URL: "https://example.com/live/7559_esd.flv", Kind: "video", Suffix: ".flv", Live: true}, "", "")
+	if err == nil {
+		t.Fatal("canceled download should report an error")
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(got) != 1 || !got[0] {
+		t.Fatalf("live callbacks = %v, want only the pre-download live hint", got)
 	}
 }

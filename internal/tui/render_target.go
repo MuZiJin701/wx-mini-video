@@ -2,139 +2,236 @@ package tui
 
 import (
 	"fmt"
-	"strings"
 
 	"wx_channel/internal/tui/ui"
 	"wx_channel/pkg/certificate"
 )
 
-// render_target.go 负责目标选择卡与目标选择覆盖层。
+// render_target.go 负责统一目标选择区（输入 + 发现列表）与目标条。
 
-func (m model) renderTargetCard(startY, height int, metrics ui.Metrics) []string {
-	padX := metrics.BrandPadX
-	left := padX + metrics.ContentLeft
-	innerWidth := metrics.ContentWidth - 2
-	if innerWidth < 24 {
-		innerWidth = 24
+// renderTargetArea 渲染展开状态的目标选择区：AppID 输入、启动/发现状态与持续更新的
+// 已发现列表同时存在，确认后由调用方收起。
+func (m model) renderTargetArea(startY, height int, metrics ui.Metrics) []string {
+	left := metrics.BrandPadX + metrics.ContentLeft
+	width := metrics.ContentWidth
+	if width < 24 {
+		width = 24
 	}
-	inputWidth := innerWidth
-	if inputWidth > 60 {
-		inputWidth = 60
-	}
-	inputInner := inputWidth - 2
+	compact := metrics.Short || metrics.Compact
 
-	startLabel := "开始嗅探 · Enter"
-	discoverLabel := "自动发现 · Ctrl+D"
-	startWidth := buttonWidth(startLabel, 18)
-	discoverWidth := buttonWidth(discoverLabel, 20)
+	heading := m.st.accent.Render("目标小程序")
+	hint := m.st.muted.Render(ui.Truncate("输入 AppID，或从下方已发现列表选择；启动即自动发现，发现不会自动选定目标。", width))
+	label := m.st.entryLabel.Render("AppID")
+	inputWidth := width
+	if inputWidth > 64 {
+		inputWidth = 64
+	}
+	if inputWidth < 24 {
+		inputWidth = 24
+	}
+	inputLines := m.inputFieldLines(m.appIDInput, m.inputCursor, inputWidth, m.focus == focusInput)
+	status := m.targetStatusLine(width)
+	listLabel := m.st.muted.Render(fmt.Sprintf("已发现的小程序（%d）", len(m.programs)))
+	tail := m.st.muted.Render(ui.Truncate("Tab/Shift+Tab 切换焦点 · Enter 确认 · Esc 取消/退出", width))
 
-	block := make([]string, 0, 14)
-	block = append(block, m.st.title.Render("目标小程序"))
-	block = append(block, m.st.muted.Render(ui.Truncate("输入目标 AppID，或按 Ctrl+D 自动发现小程序。", innerWidth)))
-	block = append(block, "")
-	block = append(block, m.st.entryLabel.Render("AppID"))
-	inputText := m.appIDInput + "▌"
-	if m.appIDInput == "" {
-		inputText = "▌"
+	buttons := m.targetActionButtons()
+	buttonRows, buttonHits := m.renderButtons(buttons, left, width, compact)
+
+	fixed := 1 + 1 + len(inputLines) + 1 + len(buttonRows) // 标题、标签、输入框、状态、按钮
+	showTail := height >= fixed+1
+	if showTail {
+		fixed++
 	}
-	inputRendered := m.st.inputFocused.Width(inputInner).Render(ui.Truncate(inputText, inputInner))
-	block = append(block, strings.Split(inputRendered, "\n")...)
-	switch {
-	case m.inputErr != "":
-		block = append(block, m.st.errStyle.Render(ui.Truncate(m.inputErr, innerWidth)))
-	case m.startErr != nil:
-		block = append(block, m.st.errStyle.Render(ui.Truncate("代理启动失败: "+m.startErr.Error()+"；按 r 重试", innerWidth)))
-	case m.starting:
-		block = append(block, m.st.muted.Render("正在启动代理..."))
-	default:
-		block = append(block, "")
+	showHint := height >= fixed+2
+	if showHint {
+		fixed++
 	}
-	block = append(block, "")
-	startBtn := m.buttonLines(startLabel, buttonPrimary, true, m.isHover(hitStart, 0), startWidth)
-	discoverBtn := m.buttonLines(discoverLabel, buttonSecondary, false, m.isHover(hitDiscover, 0), discoverWidth)
-	buttonRow := len(block)
-	block = append(block, joinButtons(startBtn, discoverBtn)...)
-	block = append(block, "")
-	hint := "提示：AppID 可在微信「更多资料」中查看，通常以 wx 开头；来源未确认的媒体会以 ? 标记按类型显示。"
-	if m.legacyWarning != "" {
-		block = append(block, m.st.warning.Render(ui.Truncate(m.legacyWarning, innerWidth)))
-	} else {
-		block = append(block, m.st.muted.Render(ui.Truncate(hint, innerWidth)))
+	showListLabel := height >= fixed+1
+	if showListLabel {
+		fixed++
+	}
+	listBudget := height - fixed
+	if listBudget < 0 {
+		listBudget = 0
 	}
 
-	top := startY
-	if height > len(block) {
-		top = startY + (height-len(block))/2
+	rows := make([]string, 0, height)
+	rows = append(rows, m.padLine(m.spaces(left), heading))
+	if showHint {
+		rows = append(rows, m.padLine(m.spaces(left), hint))
 	}
-	rows := make([]string, height)
-	for i := range rows {
-		rows[i] = m.blankLine()
+	labelY := len(rows)
+	rows = append(rows, m.padLine(m.spaces(left), label))
+	inputY := len(rows)
+	for _, line := range inputLines {
+		rows = append(rows, m.padLine(m.spaces(left), line))
 	}
-	for i, line := range block {
-		row := top - startY + i
-		if row < 0 || row >= height {
-			continue
-		}
-		rows[row] = m.padLine(m.spaces(left), line)
+	rows = append(rows, m.padLine(m.spaces(left), status))
+	buttonTop := len(rows)
+	for _, line := range buttonRows {
+		rows = append(rows, line)
+	}
+	if showListLabel {
+		rows = append(rows, m.padLine(m.spaces(left), listLabel))
+	}
+	listTop := len(rows)
+	listRows, listHits := m.discoveryRows(listBudget, width)
+	for _, line := range listRows {
+		rows = append(rows, m.padLine(m.spaces(left), line))
+	}
+	if showTail {
+		rows = append(rows, m.padLine(m.spaces(left), tail))
+	}
+	for len(rows) < height {
+		rows = append(rows, m.blankLine())
+	}
+	if len(rows) > height {
+		rows = rows[:height]
 	}
 
-	btnY := top + buttonRow
-	m.hits.add(left, btnY, startWidth, 3, hitStart, 0)
-	m.hits.add(left+startWidth+1, btnY, discoverWidth, 3, hitDiscover, 0)
-	if m.startErr != nil {
-		m.hits.add(left, top+7, innerWidth, 1, hitRetryProxy, 0)
+	// 命中区域：输入框、发现列表、按钮。
+	m.hits.add(left, inputY, inputWidth, len(inputLines), hitTargetInput, 0)
+	_ = labelY
+	for _, hit := range listHits {
+		m.hits.add(left+hit.x, listTop+hit.y, hit.w, hit.h, hit.action, hit.index)
+	}
+	for _, hit := range buttonHits {
+		m.hits.add(hit.x, buttonTop+hit.y, hit.w, hit.h, hit.action, hit.index)
 	}
 	return rows
 }
 
-func (m model) targetOverlayPane(metrics ui.Metrics) ([]string, []paneHit) {
-	width := metrics.ContentWidth
-	if width > 72 {
-		width = 72
+// targetActionButtons 返回目标选择区的确认/取消/重试按钮。
+func (m model) targetActionButtons() []actionButton {
+	buttons := make([]actionButton, 0, 3)
+	if m.startErr != nil && !m.starting {
+		buttons = append(buttons, actionButton{label: "重试启动 · r", action: hitTargetRetry, enabled: true})
 	}
-	if width < 40 {
-		width = min(metrics.Width-2, 40)
+	buttons = append(buttons, actionButton{
+		label:   "确认目标 · Enter",
+		action:  hitTargetConfirm,
+		primary: true,
+		enabled: true,
+		focused: m.focus == focusConfirm,
+	})
+	if m.targetReady && m.targetExpanded {
+		buttons = append(buttons, actionButton{
+			label:   "取消 · Esc",
+			action:  hitTargetCancel,
+			enabled: true,
+			focused: m.focus == focusCancel,
+		})
 	}
-	inner := width - 2
-	titleRows := 2 // 标题行 + 分隔行
-	maxRows := m.screenHeight() - 9
-	if maxRows < 3 {
-		maxRows = 3
-	}
-	visible := len(m.programs)
-	if visible > maxRows {
-		visible = maxRows
-	}
-	start := 0
-	if m.programIdx >= visible {
-		start = m.programIdx - visible + 1
-	}
+	return buttons
+}
 
-	var interior []string
-	var hits []paneHit
-	if len(m.programs) == 0 {
-		interior = append(interior, m.interiorLine("还没有发现小程序。请在 PC 微信打开目标小程序，", inner, m.st.muted))
-		interior = append(interior, m.interiorLine("或按 Ctrl+D 回到手动输入 AppID。", inner, m.st.muted))
-	} else {
-		for i := start; i < start+visible && i < len(m.programs); i++ {
-			program := m.programs[i]
-			marker := "  "
-			if program.AppID == m.runtime.Settings.Target.AppID && m.targetReady {
-				marker = "● "
-			}
-			text := fmt.Sprintf("%s%-20s 最近出现 %s", marker, program.AppID, program.LastSeen.Format("15:04:05"))
-			style := m.st.text
-			if i == m.programIdx {
-				style = m.st.selected
-			} else if m.isHover(hitOverlayProgram, i) {
-				style = m.st.buttonHover
-			}
-			interior = append(interior, m.interiorLine(" "+ui.Truncate(text, inner-1), inner, style))
-			hits = append(hits, paneHit{x: 1, y: titleRows + (i - start), w: inner, h: 1, action: hitOverlayProgram, index: i})
-		}
+// targetStatusLine 渲染启动状态与发现状态。
+func (m model) targetStatusLine(width int) string {
+	var text string
+	style := m.st.muted
+	switch {
+	case m.startErr != nil:
+		style = m.st.errStyle
+		text = "代理启动失败：" + m.startErr.Error() + "（点击重试或按 r）"
+	case m.starting:
+		text = "正在启动代理，自动发现小程序…"
+	case m.started:
+		style = m.st.success
+		text = fmt.Sprintf("代理运行中 %s · 已发现 %d 个小程序 · 请在 PC 微信打开目标小程序", m.runtime.ProxyAddr(), len(m.programs))
+	default:
+		text = "等待代理启动…"
 	}
-	pane := m.panelFrame("选择小程序", interior, "↑/↓ 选择 · Enter 确认 · Esc 取消 · r 刷新", width)
-	return pane, hits
+	if m.legacyWarning != "" {
+		text = m.legacyWarning
+		style = m.st.warning
+	}
+	return style.Render(ui.Truncate(text, width))
+}
+
+// discoveryRows 渲染发现列表窗口，maxRows 行；返回相对行首的命中区域。
+func (m model) discoveryRows(maxRows, width int) ([]string, []paneHit) {
+	rows := make([]string, 0, maxRows)
+	var hits []paneHit
+	if maxRows <= 0 {
+		return rows, hits
+	}
+	if len(m.programs) == 0 {
+		placeholder := "尚未发现小程序：请在 PC 微信打开目标小程序；仍可直接输入 AppID。"
+		rows = append(rows, m.st.muted.Render(ui.Truncate(placeholder, width)))
+		for len(rows) < maxRows {
+			rows = append(rows, "")
+		}
+		return rows, hits
+	}
+	selected := m.currentProgramIndex()
+	if selected < 0 {
+		selected = 0
+	}
+	start := selected - maxRows/2
+	if start < 0 {
+		start = 0
+	}
+	if start+maxRows > len(m.programs) {
+		start = len(m.programs) - maxRows
+	}
+	if start < 0 {
+		start = 0
+	}
+	for index := start; index < len(m.programs) && len(rows) < maxRows; index++ {
+		program := m.programs[index]
+		prefix := "  "
+		if index == selected && m.focus == focusPrograms {
+			prefix = "› "
+		}
+		marker := "  "
+		if m.targetReady && program.AppID == m.runtime.Settings.Target.AppID {
+			marker = "● "
+		}
+		text := fmt.Sprintf("%s%s%-24s  最近出现 %s", prefix, marker, program.AppID, program.LastSeen.Format("15:04:05"))
+		style := m.st.text
+		switch {
+		case index == selected:
+			style = m.st.selected
+		case m.isHover(hitTargetProgram, index):
+			style = m.st.rowHover
+		}
+		rows = append(rows, style.Render(ui.Fit(text, width)))
+		hits = append(hits, paneHit{x: 0, y: len(rows) - 1, w: width, h: 1, action: hitTargetProgram, index: index})
+	}
+	for len(rows) < maxRows {
+		rows = append(rows, "")
+	}
+	return rows, hits
+}
+
+// renderTargetBar 渲染收起后的当前目标条与更换目标按钮。
+func (m model) renderTargetBar(y int, metrics ui.Metrics) string {
+	left := metrics.BrandPadX + metrics.ContentLeft
+	target := m.runtime.Settings.Target.AppID
+	ffmpeg := "ffmpeg 下载分段媒体时准备"
+	if m.runtime.HasFFmpeg() {
+		ffmpeg = "ffmpeg 就绪"
+	}
+	switchLabel := "更换目标 · s"
+	switchChip := m.chipText(switchLabel, hitActionTargetSwitch, false, !m.downloading)
+	switchWidth := ui.Width(switchChip)
+	prefix := m.st.title.Render("目标 ") + m.st.emphasis.Render(target)
+	prefixWidth := ui.Width(prefix)
+	infoRoom := metrics.ContentWidth - prefixWidth - switchWidth - 4
+	info := ""
+	if infoRoom > 10 {
+		info = m.st.muted.Render(ui.Truncate("  · 代理 "+m.runtime.ProxyAddr()+" · "+ffmpeg, infoRoom))
+	}
+	used := prefixWidth + ui.Width(info)
+	gap := metrics.Width - left - used - switchWidth - metrics.BrandPadX
+	if gap < 0 {
+		gap = 0
+	}
+	line := m.padLine(m.spaces(left), prefix, info, m.spaces(gap), switchChip, m.spaces(metrics.BrandPadX))
+	if !m.downloading {
+		m.hits.add(metrics.Width-metrics.BrandPadX-switchWidth, y, switchWidth, 1, hitActionTargetSwitch, 0)
+	}
+	return line
 }
 
 func (m model) quitConfirmPane() ([]string, []paneHit) {

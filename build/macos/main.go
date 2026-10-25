@@ -72,6 +72,9 @@ func build() error {
 	if err := os.WriteFile(filepath.Join(app, "MacOS", "wx-mini-video"), data, 0o755); err != nil {
 		return err
 	}
+	if err := copyAppIcon(root, app); err != nil {
+		return err
+	}
 	source, err := os.ReadFile(filepath.Join(root, "main.go"))
 	if err != nil {
 		return err
@@ -80,20 +83,7 @@ func build() error {
 	if len(version) != 2 {
 		return fmt.Errorf("未能从 main.go 读取版本")
 	}
-	plist := fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0"><dict>
-<key>CFBundleIdentifier</key><string>io.github.muzijin701.wx-mini-video</string>
-<key>CFBundleName</key><string>wx-mini-video</string>
-<key>CFBundleExecutable</key><string>wx-mini-video</string>
-<key>CFBundlePackageType</key><string>APPL</string>
-<key>CFBundleShortVersionString</key><string>%s</string>
-<key>CFBundleVersion</key><string>%s</string>
-<key>LSMinimumSystemVersion</key><string>13.0</string>
-<key>NSAppleEventsUsageDescription</key><string>在 Terminal 中打开微信小程序媒体下载界面。</string>
-</dict></plist>
-`, version[1], version[1])
-	if err := os.WriteFile(filepath.Join(app, "Info.plist"), []byte(plist), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(app, "Info.plist"), []byte(infoPlist(string(version[1]))), 0o644); err != nil {
 		return err
 	}
 	for src, dst := range map[string]string{"docs/macos-usage.md": "README.md", "internal/config/config.template.yaml": "wx-mini-video.yaml"} {
@@ -113,6 +103,43 @@ func build() error {
 		return err
 	}
 	fmt.Printf("已构建未签名测试包: %s\n正式公开发布前须在 Mac 上完成签名、公证和真机验收。\n", zipPath)
+	return nil
+}
+
+// infoPlist renders the bundle metadata. CFBundleIconFile/CFBundleIconName
+// point at Contents/Resources/logo.icns, the shared brand icon reused from the
+// reference project and copied by copyAppIcon.
+func infoPlist(version string) string {
+	return fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>CFBundleIdentifier</key><string>io.github.muzijin701.wx-mini-video</string>
+<key>CFBundleName</key><string>wx-mini-video</string>
+<key>CFBundleExecutable</key><string>wx-mini-video</string>
+<key>CFBundlePackageType</key><string>APPL</string>
+<key>CFBundleIconFile</key><string>logo</string>
+<key>CFBundleIconName</key><string>logo</string>
+<key>CFBundleShortVersionString</key><string>%s</string>
+<key>CFBundleVersion</key><string>%s</string>
+<key>LSMinimumSystemVersion</key><string>13.0</string>
+<key>NSAppleEventsUsageDescription</key><string>在 Terminal 中打开微信小程序媒体下载界面。</string>
+</dict></plist>
+`, version, version)
+}
+
+// copyAppIcon installs build/icons/logo.icns at
+// wx-mini-video.app/Contents/Resources/logo.icns. The ICO, ICNS and PNG are
+// reused from the local reference project; this build step only copies the
+// checked-in asset.
+func copyAppIcon(root, app string) error {
+	resources := filepath.Join(app, "Resources")
+	if err := os.MkdirAll(resources, 0o755); err != nil {
+		return err
+	}
+	source := filepath.Join(root, "build", "icons", "logo.icns")
+	if err := copyFile(source, filepath.Join(resources, "logo.icns"), 0o644); err != nil {
+		return fmt.Errorf("复制 macOS 应用图标: %w", err)
+	}
 	return nil
 }
 
@@ -364,6 +391,7 @@ func writePackage(root, path string) (err error) {
 		{"THIRD-PARTY-NOTICES.md", 0o644},
 		{"wx-mini-video.app/Contents/Info.plist", 0o644},
 		{"wx-mini-video.app/Contents/MacOS/wx-mini-video", 0o755},
+		{"wx-mini-video.app/Contents/Resources/logo.icns", 0o644},
 		{"ffmpeg/ffmpeg-amd64", 0o755},
 		{"ffmpeg/ffmpeg-arm64", 0o755},
 		{"ffmpeg/LICENSE.txt", 0o644},

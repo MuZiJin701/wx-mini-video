@@ -314,6 +314,51 @@ func (s *Store) SetCachedPath(id, path string) {
 	s.items[id] = item
 }
 
+// SetLive 用下载阶段确认的直播状态回写候选，修正“疑似直播”与实际响应不一致的条目。
+// 目标候选与来源未确认候选都会更新。两个列表的候选 ID 计算方式不同（是否带 AppID），
+// 同一媒体在两处的 ID 可能不同，因此命中任一列表后按 URL 传播到另一处。
+// 返回是否命中了候选。
+func (s *Store) SetLive(id string, live bool) bool {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return false
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	urls := make(map[string]struct{}, 2)
+	if item, ok := s.items[id]; ok {
+		urls[item.URL] = struct{}{}
+	}
+	if item, ok := s.unattributed[id]; ok {
+		urls[item.URL] = struct{}{}
+	}
+	if len(urls) == 0 {
+		return false
+	}
+	matches := func(item Candidate) bool {
+		if item.ID == id {
+			return true
+		}
+		_, ok := urls[item.URL]
+		return ok
+	}
+	for key, item := range s.items {
+		if item.Live == live || !matches(item) {
+			continue
+		}
+		item.Live = live
+		s.items[key] = item
+	}
+	for key, item := range s.unattributed {
+		if item.Live == live || !matches(item) {
+			continue
+		}
+		item.Live = live
+		s.unattributed[key] = item
+	}
+	return true
+}
+
 // Clear 按“清空列表”语义工作：清空目标候选的同时清空未归属列表，并让在途响应失效。
 // 切换目标请用 SetTarget：它只清空目标候选，保留与目标无关的未归属列表。
 func (s *Store) Clear(appID string) {

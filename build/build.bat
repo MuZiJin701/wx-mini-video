@@ -51,6 +51,14 @@ echo Done: %ZIP_PATH%
 exit /b 0
 
 :compile
+echo Generating Windows icon resources...
+pushd "%ROOT_DIR%"
+go run ./build/genicon
+if errorlevel 1 (
+    popd
+    exit /b 1
+)
+popd
 echo Building wx-mini-video Windows amd64...
 set CGO_ENABLED=0
 set GOOS=windows

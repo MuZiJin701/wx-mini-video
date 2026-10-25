@@ -9,6 +9,7 @@ import (
 
 	"wx_channel/internal/config"
 	"wx_channel/internal/minidownload"
+	"wx_channel/internal/miniprogram"
 )
 
 func TestConfiguredFFmpegPathKeepsExplicitConfig(t *testing.T) {
@@ -193,6 +194,31 @@ func newTestRuntime(t *testing.T, settings config.AppSettings) *Runtime {
 		Settings:   settings,
 		Downloader: minidownload.New(settings.DownloadDir),
 	}
+}
+
+func TestNewRuntimeWiresLiveResolutionToStore(t *testing.T) {
+	r := NewRuntime(&config.Config{RootDir: t.TempDir()})
+	if r.Store == nil || r.Downloader == nil {
+		t.Fatal("NewRuntime should create a store and downloader")
+	}
+	if r.Downloader.OnLiveResolved == nil {
+		t.Fatal("NewRuntime should wire Downloader.OnLiveResolved")
+	}
+	r.Store.SetTarget(miniprogram.Target{AppID: "wx123"})
+	_, generation := r.Store.Observe("wx123")
+	mediaURL := "https://play-t-live.example.com/7559_esd.flv"
+	if _, ok := r.Store.AddForTarget(generation, miniprogram.Candidate{AppID: "wx123", URL: mediaURL, Kind: "video", Suffix: ".flv", Live: true}, nil); !ok {
+		t.Fatal("target candidate should be admitted")
+	}
+	r.Downloader.OnLiveResolved(miniprogram.CandidateID("wx123", mediaURL), false)
+	candidate, ok := r.Store.Get(miniprogram.CandidateID("wx123", mediaURL))
+	if !ok || candidate.Live {
+		t.Fatalf("live resolution write-back = %#v, want finite video", candidate)
+	}
+}
+
+func TestRuntimeLiveResolutionToleratesMissingStore(t *testing.T) {
+	(&Runtime{}).setLiveResolved("candidate", true)
 }
 
 func writeFFmpegFile(t *testing.T, path string) string {
