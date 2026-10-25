@@ -33,11 +33,12 @@ func TestDirectDownloadNeverMixesSameNamedResources(t *testing.T) {
 	defer server.Close()
 	d := New(t.TempDir())
 	a := miniprogram.Candidate{ID: "a", URL: server.URL + "/a/video.mp4", Kind: "video"}
-	if _, err := d.Download(context.Background(), a, ""); err == nil {
+	firstOutput, err := d.Download(context.Background(), a, "", "")
+	if err == nil {
 		t.Fatal("expected interrupted first resource")
 	}
 	b := miniprogram.Candidate{ID: "b", URL: server.URL + "/b/video.mp4", Kind: "video"}
-	output, err := d.Download(context.Background(), b, "")
+	output, err := d.Download(context.Background(), b, "", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -45,7 +46,7 @@ func TestDirectDownloadNeverMixesSameNamedResources(t *testing.T) {
 	if err != nil || string(data) != "BBBBBB" {
 		t.Fatalf("mixed media: %q, %v", data, err)
 	}
-	if got := fileSize(partialPath(filepath.Join(d.Dir, "video.mp4"), a)); got != 3 {
+	if got := fileSize(partialPath(firstOutput, a)); got != 3 {
 		t.Fatal("another resource's partial file was lost")
 	}
 }
@@ -82,11 +83,12 @@ func TestPartialLengthIsNotProofOfCompletion(t *testing.T) {
 			}))
 			defer server.Close()
 			d := New(t.TempDir())
+			stubDownloadClock(t, time.Date(2026, 10, 25, 13, 0, 0, 0, time.Local))
 			candidate := miniprogram.Candidate{ID: "segmented", URL: server.URL + "/video.mp4", Kind: "video", ContentLength: 3}
-			if _, err := d.Download(context.Background(), candidate, ""); err == nil {
+			if _, err := d.Download(context.Background(), candidate, "", ""); err == nil {
 				t.Fatal("accepted truncated response")
 			}
-			output, err := d.Download(context.Background(), candidate, "")
+			output, err := d.Download(context.Background(), candidate, "", "")
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -116,9 +118,10 @@ func TestDirectResumeRestartsChangedEntity(t *testing.T) {
 	}))
 	defer server.Close()
 	d := New(t.TempDir())
+	stubDownloadClock(t, time.Date(2026, 10, 25, 13, 0, 0, 0, time.Local))
 	candidate := miniprogram.Candidate{URL: server.URL + "/video.mp4", Kind: "video"}
-	d.Download(context.Background(), candidate, "")
-	output, err := d.Download(context.Background(), candidate, "")
+	d.Download(context.Background(), candidate, "", "")
+	output, err := d.Download(context.Background(), candidate, "", "")
 	data, readErr := os.ReadFile(output)
 	if err != nil || readErr != nil || string(data) != "BBBBBB" {
 		t.Fatalf("changed entity was appended: %q, %v, %v", data, err, readErr)
@@ -140,7 +143,7 @@ func TestDownloadRedirectDropsCredentialsAtOriginBoundary(t *testing.T) {
 	}))
 	defer source.Close()
 	d := New(t.TempDir())
-	_, err := d.Download(context.Background(), miniprogram.Candidate{URL: source.URL + "/video.mp4", Kind: "video", Headers: map[string]string{"Authorization": "secret", "Cookie": "secret", "X-API-Key": "secret"}}, "")
+	_, err := d.Download(context.Background(), miniprogram.Candidate{URL: source.URL + "/video.mp4", Kind: "video", Headers: map[string]string{"Authorization": "secret", "Cookie": "secret", "X-API-Key": "secret"}}, "", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -218,13 +221,14 @@ func TestPrefetchDoesNotReuseDifferentPlaylistSegmentsByPosition(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.Write([]byte(r.URL.Path)) }))
 	defer server.Close()
 	d := New(t.TempDir())
+	bucket := testBucket(d)
 	first := []byte("#EXTM3U\n#EXTINF:1,\n" + server.URL + "/old.ts\n")
-	_, old, err := d.localizeM3U8(context.Background(), "same-stream", first, nil, server.URL)
+	_, old, err := d.localizeM3U8(context.Background(), bucket, "same-stream", first, nil, server.URL)
 	if err != nil {
 		t.Fatal(err)
 	}
 	second := []byte("#EXTM3U\n#EXTINF:1,\n" + server.URL + "/new.ts\n")
-	_, fresh, err := d.localizeM3U8(context.Background(), "same-stream", second, nil, server.URL)
+	_, fresh, err := d.localizeM3U8(context.Background(), bucket, "same-stream", second, nil, server.URL)
 	if err != nil || fresh.Reused != 0 || old.Dir == fresh.Dir {
 		t.Fatalf("reused stale playlist: %+v, %v", fresh, err)
 	}
@@ -264,7 +268,8 @@ func TestLocalizeM3U8RedownloadsSegmentWithoutCompletionMetadata(t *testing.T) {
 	d := New(t.TempDir())
 	d.Client = server.Client()
 	body := []byte("#EXTM3U\n#EXTINF:1,\n" + server.URL + "/seg.ts\n")
-	dir := filepath.Join(d.Dir, ".segments", "legacy", miniprogram.CandidateID("", string(body)))
+	bucket := testBucket(d)
+	dir := filepath.Join(bucket, ".segments", "legacy", miniprogram.CandidateID("", string(body)))
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -273,7 +278,7 @@ func TestLocalizeM3U8RedownloadsSegmentWithoutCompletionMetadata(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, stats, err := d.localizeM3U8(context.Background(), "legacy", body, nil, server.URL)
+	_, stats, err := d.localizeM3U8(context.Background(), bucket, "legacy", body, nil, server.URL)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -299,7 +304,8 @@ func TestLocalizeM3U8IgnoresTruncatedPartialFile(t *testing.T) {
 	d := New(t.TempDir())
 	d.Client = server.Client()
 	body := []byte("#EXTM3U\n#EXTINF:1,\n" + server.URL + "/seg.ts\n")
-	dir := filepath.Join(d.Dir, ".segments", "truncated", miniprogram.CandidateID("", string(body)))
+	bucket := testBucket(d)
+	dir := filepath.Join(bucket, ".segments", "truncated", miniprogram.CandidateID("", string(body)))
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -308,7 +314,7 @@ func TestLocalizeM3U8IgnoresTruncatedPartialFile(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, stats, err := d.localizeM3U8(context.Background(), "truncated", body, nil, server.URL)
+	_, stats, err := d.localizeM3U8(context.Background(), bucket, "truncated", body, nil, server.URL)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -342,7 +348,8 @@ func TestLocalizeM3U8RedownloadsWhenCompletionMetadataDoesNotMatch(t *testing.T)
 		t.Run(tc.name, func(t *testing.T) {
 			d := New(t.TempDir())
 			d.Client = server.Client()
-			dir := filepath.Join(d.Dir, ".segments", "metadata", miniprogram.CandidateID("", string(body)))
+			bucket := testBucket(d)
+			dir := filepath.Join(bucket, ".segments", "metadata", miniprogram.CandidateID("", string(body)))
 			if err := os.MkdirAll(dir, 0o755); err != nil {
 				t.Fatal(err)
 			}
@@ -358,7 +365,7 @@ func TestLocalizeM3U8RedownloadsWhenCompletionMetadataDoesNotMatch(t *testing.T)
 				t.Fatal(err)
 			}
 
-			_, stats, err := d.localizeM3U8(context.Background(), "metadata", body, nil, server.URL)
+			_, stats, err := d.localizeM3U8(context.Background(), bucket, "metadata", body, nil, server.URL)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -384,7 +391,7 @@ func TestLocalizeM3U8RejectsContentLengthMismatch(t *testing.T) {
 	d.SegmentRetries = 1
 	body := []byte("#EXTM3U\n#EXTINF:1,\n" + server.URL + "/short.ts\n")
 
-	_, stats, err := d.localizeM3U8(context.Background(), "short", body, nil, server.URL)
+	_, stats, err := d.localizeM3U8(context.Background(), testBucket(d), "short", body, nil, server.URL)
 	if err == nil {
 		t.Fatal("accepted a segment shorter than its Content-Length")
 	}
@@ -449,7 +456,7 @@ func TestAuthenticatedHLSWithRealFFmpeg(t *testing.T) {
 			if err := os.WriteFile(playlist, []byte(body), 0o600); err != nil {
 				t.Fatal(err)
 			}
-			output, err := d.Download(ctx, miniprogram.Candidate{ID: "authenticated", Kind: "m3u8", URL: server.URL + "/expired.m3u8?auth=playlist-signature", CachedPath: playlist, Headers: map[string]string{"Cookie": "local-session", "Referer": "https://servicewechat.com/wx123/1/page-frame.html"}}, "result")
+			output, err := d.Download(ctx, miniprogram.Candidate{ID: "authenticated", Kind: "m3u8", URL: server.URL + "/expired.m3u8?auth=playlist-signature", CachedPath: playlist, Headers: map[string]string{"Cookie": "local-session", "Referer": "https://servicewechat.com/wx123/1/page-frame.html"}}, "result", "")
 			if err != nil {
 				t.Fatal(err)
 			}

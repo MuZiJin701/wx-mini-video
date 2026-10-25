@@ -159,6 +159,34 @@ func TestPreflightChecksDescribeFFmpegSource(t *testing.T) {
 	}
 }
 
+func TestDownloadDirForTargetPrefersExistingTargetDir(t *testing.T) {
+	root := t.TempDir()
+	targetDir := filepath.Join(root, "wx123")
+	if err := os.MkdirAll(targetDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	r := newTestRuntime(t, config.AppSettings{DownloadDir: root})
+
+	if got := r.downloadDirForTarget("wx123"); got != targetDir {
+		t.Fatalf("downloadDirForTarget() = %q, want %q", got, targetDir)
+	}
+	if got := r.downloadDirForTarget("  "); got != root {
+		t.Fatalf("empty target dir = %q, want download root", got)
+	}
+	if got := r.downloadDirForTarget("wx-missing"); got != root {
+		t.Fatalf("missing target dir = %q, want download root", got)
+	}
+	if got, want := r.downloadDirForTarget("CON"), root; got != want {
+		t.Fatalf("reserved target dir = %q, want %q", got, want)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "_CON"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := r.downloadDirForTarget("CON"), filepath.Join(root, "_CON"); got != want {
+		t.Fatalf("sanitized target dir = %q, want %q", got, want)
+	}
+}
+
 func newTestRuntime(t *testing.T, settings config.AppSettings) *Runtime {
 	t.Helper()
 	return &Runtime{

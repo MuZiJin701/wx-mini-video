@@ -124,7 +124,6 @@ func registerDefaults() {
 	Register(ConfigItem{Key: "proxy.skipInstallRootCert", Type: ConfigTypeBool, Default: false, Title: "跳过证书安装", Group: "Proxy"})
 	Register(ConfigItem{Key: "proxy.upstreamProxy", Type: ConfigTypeString, Default: "", Title: "上游代理", Group: "Proxy"})
 	Register(ConfigItem{Key: "target.appID", Type: ConfigTypeString, Default: "", Title: "小程序 AppID", Group: "Target"})
-	Register(ConfigItem{Key: "target.name", Type: ConfigTypeString, Default: "", Title: "小程序名称", Group: "Target"})
 	Register(ConfigItem{Key: "cert.file", Type: ConfigTypeString, Default: "", Title: "证书文件", Group: "Cert"})
 	Register(ConfigItem{Key: "cert.key", Type: ConfigTypeString, Default: "", Title: "私钥文件", Group: "Cert"})
 	Register(ConfigItem{Key: "cert.name", Type: ConfigTypeString, Default: "Echo", Title: "证书名称", Group: "Cert"})
@@ -146,7 +145,6 @@ func (c *Config) Settings() AppSettings {
 		ProxyUpstream:      viper.GetString("proxy.upstreamProxy"),
 		HideUnattributed:   !viper.GetBool("capture.showUnattributed"),
 		Target: miniprogram.Target{
-			Name:  strings.TrimSpace(viper.GetString("target.name")),
 			AppID: strings.TrimSpace(viper.GetString("target.appID")),
 		},
 	}

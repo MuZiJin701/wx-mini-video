@@ -1,411 +1,244 @@
 package tui
 
 import (
-	"net/http"
-	"net/http/httptest"
-	"os"
 	"strings"
 	"testing"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"wx_channel/internal/app"
-	"wx_channel/internal/config"
 	"wx_channel/internal/minidownload"
 	"wx_channel/internal/miniprogram"
+	"wx_channel/internal/tui/ui"
 )
 
-func TestTargetInputRequiresAppID(t *testing.T) {
-	m := model{}
-	next, cmd := m.updateTargetInput(tea.KeyMsg{Type: tea.KeyEnter})
-	if cmd != nil {
-		t.Fatal("expected no command when AppID is empty")
+func TestCategoryFilteringAndCounts(t *testing.T) {
+	m := testModel(t)
+	m.targetReady = true
+	m.candidates = []miniprogram.Candidate{
+		{ID: "a", URL: "https://cdn.example.com/a.jpg", Kind: "image", AppID: "wx123"},
+		{ID: "b", URL: "https://cdn.example.com/b.mp4", Kind: "video", AppID: "wx123"},
+		{ID: "c", URL: "https://cdn.example.com/c.m3u8", Kind: "m3u8", AppID: "wx123"},
 	}
-	got := next.(model)
-	if got.targetReady {
-		t.Fatal("target should not be ready with empty AppID")
+	m.otherCandidates = []miniprogram.Candidate{
+		{ID: "d", URL: "https://cdn.example.com/d.mp3", Kind: "audio", SourceAppID: "wx999", Attribution: miniprogram.AttributionUnattributed},
 	}
-	if got.inputErr == "" {
-		t.Fatal("expected validation error")
+	if got := m.categoryCount(categoryAll); got != 4 {
+		t.Fatalf("all count = %d", got)
 	}
-}
-
-func TestTargetDisplayAllowsEmptyName(t *testing.T) {
-	got := targetDisplay(miniprogram.Target{AppID: "wx123"})
-	if got != "wx123" {
-		t.Fatalf("targetDisplay() = %q", got)
+	if got := m.categoryCount(categoryImage); got != 1 {
+		t.Fatalf("image count = %d", got)
 	}
-}
-
-func TestTrimLastRuneHandlesChinese(t *testing.T) {
-	got := trimLastRune("测试")
-	if got != "测" {
-		t.Fatalf("trimLastRune() = %q", got)
+	m.setCategory(categoryAudio)
+	visible := m.filteredCandidates()
+	if len(visible) != 1 || visible[0].ID != "d" {
+		t.Fatalf("audio filter = %#v", visible)
 	}
-}
-
-func TestDefaultFilterShowsVideos(t *testing.T) {
-	m := model{
-		candidates: []miniprogram.Candidate{
-			{Kind: "image", URL: "https://example.com/cover.jpg"},
-			{Kind: "video", URL: "https://example.com/video.mp4"},
-			{Kind: "m3u8", URL: "https://example.com/live.m3u8"},
-		},
-	}
-
-	got := m.filteredCandidates()
-	if len(got) != 1 || got[0].Kind != "video" {
-		t.Fatalf("filteredCandidates default = %#v", got)
-	}
-}
-
-func TestCategorySwitchingUsesTabAndNumbers(t *testing.T) {
-	m := model{targetReady: true}
-
-	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyTab})
-	got := next.(model)
-	if got.category != categoryM3U8 {
-		t.Fatalf("Tab should move video -> m3u8, got %q", got.category)
-	}
-
-	next, _ = got.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("2")})
-	got = next.(model)
-	if got.category != categoryImage {
-		t.Fatalf("2 should select image, got %q", got.category)
-	}
-}
-
-func TestAudioCategorySelectsAndStartsDownload(t *testing.T) {
-	m := model{
-		runtime: targetRuntime(t), targetReady: true,
-		candidates: []miniprogram.Candidate{
-			{Kind: "image", URL: "https://example.com/cover.jpg"},
-			{Kind: "audio", URL: "https://example.com/song.mp3", Suffix: ".mp3", Title: "音频标题"},
-		},
-		width: 100, height: 24,
-	}
-	if view := m.View(); !strings.Contains(view, "5 查看音频") {
-		t.Fatal("default video filter should guide users to the detected audio")
-	}
-	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("5")})
-	m = next.(model)
-	if got := m.filteredCandidates(); len(got) != 1 || got[0].Kind != "audio" {
-		t.Fatalf("5 should show only audio: %#v", got)
-	}
-	if view := m.View(); !strings.Contains(view, "5 音频(1)") || !strings.Contains(view, "音频标题") {
-		t.Fatalf("audio tab count or candidate was not displayed: %q", view)
-	}
-	next, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
-	if !next.(model).downloading || cmd == nil {
-		t.Fatal("Enter should start the selected audio download")
-	}
-	// Existing keys remain stable; Tab from m3u8 enters audio, then wraps to all.
-	m, _ = targetKey(m, tea.KeyRunes, "4")
-	m, _ = targetKey(m, tea.KeyTab, "")
-	if m.category != categoryAudio {
-		t.Fatal("Tab from m3u8 should enter audio")
-	}
-	m, _ = targetKey(m, tea.KeyTab, "")
-	if m.category != categoryAll {
-		t.Fatalf("Tab from audio should wrap to all, got %q", m.category)
-	}
-	if len(m.filteredCandidates()) != 2 {
-		t.Fatal("all category should show every candidate")
-	}
-}
-
-func TestDownloadAllowsUncachedDirectM3U8(t *testing.T) {
-	m := model{
-		runtime: &app.Runtime{Settings: config.AppSettings{DownloadDir: t.TempDir()}},
-		candidates: []miniprogram.Candidate{{
-			Kind:    "m3u8",
-			Source:  "response",
-			URL:     "https://example.com/playlist.m3u8",
-			Headers: map[string]string{"User-Agent": "wx-test"},
-		}},
-		category:    categoryM3U8,
-		targetReady: true,
-	}
-
-	next, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("d")})
-	got := next.(model)
-	if !got.downloading {
-		t.Fatal("uncached direct m3u8 should enter the download flow")
-	}
-	if cmd == nil {
-		t.Fatal("uncached direct m3u8 should schedule a download")
-	}
-}
-
-func TestCandidateReadableInfoUsesFieldHostAndFilename(t *testing.T) {
-	candidate := miniprogram.Candidate{
-		Kind:      "image",
-		URL:       "https://cdn.example.com/assets/product-cover.webp?token=abc",
-		FieldPath: "data.items[].coverUrl",
-		Source:    "json",
-	}
-
-	info := candidateReadableInfo(candidate)
-	for _, want := range []string{"封面", "cdn.example.com", "product-cover.webp"} {
-		if !strings.Contains(info, want) {
-			t.Fatalf("candidateReadableInfo() = %q, want %q", info, want)
-		}
-	}
-}
-
-func TestCandidateSummaryDoesNotExposeQueryString(t *testing.T) {
-	candidate := miniprogram.Candidate{
-		Kind:          "video",
-		URL:           "https://wxsmw.wxs.qq.com/path/video.mp4?ck=secret&sha256=long",
-		ContentLength: 1024,
-	}
-
-	got := candidateSummary(candidate)
-	if strings.Contains(got, "?ck=") || strings.Contains(got, "sha256=") {
-		t.Fatalf("candidateSummary() exposed query string: %q", got)
-	}
-	if !strings.Contains(got, "wxsmw.wxs.qq.com") || !strings.Contains(got, "video.mp4") {
-		t.Fatalf("candidateSummary() = %q, want host and filename", got)
-	}
-}
-
-func TestCandidateLabelPrefersExtractedTitle(t *testing.T) {
-	got := candidateLabel(miniprogram.Candidate{
-		Title: "春日活动",
-		Kind:  "video",
-		URL:   "https://cdn.example.com/videos/spring.mp4",
-	})
-	if got != "春日活动" {
-		t.Fatalf("candidateLabel() = %q, want extracted title", got)
-	}
-}
-
-func TestCandidateDetailsShowFullMetadata(t *testing.T) {
-	candidate := miniprogram.Candidate{
-		Title:     "春日活动",
-		Kind:      "video",
-		Source:    "json",
-		URL:       "https://cdn.example.com/videos/spring.mp4?token=secret",
-		SourceURL: "https://mini.example.com/api/feed?id=7",
-		Headers: map[string]string{
-			"Referer":    "https://mini.example.com/",
-			"User-Agent": "wx-test",
-			"Cookie":     "session=secret",
-		},
-		CachedPath: "downloads/cache.m3u8",
-	}
-
-	got := renderCandidateDetails(candidate, 200)
-	joined := strings.Join(got, "\n")
-	for _, want := range []string{
-		"春日活动",
-		candidate.URL,
-		candidate.SourceURL,
-		"Referer",
-		"User-Agent",
-		"Cookie=已捕获",
-		candidate.CachedPath,
-	} {
-		if !strings.Contains(joined, want) {
-			t.Fatalf("renderCandidateDetails() = %q, want %q", joined, want)
-		}
-	}
-}
-
-func TestDetailsShortcutTogglesSelectedCandidate(t *testing.T) {
-	m := model{targetReady: true}
-	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("i")})
-	if !next.(model).showDetails {
-		t.Fatal("i should show candidate details")
-	}
-}
-
-func TestViewKeepsProgressWhenCategoryChanges(t *testing.T) {
-	m := model{
-		runtime: &app.Runtime{
-			Settings: config.AppSettings{
-				DownloadDir:   "downloads",
-				ProxyHostname: "127.0.0.1",
-				ProxyPort:     2023,
-				Target:        miniprogram.Target{AppID: "wx123"},
-			},
-			Downloader: minidownload.New(t.TempDir()),
-		},
-		candidates: []miniprogram.Candidate{
-			{Kind: "image", URL: "https://example.com/cover.jpg"},
-			{Kind: "video", URL: "https://example.com/video.mp4"},
-		},
-		category:    categoryVideo,
-		targetReady: true,
-		started:     true,
-		downloading: true,
-		progress: minidownload.Progress{
-			Status:     "downloading",
-			Downloaded: 20,
-			Total:      100,
-		},
-		width:  80,
-		height: 14,
-	}
-
-	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("2")})
-	got := next.(model).View()
-	if !strings.Contains(got, "下载中 20%") {
-		t.Fatalf("View() lost download progress after category switch:\n%s", got)
-	}
-}
-
-func TestCandidateListLineTruncatesLongResource(t *testing.T) {
-	candidate := miniprogram.Candidate{
-		Kind:          "image",
-		URL:           "https://wximg.wxs.qq.com/141/20204/snscosdownload/SZ/reserved/very-long-resource-name.jpg?ck=secret&sha256=long",
-		ContentLength: 27491,
-		Source:        "response",
-	}
-
-	got := candidateListLine(candidate, 48)
-	if strings.Contains(got, "?ck=") || strings.Contains(got, "sha256=") {
-		t.Fatalf("candidateListLine() exposed query string: %q", got)
-	}
-	if len([]rune(got)) > 60 {
-		t.Fatalf("candidateListLine() was not truncated enough: %q", got)
-	}
-}
-
-func TestUnattributedCandidatesDisplayedInTypeCategories(t *testing.T) {
-	confirmed := miniprogram.Candidate{
-		Kind: "video", URL: "https://cdn.example.com/target.mp4",
-		Attribution: miniprogram.AttributionConfirmed, SourceAppID: "wx123",
-	}
-	unattributed := miniprogram.Candidate{
-		Kind: "video", URL: "https://h5.example.com/lesson.mp4", Source: "response",
-		Attribution: miniprogram.AttributionUnattributed,
-	}
-	m := model{
-		runtime: targetRuntime(t), targetReady: true, started: true,
-		candidates:      []miniprogram.Candidate{confirmed},
-		otherCandidates: []miniprogram.Candidate{unattributed},
-		category:        categoryVideo,
-		width:           140, height: 30,
-	}
-	if got := m.filteredCandidates(); len(got) != 2 {
-		t.Fatalf("video category = %#v, want confirmed + unattributed", got)
+	m.setCategory(categoryAll)
+	m.nextCategory(1)
+	if m.activeCategory() != categoryImage {
+		t.Fatalf("tab cycle landed on %q", m.activeCategory())
 	}
 	view := m.View()
-	for _, want := range []string{"3 视频(2)", "?", "✓"} {
-		if !strings.Contains(view, want) {
-			t.Fatalf("View() = %q, want %q", view, want)
+	if !strings.Contains(view, "1 全部(4)") || !strings.Contains(view, "?") {
+		t.Fatal("tabs or attribution marker missing from view")
+	}
+}
+
+func TestDownloadedMarkerAndLocalPathInDrawer(t *testing.T) {
+	m := testModel(t)
+	m.targetReady = true
+	m.candidates = testCandidates(2)
+	m.downloaded[m.candidates[0].ID] = "downloads/wx123/视频/视频_20261025-130000_aaaaaaaa.mp4"
+	m.showDetails = true
+	view := m.View()
+	if !strings.Contains(view, "已下载") {
+		t.Fatal("downloaded marker missing")
+	}
+	if !strings.Contains(view, "本地路径") {
+		t.Fatal("detail drawer should show the local path")
+	}
+	if !strings.Contains(view, "本地缓存") {
+		t.Fatal("detail drawer should keep cache info")
+	}
+}
+
+func TestAppearanceSwitchPersistsToUIJSON(t *testing.T) {
+	m := testModel(t)
+	if m.appearance != ui.AppearanceSystem {
+		t.Fatalf("default appearance = %q", m.appearance)
+	}
+	cmd := m.setAppearance(ui.AppearanceDark)
+	if !m.dark || cmd == nil {
+		t.Fatal("switching to dark did not apply immediately")
+	}
+	msg := cmd()
+	if saved, ok := msg.(appearanceSavedMsg); !ok || saved.err != nil {
+		t.Fatalf("saving appearance failed: %#v", msg)
+	}
+	if got := ui.LoadAppearance(m.runtime.Settings.DownloadDir); got != ui.AppearanceDark {
+		t.Fatalf("persisted appearance = %q", got)
+	}
+	cmd = m.cycleAppearance(-1)
+	if m.appearance != ui.AppearanceLight {
+		t.Fatalf("left should cycle back to light, got %q", m.appearance)
+	}
+	if cmd == nil {
+		t.Fatal("appearance change should schedule a save")
+	}
+}
+
+func TestArrowKeysCycleAppearance(t *testing.T) {
+	m := testModel(t)
+	m, _ = targetKey(m, tea.KeyRight, "")
+	if m.appearance != ui.AppearanceLight {
+		t.Fatalf("right arrow should select light, got %q", m.appearance)
+	}
+	m, _ = targetKey(m, tea.KeyRight, "")
+	if m.appearance != ui.AppearanceDark {
+		t.Fatalf("right arrow should select dark, got %q", m.appearance)
+	}
+	m, _ = targetKey(m, tea.KeyLeft, "")
+	if m.appearance != ui.AppearanceLight {
+		t.Fatalf("left arrow should return to light, got %q", m.appearance)
+	}
+}
+
+func TestMouseClicksAppearanceAndTabs(t *testing.T) {
+	m := testModel(t)
+	m.targetReady = true
+	m.candidates = testCandidates(2)
+	m.width, m.height = 110, 40
+	_ = m.View() // 生成命中区域
+
+	darkHit, ok := findHit(m, hitAppearanceDark)
+	if !ok {
+		t.Fatal("appearance control hit region missing")
+	}
+	m = clickHit(t, m, darkHit)
+	if m.appearance != ui.AppearanceDark {
+		t.Fatalf("clicking dark segment did not switch appearance: %q", m.appearance)
+	}
+
+	_ = m.View()
+	tabHit, ok := findHit(m, hitTab)
+	if !ok {
+		t.Fatal("category tab hit region missing")
+	}
+	m = clickHit(t, m, tabHit)
+	if m.activeCategory() != categoryAll {
+		t.Fatalf("clicking first tab should select all, got %q", m.activeCategory())
+	}
+}
+
+func TestMouseClicksTargetOverlayProgram(t *testing.T) {
+	m := testModel(t)
+	m.started = true
+	now := time.Now()
+	m.programs = []miniprogram.Program{
+		{AppID: "wx111", LastSeen: now},
+		{AppID: "wx222", LastSeen: now},
+	}
+	m.showTargets = true
+	_ = m.View()
+	hit, ok := findHitIndex(m, hitOverlayProgram, 1)
+	if !ok {
+		t.Fatal("program row hit region missing")
+	}
+	m = clickHit(t, m, hit)
+	if !m.targetReady || m.runtime.Settings.Target.AppID != "wx222" {
+		t.Fatalf("clicking a program should confirm it, target=%q", m.runtime.Settings.Target.AppID)
+	}
+}
+
+func findHit(m model, action hitAction) (hitRegion, bool) {
+	return findHitIndex(m, action, 0)
+}
+
+func findHitIndex(m model, action hitAction, index int) (hitRegion, bool) {
+	for _, region := range m.hits.regions {
+		if region.action == action && region.index == index {
+			return region, true
 		}
 	}
-	if strings.Contains(view, "未归属") {
-		t.Fatalf("View() should no longer expose an unattributed category: %q", view)
-	}
+	return hitRegion{}, false
+}
 
-	// 数字键 6 不再存在；按 6 不应改变分类。
-	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("6")})
-	if got := next.(model).category; got != categoryVideo {
-		t.Fatalf("6 should no longer switch category, got %q", got)
-	}
+func clickHit(t *testing.T, m model, region hitRegion) model {
+	t.Helper()
+	x := region.x + region.w/2
+	y := region.y
+	next, _ := m.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: x, Y: y})
+	return next.(model)
+}
 
-	// 全部同时包含目标与来源未确认候选。
-	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("1")})
-	all := next.(model)
-	if got := all.filteredCandidates(); len(got) != 2 {
-		t.Fatalf("all category = %#v, want both candidates", got)
-	}
-	if view := all.View(); !strings.Contains(view, "✓") || !strings.Contains(view, "?") {
-		t.Fatalf("all category should mark both sources: %q", view)
-	}
-
-	// 详情仍显示来源未确认与判定依据。
-	all.showDetails = true
-	all.selected = 1
-	details := strings.Join(all.selectedCandidateDetails(), "\n")
-	for _, want := range []string{"来源未确认", "来源 AppID", "响应类型/URL 推断，来源未知"} {
-		if !strings.Contains(details, want) {
-			t.Fatalf("details = %q, want %q", details, want)
+func TestViewLinesFitWidth(t *testing.T) {
+	m := testModel(t)
+	m.width, m.height = 110, 40
+	m.targetReady = true
+	m.candidates = testCandidates(3)
+	for _, line := range strings.Split(m.View(), "\n") {
+		if ui.Width(line) != m.width {
+			t.Fatalf("line width = %d, want %d: %q", ui.Width(line), m.width, line)
 		}
 	}
 }
 
-func TestCandidateBasisExplainsProvisionalAndFileCandidates(t *testing.T) {
-	if got := candidateBasis(miniprogram.Candidate{Provisional: true}); got != "字段名推断（低置信）" {
-		t.Fatalf("provisional basis = %q", got)
+func TestProgressAndNoticeStatus(t *testing.T) {
+	m := testModel(t)
+	m.targetReady = true
+	m.downloading = true
+	m.progress = minidownload.Progress{Status: "downloading", Downloaded: 1200, Total: 4800}
+	view := m.View()
+	if !strings.Contains(view, "下载中 25%") {
+		t.Fatalf("progress percentage missing: %q", view)
 	}
-	if got := candidateBasis(miniprogram.Candidate{Kind: "file"}); got != "未知二进制兜底（≥256KB）" {
-		t.Fatalf("file basis = %q", got)
-	}
-	if got := kindDisplay("file"); got != "文件" {
-		t.Fatalf("kindDisplay(file) = %q", got)
-	}
-}
-
-func TestTickRefreshLoadsUnattributedCandidates(t *testing.T) {
-	runtime := targetRuntime(t)
-	runtime.Store.AddUnattributed(miniprogram.Candidate{
-		Kind: "video", URL: "https://h5.example.com/lesson.mp4",
-		Attribution: miniprogram.AttributionUnattributed,
-	})
-	m := model{runtime: runtime, targetReady: true, started: true}
-	next, _ := m.Update(tickMsg{})
-	got := next.(model)
-	if len(got.otherCandidates) != 1 || len(m.candidates) != 0 {
-		t.Fatalf("refresh candidates=%#v other=%#v", got.candidates, got.otherCandidates)
-	}
-	if visible := got.filteredCandidates(); len(visible) != 1 || visible[0].URL != "https://h5.example.com/lesson.mp4" {
-		t.Fatalf("default video category should include unattributed candidates: %#v", visible)
+	m.downloading = false
+	m.progress = minidownload.Progress{}
+	m.setNotice("已保存 → downloads/wx123/图片/图片_20261025-130000_aaaaaaaa.jpg", time.Minute)
+	_ = m.View()
+	if !strings.Contains(m.notice, "已保存") {
+		t.Fatal("notice not set")
 	}
 }
 
-func TestClearKeyClearsUnattributedList(t *testing.T) {
-	runtime := targetRuntime(t)
-	runtime.SetTarget(miniprogram.Target{AppID: "wx123"})
-	runtime.Store.AddUnattributed(miniprogram.Candidate{
-		Kind: "video", URL: "https://h5.example.com/lesson.mp4",
-		Attribution: miniprogram.AttributionUnattributed,
-	})
-	m := model{
-		runtime: runtime, targetReady: true, started: true,
-		otherCandidates: runtime.Store.Unattributed(),
-		width:           100, height: 24,
+func TestNoNameReferencesAnywhere(t *testing.T) {
+	m := testModel(t)
+	m.width, m.height = 110, 40
+	if strings.Contains(m.View(), "名称") {
+		t.Fatal("name feature still referenced in target view")
 	}
-	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("c")})
-	got := next.(model)
-	if len(got.otherCandidates) != 0 || len(runtime.Store.Unattributed()) != 0 {
-		t.Fatalf("clear key kept unattributed candidates: %#v", got.otherCandidates)
+	m.targetReady = true
+	m.candidates = testCandidates(2)
+	m.showDetails = true
+	if strings.Contains(m.View(), "名称") {
+		t.Fatal("name feature still referenced in media view")
+	}
+	m.showDetails = false
+	m.programs = []miniprogram.Program{{AppID: "wx123", LastSeen: time.Now()}}
+	m.showTargets = true
+	if strings.Contains(m.View(), "名称") {
+		t.Fatal("name feature still referenced in target overlay")
 	}
 }
 
-func TestDownloadOtherCandidateReplaysCapturedHeaders(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("Referer") != "https://course.example.com/learn/1" {
-			w.WriteHeader(http.StatusForbidden)
-			return
-		}
-		w.Header().Set("Content-Type", "video/mp4")
-		_, _ = w.Write([]byte("media-bytes"))
-	}))
-	defer server.Close()
-
-	dir := t.TempDir()
-	runtime := &app.Runtime{
-		Settings:   config.AppSettings{DownloadDir: dir},
-		Downloader: minidownload.New(dir),
+func TestHoverStateTracksRegions(t *testing.T) {
+	m := testModel(t)
+	m.targetReady = true
+	m.candidates = testCandidates(1)
+	m.width, m.height = 110, 40
+	_ = m.View()
+	tabHit, ok := findHit(m, hitTab)
+	if !ok {
+		t.Fatal("tab hit missing")
 	}
-	candidate := miniprogram.Candidate{
-		Kind:        "video",
-		Suffix:      ".mp4",
-		URL:         server.URL + "/lesson.mp4",
-		Attribution: miniprogram.AttributionUnattributed,
-		Headers:     map[string]string{"Referer": "https://course.example.com/learn/1"},
+	next, _ := m.Update(tea.MouseMsg{Action: tea.MouseActionMotion, X: tabHit.x + 1, Y: tabHit.y})
+	hovered := next.(model)
+	if !hovered.hits.isHovered(hitTab, tabHit.index) {
+		t.Fatal("motion over a tab did not set hover state")
 	}
-	msg := downloadCmd(runtime, candidate)()
-	result, ok := msg.(downloadMsg)
-	if !ok || result.err != nil {
-		t.Fatalf("download msg = %#v, want success", msg)
-	}
-	data, err := os.ReadFile(result.path)
-	if err != nil || string(data) != "media-bytes" {
-		t.Fatalf("downloaded file = %q, %v", data, err)
+	next, _ = m.Update(tea.MouseMsg{Action: tea.MouseActionMotion, X: 0, Y: 0})
+	if next.(model).hits.hoverAction != hitNone {
+		t.Fatal("hover state not cleared outside regions")
 	}
 }

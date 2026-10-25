@@ -6,12 +6,14 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+
 	"wx_channel/pkg/certificate"
 )
 
 func TestQuitWaitsForStartupAndNeverStartsAfterQuit(t *testing.T) {
 	for _, finished := range []tea.Msg{startMsg{}, startMsg{legacy: true}, legacyCleanupMsg{}} {
-		m := model{runtime: targetRuntime(t), starting: true}
+		m := testModel(t)
+		m.starting = true
 		next, cmd := m.requestQuit()
 		m = next.(model)
 		if cmd != nil || !m.stopping {
@@ -29,10 +31,14 @@ func TestQuitWaitsForStartupAndNeverStartsAfterQuit(t *testing.T) {
 }
 
 func TestStopFailureRequiresRetryOrExplicitForce(t *testing.T) {
-	for _, screen := range []model{{targetReady: true}, {discovering: true}, {}} {
-		screen.runtime = targetRuntime(t)
-		next, cmd := screen.requestQuit()
-		m := next.(model)
+	for _, prepare := range []func(*model){
+		func(m *model) { m.targetReady = true },
+		func(m *model) {},
+	} {
+		m := testModel(t)
+		prepare(&m)
+		next, cmd := m.requestQuit()
+		m = next.(model)
 		if cmd == nil || !m.stopping {
 			t.Fatal("quit did not wait for cleanup")
 		}
@@ -46,7 +52,8 @@ func TestStopFailureRequiresRetryOrExplicitForce(t *testing.T) {
 			t.Fatal("ordinary quit bypassed failed cleanup")
 		}
 		next, cmd = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")})
-		if cmd == nil || !next.(model).stopping {
+		m = next.(model)
+		if cmd == nil || !m.stopping {
 			t.Fatal("retry unavailable")
 		}
 		_, cmd = m.Update(stopMsg{})
@@ -56,7 +63,9 @@ func TestStopFailureRequiresRetryOrExplicitForce(t *testing.T) {
 		if _, ok := cmd().(tea.QuitMsg); !ok {
 			t.Fatal("successful cleanup did not return Quit")
 		}
-		_, cmd = targetKey(m, tea.KeyRunes, "f")
+		failedRun := m
+		failedRun.stopErr = errors.New("restore failed")
+		_, cmd = targetKey(failedRun, tea.KeyRunes, "f")
 		if cmd == nil {
 			t.Fatal("explicit force exit unavailable")
 		}
@@ -69,7 +78,7 @@ func TestLegacyRootCleanupRequiresConfirmationAndKeepsFailuresVisible(t *testing
 	legacyRootPresent = func() (bool, error) { return true, nil }
 	removals := 0
 	removeLegacyRoot = func() error { removals++; return errors.New("access denied") }
-	m := model{runtime: targetRuntime(t), discovering: true}
+	m := testModel(t)
 	msg := m.startProxy()
 	next, _ := m.Update(msg)
 	m = next.(model)

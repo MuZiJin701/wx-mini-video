@@ -41,6 +41,10 @@ type Progress struct {
 
 type DownloadHistory struct {
 	Path         string    `json:"path"`
+	AppID        string    `json:"app_id"`
+	SourceAppID  string    `json:"source_app_id"`
+	Kind         string    `json:"kind"`
+	Attribution  string    `json:"attribution"`
 	SourceDomain string    `json:"source_domain"`
 	Size         int64     `json:"size"`
 	CompletedAt  time.Time `json:"completed_at"`
@@ -105,13 +109,16 @@ func (d *Downloader) do(req *http.Request) (*http.Response, error) {
 	return client.Do(req)
 }
 
+// now 是测试注入点：默认文件名里的下载开始时间统一从这里获取。
+var now = time.Now
+
 func OutputName(candidate miniprogram.Candidate, preferred string) string {
 	name := strings.TrimSpace(preferred)
 	if name == "" {
-		name = candidateName(candidate)
+		name = defaultOutputName(candidate, now())
 	}
 	ext := strings.ToLower(filepath.Ext(name))
-	if candidate.Kind == "m3u8" {
+	if candidate.Kind == "m3u8" || miniprogram.MediaKind(candidate) == "m3u8" {
 		if ext != "" {
 			name = strings.TrimSuffix(name, filepath.Ext(name))
 		}
@@ -125,6 +132,26 @@ func OutputName(candidate miniprogram.Candidate, preferred string) string {
 		name += suffix
 	}
 	return safeOutputName(name)
+}
+
+// defaultOutputName 按「类型_YYYYMMDD-HHMMSS_候选ID前8位.扩展名」生成默认文件名。
+func defaultOutputName(candidate miniprogram.Candidate, startedAt time.Time) string {
+	kind := miniprogram.MediaKind(candidate)
+	suffix := ".mp4"
+	if kind != "m3u8" {
+		suffix = candidate.Suffix
+		if suffix == "" {
+			_, suffix = miniprogram.Classify("", candidate.URL)
+		}
+		if suffix == "" {
+			suffix = ".bin"
+		}
+	}
+	token := shortCandidateID(candidate.ID)
+	if token == "" {
+		token = "copy"
+	}
+	return miniprogram.TypeDir(kind) + "_" + startedAt.Format("20060102-150405") + "_" + token + suffix
 }
 
 func safeOutputName(name string) string {
@@ -146,23 +173,15 @@ func safeOutputName(name string) string {
 	return name
 }
 
-func outputPath(dir, name, candidateID string) string {
+func outputPath(dir, name string) string {
 	path := filepath.Join(dir, name)
 	if !fileExists(path) {
 		return path
 	}
 	ext := filepath.Ext(name)
 	stem := strings.TrimSuffix(name, ext)
-	suffix := shortCandidateID(candidateID)
-	if suffix == "" {
-		suffix = "copy"
-	}
-	for n := 1; ; n++ {
-		candidateName := stem + "_" + suffix
-		if n > 1 {
-			candidateName += fmt.Sprintf("_%d", n)
-		}
-		path = filepath.Join(dir, candidateName+ext)
+	for n := 2; ; n++ {
+		path = filepath.Join(dir, fmt.Sprintf("%s_%d%s", stem, n, ext))
 		if !fileExists(path) {
 			return path
 		}
@@ -175,23 +194,6 @@ func shortCandidateID(id string) string {
 		return id[:8]
 	}
 	return id
-}
-
-func candidateName(candidate miniprogram.Candidate) string {
-	if candidate.AppName != "" && candidate.ID != "" {
-		n := 8
-		if len(candidate.ID) < n {
-			n = len(candidate.ID)
-		}
-		return candidate.AppName + "_" + candidate.ID[:n]
-	}
-	if u, err := url.Parse(candidate.URL); err == nil {
-		base := filepath.Base(u.Path)
-		if base != "" && base != "." && base != "/" {
-			return base
-		}
-	}
-	return fmt.Sprintf("wx-mini-video_%d", time.Now().Unix())
 }
 
 func BuildFFmpegArgs(inputURL, outputPath string, headers map[string]string, overwrite bool) []string {
@@ -262,7 +264,7 @@ func stripConditionalHeaders(headers map[string]string) map[string]string {
 	return out
 }
 
-func (d *Downloader) Download(ctx context.Context, candidate miniprogram.Candidate, preferredName string) (string, error) {
+func (d *Downloader) Download(ctx context.Context, candidate miniprogram.Candidate, preferredName, targetAppID string) (string, error) {
 	if d.Client == nil {
 		d.Client = defaultHTTPClient()
 	}
@@ -270,19 +272,27 @@ func (d *Downloader) Download(ctx context.Context, candidate miniprogram.Candida
 		d.Dir = "."
 	}
 	if err := os.MkdirAll(d.Dir, 0o755); err != nil {
-		return "", err
+		return "", fmt.Errorf("创建下载根目录 %s 失败: %w", d.Dir, err)
+	}
+	subdir := miniprogram.MediaSubdir(candidate, targetAppID)
+	if !filepath.IsLocal(subdir) {
+		return "", fmt.Errorf("下载子目录不安全: %q", subdir)
+	}
+	bucket := filepath.Join(d.Dir, subdir)
+	if err := os.MkdirAll(bucket, 0o755); err != nil {
+		return "", fmt.Errorf("创建下载目录 %s 失败: %w", bucket, err)
 	}
 	name := OutputName(candidate, preferredName)
-	outputPath := outputPath(d.Dir, name, candidate.ID)
+	outputPath := outputPath(bucket, name)
 	d.emit(Progress{ID: candidate.ID, Name: name, Path: outputPath, Status: "starting", Total: candidate.ContentLength})
 	var err error
-	if candidate.Kind == "m3u8" || strings.EqualFold(filepath.Ext(candidate.URL), ".m3u8") {
+	if miniprogram.MediaKind(candidate) == "m3u8" {
 		err = d.downloadM3U8(ctx, candidate, outputPath)
 	} else {
 		err = d.downloadDirect(ctx, candidate, outputPath)
 	}
 	if err == nil {
-		_ = d.appendHistory(candidate, outputPath)
+		_ = d.appendHistory(candidate, outputPath, targetAppID)
 	}
 	d.finishProgress(candidate, name, outputPath, err)
 	return outputPath, err
@@ -324,11 +334,12 @@ func (d *Downloader) emit(p Progress) {
 }
 
 func (d *Downloader) downloadM3U8(ctx context.Context, candidate miniprogram.Candidate, outputPath string) error {
+	bucket := filepath.Dir(outputPath)
 	inputURL := candidate.CachedPath
 	source := "缓存的本地文件"
 	if inputURL == "" || !fileExists(inputURL) {
 		d.emit(Progress{ID: candidate.ID, Path: outputPath, Status: "cache-m3u8"})
-		localPath, err := d.cacheM3U8FromURL(ctx, candidate)
+		localPath, err := d.cacheM3U8FromURL(ctx, candidate, bucket)
 		if err != nil {
 			return fmt.Errorf("没有拿到 m3u8 本地缓存，远程 playlist 也已不可用(%v)。请重新播放目标媒体后重试", err)
 		}
@@ -349,7 +360,7 @@ func (d *Downloader) downloadM3U8(ctx context.Context, candidate miniprogram.Can
 	totalDuration := parseM3U8Duration(playlistBody)
 	segmentStats := segmentStats{}
 	if d.chooseM3U8Mode(playlistBody) == "prefetch" && !bytes.Contains(playlistBody, []byte("#EXT-X-STREAM-INF")) && !bytes.Contains(playlistBody, []byte("#EXT-X-MEDIA:")) {
-		localPlaylist, stats, err := d.localizeM3U8(ctx, candidate.ID, playlistBody, candidate.Headers, candidate.URL)
+		localPlaylist, stats, err := d.localizeM3U8(ctx, bucket, candidate.ID, playlistBody, candidate.Headers, candidate.URL)
 		if err != nil {
 			return err
 		}
@@ -604,11 +615,11 @@ type m3u8Resource struct {
 	LocalName string
 }
 
-func (d *Downloader) localizeM3U8(ctx context.Context, candidateID string, body []byte, headers map[string]string, sourceURL string) (string, segmentStats, error) {
+func (d *Downloader) localizeM3U8(ctx context.Context, bucket, candidateID string, body []byte, headers map[string]string, sourceURL string) (string, segmentStats, error) {
 	if candidateID == "" {
 		candidateID = fmt.Sprintf("m3u8_%d", time.Now().UnixNano())
 	}
-	dir := filepath.Join(d.Dir, ".segments", candidateID, miniprogram.CandidateID("", string(body)))
+	dir := filepath.Join(bucket, ".segments", candidateID, miniprogram.CandidateID("", string(body)))
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", segmentStats{Dir: dir}, err
 	}
@@ -830,7 +841,7 @@ func (d *Downloader) downloadResource(ctx context.Context, rawURL, outputPath st
 	return nil
 }
 
-func (d *Downloader) cacheM3U8FromURL(ctx context.Context, candidate miniprogram.Candidate) (string, error) {
+func (d *Downloader) cacheM3U8FromURL(ctx context.Context, candidate miniprogram.Candidate, bucket string) (string, error) {
 	body, err := d.fetchM3U8(ctx, candidate, candidate.Headers)
 	if err != nil && strings.Contains(err.Error(), "HTTP 304") {
 		body, err = d.fetchM3U8(ctx, candidate, stripConditionalHeaders(candidate.Headers))
@@ -838,7 +849,10 @@ func (d *Downloader) cacheM3U8FromURL(ctx context.Context, candidate miniprogram
 	if err != nil {
 		return "", err
 	}
-	localPath := filepath.Join(d.Dir, candidate.ID+".m3u8")
+	if err := os.MkdirAll(bucket, 0o755); err != nil {
+		return "", fmt.Errorf("创建 m3u8 缓存目录 %s 失败: %w", bucket, err)
+	}
+	localPath := filepath.Join(bucket, candidate.ID+".m3u8")
 	if err := os.WriteFile(localPath, rewriteM3U8URLs(body, candidate.URL), 0o644); err != nil {
 		return "", err
 	}
@@ -1075,13 +1089,21 @@ func commitPartFile(partPath, outputPath string) error {
 	return os.Rename(partPath, outputPath)
 }
 
-func (d *Downloader) appendHistory(candidate miniprogram.Candidate, outputPath string) error {
+func (d *Downloader) appendHistory(candidate miniprogram.Candidate, outputPath, targetAppID string) error {
 	sourceDomain := ""
 	if parsed, err := url.Parse(candidate.URL); err == nil {
 		sourceDomain = parsed.Hostname()
 	}
+	archiveAppID := strings.TrimSpace(candidate.AppID)
+	if archiveAppID == "" {
+		archiveAppID = strings.TrimSpace(targetAppID)
+	}
 	record := DownloadHistory{
 		Path:         outputPath,
+		AppID:        archiveAppID,
+		SourceAppID:  candidate.SourceAppID,
+		Kind:         miniprogram.MediaKind(candidate),
+		Attribution:  candidate.Attribution,
 		SourceDomain: sourceDomain,
 		Size:         fileSize(outputPath),
 		CompletedAt:  time.Now().UTC(),

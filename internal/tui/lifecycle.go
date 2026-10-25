@@ -13,11 +13,22 @@ type legacyCleanupMsg struct{ err error }
 
 func removeLegacyRootCmd() tea.Msg { return legacyCleanupMsg{err: removeLegacyRoot()} }
 
-func (m model) requestQuit() (tea.Model, tea.Cmd) {
+// beginStop 进入退出流程：恢复系统代理并关闭嗅探。
+func (m model) beginStop() (tea.Model, tea.Cmd) {
 	m.stopErr = nil
 	m.stopping = true
+	m.confirmQuit = false
 	if m.starting {
 		return m, nil
 	}
 	return m, m.stopProxy
+}
+
+// requestQuit 在下载中先请求二次确认，其余情况直接退出。
+func (m model) requestQuit() (tea.Model, tea.Cmd) {
+	if m.downloading {
+		m.confirmQuit = true
+		return m, nil
+	}
+	return m.beginStop()
 }

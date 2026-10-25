@@ -24,6 +24,7 @@ gopeed.db
 基本原理.txt
 屏幕截图 *.png
 poster/
+build/preview/
 
 .env
 deploy.sh

@@ -179,8 +179,8 @@ func TestMiniProgramDiscoveryCollectsOnlyUnattributedMedia(t *testing.T) {
 	plugin.OnResponse(ctx)
 	plugin.OnResponse(ctx)
 	programs := store.Programs()
-	if len(programs) != 1 || programs[0].AppID != "wx123" || programs[0].Name != "" {
-		t.Fatalf("discovered programs = %#v, want one unnamed wx123", programs)
+	if len(programs) != 1 || programs[0].AppID != "wx123" || programs[0].LastSeen.IsZero() {
+		t.Fatalf("discovered programs = %#v, want one wx123", programs)
 	}
 	files, err := os.ReadDir(dir)
 	if err != nil {
@@ -277,7 +277,7 @@ func TestMiniProgramPluginSendsUnknownSourcesToUnattributedWithoutSideEffects(t 
 
 func TestMiniProgramPluginCollectsOnlyMatchedJSONMedia(t *testing.T) {
 	store := miniprogram.NewStore()
-	plugin := CreateMiniProgramInterceptorPlugin(miniprogram.Target{AppID: "wx123", Name: "测试小程序"}, store, t.TempDir())
+	plugin := CreateMiniProgramInterceptorPlugin(miniprogram.Target{AppID: "wx123"}, store, t.TempDir())
 	body := []byte(`{"title":"媒体标题","cover":"https://cdn.example.com/cover.jpg","video":"https://cdn.example.com/video.mp4","audio":"https://cdn.example.com/audio.m4a","playlist":"https://cdn.example.com/live.m3u8"}`)
 	for _, appID := range []string{"wx456", "wx123"} {
 		ctx := &testProxyContext{
@@ -298,7 +298,7 @@ func TestMiniProgramPluginCollectsOnlyMatchedJSONMedia(t *testing.T) {
 		t.Fatalf("matched JSON candidates = %d, want image, video and audio", len(got))
 	}
 	for _, candidate := range got {
-		if candidate.AppID != "wx123" || candidate.AppName != "测试小程序" || candidate.Title != "媒体标题" || candidate.SourceURL != "https://api.example.com/feed" || candidate.Kind == "m3u8" {
+		if candidate.AppID != "wx123" || candidate.Title != "媒体标题" || candidate.SourceURL != "https://api.example.com/feed" || candidate.Kind == "m3u8" {
 			t.Fatalf("matched JSON candidate has wrong ownership or source: %#v", candidate)
 		}
 	}
@@ -338,7 +338,7 @@ func TestMiniProgramPluginFiltersDirectAudio(t *testing.T) {
 func TestMiniProgramPluginAdmitsH5VideoToUnattributedWithRealHeaders(t *testing.T) {
 	store := miniprogram.NewStore()
 	dir := t.TempDir()
-	plugin := CreateMiniProgramInterceptorPlugin(miniprogram.Target{AppID: "wx123", Name: "课程小程序"}, store, dir)
+	plugin := CreateMiniProgramInterceptorPlugin(miniprogram.Target{AppID: "wx123"}, store, dir)
 	ctx := &testProxyContext{
 		req: &proxy.ContextReq{
 			Method: http.MethodGet,
@@ -383,7 +383,7 @@ func TestMiniProgramPluginAdmitsH5VideoToUnattributedWithRealHeaders(t *testing.
 
 func TestMiniProgramPluginMarksCanonicalRefererAsConfirmed(t *testing.T) {
 	store := miniprogram.NewStore()
-	plugin := CreateMiniProgramInterceptorPlugin(miniprogram.Target{AppID: "wx123", Name: "目标"}, store, t.TempDir())
+	plugin := CreateMiniProgramInterceptorPlugin(miniprogram.Target{AppID: "wx123"}, store, t.TempDir())
 	plugin.OnResponse(&testProxyContext{
 		req: &proxy.ContextReq{
 			Method: http.MethodGet,
@@ -476,7 +476,7 @@ func TestMiniProgramPluginUnknownBinaryFallback(t *testing.T) {
 
 func TestMiniProgramPluginJSONJoinsTokenAndProvisionalField(t *testing.T) {
 	store := miniprogram.NewStore()
-	plugin := CreateMiniProgramInterceptorPlugin(miniprogram.Target{AppID: "wx123", Name: "课程"}, store, t.TempDir())
+	plugin := CreateMiniProgramInterceptorPlugin(miniprogram.Target{AppID: "wx123"}, store, t.TempDir())
 	body := []byte(`{"data":{"url":"https://cdn.example.com/a/video.mp4","urlToken":"?auth=abc","videoAddress":"https://cdn.example.com/b/play","cover":"https://cdn.example.com/c/cover"}}`)
 	ctx := &testProxyContext{
 		req: &proxy.ContextReq{

@@ -1,6 +1,6 @@
 # 微信小程序媒体下载器 UI 重设计需求（v0.2.0）
 
-状态：需求已确认（2026-10-25），待实现。
+状态：已实现（2026-10-25，v0.2.0 源码；真实 Windows Terminal 交互与 logo 显示仍待人工验收）。
 关联：[GLOSSARY](../GLOSSARY.md) · [ADR 0011](adr/0011-single-main-surface-ui.md) · [ADR 0012](adr/0012-per-appid-download-layout.md)
 观感参考：`wechat-channels-downloader`（外部项目，仅借鉴观感与交互范式；布局按本项目的信息量与流程自行设计）。
 

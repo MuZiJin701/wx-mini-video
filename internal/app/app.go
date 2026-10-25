@@ -178,7 +178,7 @@ func (r *Runtime) Download(ctx context.Context, candidate miniprogram.Candidate,
 			return "", err
 		}
 	}
-	return r.Downloader.Download(ctx, candidate, preferredName)
+	return r.Downloader.Download(ctx, candidate, preferredName, r.Settings.Target.AppID)
 }
 
 func (r *Runtime) DownloadProgress() minidownload.Progress {
@@ -193,13 +193,26 @@ func (r *Runtime) setProgress(progress minidownload.Progress) {
 	r.progressMu.Unlock()
 }
 
-func (r *Runtime) OpenDownloadDir() error {
-	return system.Open(r.Settings.DownloadDir)
+// downloadDirForTarget 返回应打开的目录：目标目录存在时打开目标目录，否则回落下载根目录。
+func (r *Runtime) downloadDirForTarget(targetAppID string) string {
+	root := r.Settings.DownloadDir
+	appID := strings.TrimSpace(targetAppID)
+	if appID == "" {
+		return root
+	}
+	targetDir := filepath.Join(root, miniprogram.SanitizeAppIDDir(appID))
+	if info, err := os.Stat(targetDir); err == nil && info.IsDir() {
+		return targetDir
+	}
+	return root
+}
+
+func (r *Runtime) OpenDownloadDir(targetAppID string) error {
+	return system.Open(r.downloadDirForTarget(targetAppID))
 }
 
 func (r *Runtime) SetTarget(target miniprogram.Target) {
 	target.AppID = strings.TrimSpace(target.AppID)
-	target.Name = strings.TrimSpace(target.Name)
 	r.mu.Lock()
 	r.Settings.Target = target
 	if r.Store != nil {

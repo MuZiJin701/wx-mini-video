@@ -35,13 +35,16 @@ func TestDownloadDirectAudioPreservesBytesAndSuffixWithoutFFmpeg(t *testing.T) {
 	kind, suffix := miniprogram.Classify("audio/mpeg", url)
 	candidate := miniprogram.Candidate{ID: "audio-test", URL: url, Kind: kind, Suffix: suffix,
 		Headers: map[string]string{"Referer": "https://servicewechat.com/wx123/1/page-frame.html"}}
-	output, err := d.Download(context.Background(), candidate, "音频标题")
+	output, err := d.Download(context.Background(), candidate, "音频标题", "")
 	if err != nil {
 		t.Fatal(err)
 	}
 	got, err := os.ReadFile(output)
 	if err != nil || string(got) != string(body) || filepath.Base(output) != "音频标题.mp3" {
 		t.Fatalf("audio output changed bytes or suffix: %s, %v", output, err)
+	}
+	if want := filepath.Join(d.Dir, "_unknown", miniprogram.DirAudios); filepath.Dir(output) != want {
+		t.Fatalf("audio output dir = %q, want %q", filepath.Dir(output), want)
 	}
 }
 
@@ -70,25 +73,33 @@ func TestDownloadDirectResumesPartialAndWritesHistory(t *testing.T) {
 	defer ts.Close()
 
 	d := New(t.TempDir())
+	stubDownloadClock(t, time.Date(2026, 10, 25, 13, 0, 0, 0, time.Local))
 	candidate := miniprogram.Candidate{
 		ID:            "resume-history",
+		AppID:         "wx123",
+		SourceAppID:   "wx456",
+		Attribution:   miniprogram.AttributionConfirmed,
 		URL:           ts.URL + "/resume.mp4",
 		Kind:          "video",
 		Suffix:        ".mp4",
 		ContentLength: int64(len(body)),
 	}
 
-	if _, err := d.Download(context.Background(), candidate, ""); err == nil {
+	firstOutput, err := d.Download(context.Background(), candidate, "", "wx123")
+	if err == nil {
 		t.Fatal("first download should fail after the server closes the response early")
 	}
-	partPath := partialPath(filepath.Join(d.Dir, "resume.mp4"), candidate)
+	partPath := partialPath(firstOutput, candidate)
 	if got := fileSize(partPath); got != int64(half) {
 		t.Fatalf("partial size = %d, want %d", got, half)
 	}
 
-	outputPath, err := d.Download(context.Background(), candidate, "")
+	outputPath, err := d.Download(context.Background(), candidate, "", "wx123")
 	if err != nil {
 		t.Fatalf("resumed download failed: %v", err)
+	}
+	if outputPath != firstOutput {
+		t.Fatalf("resumed output = %q, want same file %q", outputPath, firstOutput)
 	}
 	if requests != 2 {
 		t.Fatalf("server requests = %d, want initial request plus resume", requests)
@@ -115,8 +126,14 @@ func TestDownloadDirectResumesPartialAndWritesHistory(t *testing.T) {
 	if record.Path != outputPath || record.SourceDomain != "127.0.0.1" || record.Size != int64(len(body)) {
 		t.Fatalf("history record = %#v", record)
 	}
+	if record.AppID != "wx123" || record.SourceAppID != "wx456" || record.Kind != "video" || record.Attribution != miniprogram.AttributionConfirmed {
+		t.Fatalf("history attribution fields = %#v", record)
+	}
 	if record.CompletedAt.IsZero() || time.Since(record.CompletedAt) < 0 {
 		t.Fatalf("history timestamp = %v, want recent UTC time", record.CompletedAt)
+	}
+	if wantDir := filepath.Join(d.Dir, "wx123", miniprogram.DirVideos); filepath.Dir(outputPath) != wantDir {
+		t.Fatalf("output dir = %q, want %q", filepath.Dir(outputPath), wantDir)
 	}
 }
 
@@ -128,14 +145,18 @@ func TestDownloadUsesSafeDistinctWindowsOutputName(t *testing.T) {
 
 	d := New(t.TempDir())
 	candidate := miniprogram.Candidate{ID: "candidate-12345678", URL: ts.URL + "/video.mp4", Kind: "video", Suffix: ".mp4"}
-	if err := os.WriteFile(filepath.Join(d.Dir, "回放_2026-08-06T19-30-00Z.mp4"), []byte("old"), 0o644); err != nil {
+	bucket := filepath.Join(d.Dir, "_unknown", miniprogram.DirVideos)
+	if err := os.MkdirAll(bucket, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	path, err := d.Download(context.Background(), candidate, "回放_2026-08-06T19:30:00Z")
+	if err := os.WriteFile(filepath.Join(bucket, "回放_2026-08-06T19-30-00Z.mp4"), []byte("old"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	path, err := d.Download(context.Background(), candidate, "回放_2026-08-06T19:30:00Z", "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got, want := filepath.Base(path), "回放_2026-08-06T19-30-00Z_candidat.mp4"; got != want {
+	if got, want := filepath.Base(path), "回放_2026-08-06T19-30-00Z_2.mp4"; got != want {
 		t.Fatalf("output filename = %q, want %q", got, want)
 	}
 }
@@ -209,7 +230,8 @@ func TestLocalizeM3U8ReusesExistingSegments(t *testing.T) {
 	d := New(t.TempDir())
 	d.Client = ts.Client()
 	body := []byte("#EXTM3U\n#EXTINF:10.000,\n" + ts.URL + "/seg.ts\n")
-	dir := filepath.Join(d.Dir, ".segments", "reuse", miniprogram.CandidateID("", string(body)))
+	bucket := testBucket(d)
+	dir := filepath.Join(bucket, ".segments", "reuse", miniprogram.CandidateID("", string(body)))
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -218,7 +240,7 @@ func TestLocalizeM3U8ReusesExistingSegments(t *testing.T) {
 		t.Fatal(err)
 	}
 	writeSegmentDone(t, cached, ts.URL+"/seg.ts", int64(len("cached")))
-	_, stats, err := d.localizeM3U8(context.Background(), "reuse", body, nil, ts.URL)
+	_, stats, err := d.localizeM3U8(context.Background(), bucket, "reuse", body, nil, ts.URL)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -248,7 +270,7 @@ func TestLocalizeM3U8ReportsFailedResources(t *testing.T) {
 ` + ts.URL + `/bad.ts
 `)
 
-	_, stats, err := d.localizeM3U8(context.Background(), "failed-stats", body, nil, ts.URL)
+	_, stats, err := d.localizeM3U8(context.Background(), testBucket(d), "failed-stats", body, nil, ts.URL)
 	if err == nil {
 		t.Fatal("expected failed resource")
 	}
@@ -312,7 +334,7 @@ func TestLocalizeM3U8DownloadsSegmentsAndResources(t *testing.T) {
 	d.SegmentConcurrency = 2
 	d.SegmentRetries = 2
 
-	localPath, stats, err := d.localizeM3U8(context.Background(), "candidate", body, map[string]string{}, ts.URL)
+	localPath, stats, err := d.localizeM3U8(context.Background(), testBucket(d), "candidate", body, map[string]string{}, ts.URL)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -361,7 +383,8 @@ func TestLocalizeM3U8KeepsSegmentsOnPartialFailure(t *testing.T) {
 	d.SegmentConcurrency = 2
 	d.SegmentRetries = 1
 
-	_, stats, err := d.localizeM3U8(context.Background(), "failed", body, nil, ts.URL)
+	bucket := testBucket(d)
+	_, stats, err := d.localizeM3U8(context.Background(), bucket, "failed", body, nil, ts.URL)
 	if err == nil {
 		t.Fatal("expected partial failure")
 	}
@@ -378,7 +401,7 @@ func TestLocalizeM3U8KeepsSegmentsOnPartialFailure(t *testing.T) {
 	}
 
 	failing.Store(false)
-	_, retried, err := d.localizeM3U8(context.Background(), "failed", body, nil, ts.URL)
+	_, retried, err := d.localizeM3U8(context.Background(), bucket, "failed", body, nil, ts.URL)
 	if err != nil {
 		t.Fatalf("retry after partial failure: %v", err)
 	}
@@ -508,7 +531,7 @@ func TestCacheM3U8FromURLRetriesWithoutConditionalHeadersOn304(t *testing.T) {
 			"If-None-Match": "etag",
 			"User-Agent":    "ua",
 		},
-	})
+	}, testBucket(d))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -549,16 +572,20 @@ seg2.ts
 	}
 
 	// Also test full download + cache flow
+	bucket := testBucket(d)
 	localPath, err := d.cacheM3U8FromURL(context.Background(), miniprogram.Candidate{
 		ID:      "test123",
 		URL:     ts.URL + "/playlist.m3u8",
 		Kind:    "m3u8",
 		Headers: map[string]string{},
-	})
+	}, bucket)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer os.Remove(localPath)
+	if filepath.Dir(localPath) != bucket {
+		t.Fatalf("cached playlist dir = %q, want %q", filepath.Dir(localPath), bucket)
+	}
 
 	data, err := os.ReadFile(localPath)
 	if err != nil {
@@ -579,19 +606,19 @@ func TestDownloadM3U8FallsBackToRemotePlaylistWithSessionHeaders(t *testing.T) {
 
 	d := New(t.TempDir())
 	d.FFmpegPath = "nonexistent_ffmpeg_xxx"
-	_, err := d.Download(context.Background(), miniprogram.Candidate{
+	output, err := d.Download(context.Background(), miniprogram.Candidate{
 		ID:      "remote-fallback",
 		Kind:    "m3u8",
 		URL:     ts.URL + "/playlist.m3u8",
 		Headers: map[string]string{"X-Wx-Session": "current-session"},
-	}, "")
+	}, "", "")
 	if err == nil || !strings.Contains(err.Error(), "未找到 ffmpeg") {
 		t.Fatalf("Download() error = %v, want successful playlist fallback before ffmpeg check", err)
 	}
 	if gotSession != "current-session" {
 		t.Fatalf("remote playlist request X-Wx-Session = %q, want current session header", gotSession)
 	}
-	cached, err := os.ReadFile(filepath.Join(d.Dir, "remote-fallback.m3u8"))
+	cached, err := os.ReadFile(filepath.Join(filepath.Dir(output), "remote-fallback.m3u8"))
 	if err != nil || !strings.Contains(string(cached), "#EXTM3U") {
 		t.Fatalf("remote fallback playlist = %q, %v; want cached playlist", cached, err)
 	}
@@ -668,7 +695,7 @@ func TestDownloadDirectReportsProgress(t *testing.T) {
 		Kind:          "video",
 		Suffix:        ".mp4",
 		ContentLength: 8192,
-	}, "")
+	}, "", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -682,4 +709,112 @@ func TestDownloadDirectReportsProgress(t *testing.T) {
 	if last.Downloaded != 8192 || last.Total != 8192 {
 		t.Fatalf("last progress = %d/%d, want 8192/8192", last.Downloaded, last.Total)
 	}
+}
+
+func TestDownloadDefaultNameUsesLocalTimeTypeAndShortCandidateID(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("image"))
+	}))
+	defer ts.Close()
+
+	d := New(t.TempDir())
+	stubDownloadClock(t, time.Date(2026, 10, 25, 13, 0, 0, 0, time.Local))
+	candidate := miniprogram.Candidate{
+		ID:      "1a2b3c4d5e6f",
+		AppID:   "wx123",
+		Kind:    "image",
+		Suffix:  ".jpg",
+		URL:     ts.URL + "/cover",
+		Headers: map[string]string{},
+	}
+	output, err := d.Download(context.Background(), candidate, "", "wxTarget")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := filepath.Base(output), "图片_20261025-130000_1a2b3c4d.jpg"; got != want {
+		t.Fatalf("output filename = %q, want %q", got, want)
+	}
+	if got, want := filepath.Dir(output), filepath.Join(d.Dir, "wx123", miniprogram.DirImages); got != want {
+		t.Fatalf("output dir = %q, want %q", got, want)
+	}
+}
+
+func TestDownloadUnattributedCandidateUsesCurrentTargetAndCopyToken(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("video"))
+	}))
+	defer ts.Close()
+
+	d := New(t.TempDir())
+	stubDownloadClock(t, time.Date(2026, 10, 25, 13, 5, 12, 0, time.Local))
+	output, err := d.Download(context.Background(), miniprogram.Candidate{
+		Kind:    "video",
+		Suffix:  ".mp4",
+		URL:     ts.URL + "/clip.mp4",
+		Headers: map[string]string{},
+	}, "", "wx456")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := filepath.Base(output), "视频_20261025-130512_copy.mp4"; got != want {
+		t.Fatalf("output filename = %q, want %q", got, want)
+	}
+	if got, want := filepath.Dir(output), filepath.Join(d.Dir, "wx456", miniprogram.DirVideos); got != want {
+		t.Fatalf("output dir = %q, want %q", got, want)
+	}
+
+	historyBody, err := os.ReadFile(filepath.Join(d.Dir, "history.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var record DownloadHistory
+	if err := json.Unmarshal([]byte(strings.TrimSpace(string(historyBody))), &record); err != nil {
+		t.Fatal(err)
+	}
+	if record.AppID != "wx456" || record.SourceAppID != "" || record.Kind != "video" || record.Attribution != "" {
+		t.Fatalf("unattributed history record = %#v", record)
+	}
+}
+
+func TestDownloadM3U8NameUsesMP4AndM3U8Bucket(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("#EXTM3U\n#EXT-X-ENDLIST\n"))
+	}))
+	defer ts.Close()
+
+	dir := t.TempDir()
+	playlist := filepath.Join(dir, "captured.m3u8")
+	if err := os.WriteFile(playlist, []byte("#EXTM3U\n#EXT-X-ENDLIST\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	d := New(dir)
+	stubDownloadClock(t, time.Date(2026, 10, 25, 13, 7, 33, 0, time.Local))
+	d.FFmpegPath = "nonexistent_ffmpeg_xxx"
+	output, err := d.Download(context.Background(), miniprogram.Candidate{
+		ID:         "5a4b3c2d1e0f",
+		AppID:      "wx789",
+		Kind:       "m3u8",
+		URL:        ts.URL + "/live/index.m3u8",
+		CachedPath: playlist,
+	}, "", "wx789")
+	if err == nil || !strings.Contains(err.Error(), "未找到 ffmpeg") {
+		t.Fatalf("Download() error = %v, want ffmpeg missing error", err)
+	}
+	if got, want := filepath.Base(output), "m3u8_20261025-130733_5a4b3c2d.mp4"; got != want {
+		t.Fatalf("output filename = %q, want %q", got, want)
+	}
+	if got, want := filepath.Dir(output), filepath.Join(d.Dir, "wx789", miniprogram.DirM3U8); got != want {
+		t.Fatalf("output dir = %q, want %q", got, want)
+	}
+}
+
+func testBucket(d *Downloader) string {
+	return filepath.Join(d.Dir, "wx123", miniprogram.DirM3U8)
+}
+
+func stubDownloadClock(t *testing.T, at time.Time) {
+	t.Helper()
+	old := now
+	now = func() time.Time { return at }
+	t.Cleanup(func() { now = old })
 }

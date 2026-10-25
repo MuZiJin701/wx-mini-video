@@ -41,6 +41,7 @@ func TestExplicitCertificatesNeverFallBackAndTakePriority(t *testing.T) {
 func TestSettingsReadsTargetFromConfig(t *testing.T) {
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "wx-mini-video.yaml")
+	// target.name 是旧版配置项：仍可被读取但不注册、不进入数据模型。
 	if err := os.WriteFile(configPath, []byte("target:\n  appID: \"wx123\"\n  name: \"测试小程序\"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -54,15 +55,17 @@ func TestSettingsReadsTargetFromConfig(t *testing.T) {
 	if settings.Target.AppID != "wx123" {
 		t.Fatalf("AppID = %q", settings.Target.AppID)
 	}
-	if settings.Target.Name != "测试小程序" {
-		t.Fatalf("Name = %q", settings.Target.Name)
+	for _, item := range GetSchema() {
+		if item.Key == "target.name" {
+			t.Fatal("target.name should no longer be registered")
+		}
 	}
 }
 
-func TestSettingsAllowsEmptyTargetName(t *testing.T) {
+func TestSettingsAllowsEmptyTarget(t *testing.T) {
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "wx-mini-video.yaml")
-	if err := os.WriteFile(configPath, []byte("target:\n  appID: \"wx123\"\n"), 0o644); err != nil {
+	if err := os.WriteFile(configPath, []byte("target:\n  appID: \"\"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv(EnvConfigPath, configPath)
@@ -72,11 +75,8 @@ func TestSettingsAllowsEmptyTargetName(t *testing.T) {
 		t.Fatal(err)
 	}
 	settings := cfg.Settings()
-	if settings.Target.AppID != "wx123" {
+	if settings.Target.AppID != "" {
 		t.Fatalf("AppID = %q", settings.Target.AppID)
-	}
-	if settings.Target.Name != "" {
-		t.Fatalf("Name = %q", settings.Target.Name)
 	}
 }
 

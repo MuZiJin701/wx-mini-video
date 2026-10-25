@@ -148,7 +148,6 @@ func CreateMiniProgramInterceptorPlugin(target miniprogram.Target, store *minipr
 func addTargetResponseCandidate(store *miniprogram.Store, dir string, generation uint64, target miniprogram.Target, sourceAppID, rawURL, contentType string, contentLength int64, headers map[string]string, kind, suffix string, ctx proxy.Context) {
 	candidate := miniprogram.Candidate{
 		AppID:         target.AppID,
-		AppName:       target.Name,
 		SourceAppID:   sourceAppID,
 		Attribution:   miniprogram.AttributionConfirmed,
 		URL:           rawURL,
@@ -168,7 +167,9 @@ func addTargetResponseCandidate(store *miniprogram.Store, dir string, generation
 		if len(body) == 0 && store.IsCurrentTarget(generation) {
 			body = fetchM3U8HTTP(candidate)
 		}
-		cache = func() string { return cacheM3U8(body, dir, candidate) }
+		cache = func() string {
+			return cacheM3U8(body, filepath.Join(dir, miniprogram.MediaSubdir(candidate, target.AppID)), candidate)
+		}
 	}
 	_, _ = store.AddForTarget(generation, candidate, cache)
 }
@@ -187,7 +188,6 @@ func addJSONCandidates(store *miniprogram.Store, generation uint64, target minip
 		candidate.SourceURL = sourceURL
 		candidate.Headers = miniprogram.HeadersForURL(headers, sourceURL, candidate.URL)
 		candidate.AppID = target.AppID
-		candidate.AppName = target.Name
 		candidate.SourceAppID = sourceAppID
 		candidate.Attribution = miniprogram.AttributionConfirmed
 		_, _ = store.AddForTarget(generation, candidate, nil)
@@ -211,7 +211,6 @@ func tryUnknownBinaryCandidate(store *miniprogram.Store, generation uint64, targ
 	suffix := unknownBinarySuffix(contentDisposition, rawURL)
 	candidate := miniprogram.Candidate{
 		AppID:         target.AppID,
-		AppName:       target.Name,
 		SourceAppID:   sourceAppID,
 		Attribution:   miniprogram.AttributionConfirmed,
 		URL:           rawURL,

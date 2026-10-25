@@ -7,7 +7,7 @@ download:
   mode: "auto"
 
 capture:
-  showUnattributed: true # 是否收集并显示来源未确认的媒体（按 6 查看）
+  showUnattributed: true # 是否收集并显示来源未确认的媒体（以 ? 标记并入类型分类）
 
 proxy:
   system: true
@@ -18,7 +18,6 @@ proxy:
 
 target:
   appID: ""
-  name: ""
 
 cert:
   file: ""

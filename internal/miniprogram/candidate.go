@@ -17,7 +17,6 @@ import (
 )
 
 type Target struct {
-	Name       string `json:"name"`
 	AppID      string `json:"app_id"`
 	OriginalID string `json:"original_id"`
 	LinkPrefix string `json:"link_prefix"`
@@ -33,7 +32,6 @@ const (
 type Candidate struct {
 	ID            string            `json:"id"`
 	AppID         string            `json:"app_id"`
-	AppName       string            `json:"app_name"`
 	SourceAppID   string            `json:"source_app_id,omitempty"`
 	Attribution   string            `json:"attribution,omitempty"`
 	Provisional   bool              `json:"provisional,omitempty"`
@@ -63,7 +61,7 @@ type Store struct {
 	unattributedGeneration uint64
 	target                 Target
 	generation             uint64
-	programs               []Target
+	programs               []Program
 	OnCandidateAdded       func(Candidate)
 }
 

@@ -11,7 +11,9 @@ Windows 优先的单二进制 Go TUI，使用 Bubble Tea 和 Echo 代理适配�
 | `main.go`、`pkg/system/console_windows.go` | Terminal 启动、提权子进程入口与启动错误提示 |
 | `pkg/certificate/` | 根证书生成/复用、信任检查、证书安装与旧证书清理（含 Windows 提权子进程） |
 | `internal/app/` | 代理、目标、候选和下载器的运行时编排 |
-| `internal/tui/` | 手动输入、发现、分类、下载与进度 |
+| `internal/tui/` | 单主界面与品牌区、目标选择、媒体视图、主题与外观、鼠标命中、下载与进度 |
+| `internal/tui/ui/` | 外观模式与 `ui.json`、系统明暗、主题色板、布局度量与显示宽度 |
+| `internal/tui/logo/` | 终端图片能力探测、Sixel/kitty 编码、每帧绘制与清理（失败静默降级） |
 | `internal/interceptor/miniprogram.go` | 请求来源过滤、媒体识别和播放列表缓存 |
 | `internal/miniprogram/` | 目标、发现列表与候选存储 |
 | `internal/minidownload/` | 直链下载、m3u8 与 ffmpeg（随包/受管） |
@@ -25,20 +27,33 @@ macOS 通过普通用户进程调用系统授权提示管理活动网络服务�
 
 Windows 的 `PrepareConsole` 在配置、证书、代理初始化前只处理终端选择：优先使用已安装的 `wt.exe`，已在 Windows Terminal 中则沿用当前窗口，找不到 Terminal 时保留原控制台；不再整体提权。主程序始终以运行微信的当前用户运行，系统代理写入当前用户 `HKCU`。只有安装根证书或清理旧共享根证书时，才通过 `ShellExecuteExW` 的 `runas` 启动本程序的提权子进程（`RunHelper`）；授权后保留进程句柄并等待结束（最长两分钟），读取退出码后检查信任库确认结果。失败退出或成功退出但证书状态不符会及时报错，不再反复轮询至超时；子进程弹窗展示具体原因，取消 UAC 单独提示。两分钟上限不包含用户处理 UAC 的时间；真正超时会提示子进程可能仍在运行。重启保留工作目录、参数和 `WX_MINI_VIDEO_CONFIG`。取舍见 [ADR 0009](docs/adr/0009-user-scoped-windows-runtime.md)，修订 [ADR 0004](docs/adr/0004-windows-terminal-startup.md)。
 
-输入界面尚未启动代理；进入发现或确认目标后才启动。服务先绑定监听端口，再检查和安装证书、设置系统代理；启动失败关闭已创建的代理并恢复已捕获的系统代理快照。没有快照时不改动系统代理，恢复失败会保留状态供再次清理，并将错误返回调用方。
+目标选择卡尚未启动代理；打开目标覆盖层或确认目标后才启动。服务先绑定监听端口，再检查和安装证书、设置系统代理；启动失败关闭已创建的代理并恢复已捕获的系统代理快照。没有快照时不改动系统代理，恢复失败会保留状态供再次清理，并将错误返回调用方。
 
 正常退出恢复原代理，包括地址中含空格的多协议配置；如果原地址的每一项都完整匹配本程序监听地址，则视为异常退出残留，退出时禁用它。其他端口或混有其他地址的配置保留原样。恢复或关闭失败时 TUI 保留错误界面，按 `r` 重试，按 `f` 明确强制退出；最终清理错误也会显示，不静默丢弃。
 
 ### 目标与媒体
 
 1. 默认代理为 `127.0.0.1:2023`。从 HTTPS `servicewechat.com/<AppID>/<版本>/page-frame.html` 格式的 `Referer` 解析请求来源 AppID，完整匹配目标后才计入目标候选并缓存媒体；来源缺失、格式不符或其他 AppID 的媒体类响应作为**来源未确认**候选（`?` 标记）按类型并入候选列表（不写播放列表缓存、不自动下载），用户可查看和下载。目标候选不通过共享 CDN 或跨请求 URL 关联扩大范围。
-2. 发现阶段只登记 AppID，按 AppID 去重；即使只有一个也需选择。名称缺失时显示“名称未识别”，可补填，映射只在本次运行保留。发现阶段不产生目标候选、不缓存播放列表，但来源未确认媒体照常收集（与目标无关），确认目标后按类型显示（`?` 标记）；这样打开小程序时自动加载的第一个页面不会因目标尚未确认而丢失。
-3. 切换目标清空候选及进度，保留文件、历史、部分下载和缓存。存储用目标代次拒绝旧目标响应；来源未确认媒体使用独立清空代次，确认或切换目标不失效，清空列表使在途结果失效，提交候选和写缓存时再次检查；按 `c` 清空也会使清空前尚未接纳的响应失效，保留当前目标和本地文件。下载中不允许切换目标。
+2. 发现阶段只登记 AppID（含首次出现与最近出现时间，仅本次运行保存），按 AppID 去重；目标覆盖层按最近出现时间倒序展示，选中即确认，不再有名称补填步骤（v0.2.0 删除小程序名称功能）。发现阶段不产生目标候选、不缓存播放列表，但来源未确认媒体照常收集（与目标无关），确认目标后按类型显示（`?` 标记）；这样打开小程序时自动加载的第一个页面不会因目标尚未确认而丢失。
+3. `s`/`Ctrl+D` 打开目标覆盖层；取消不会清空当前目标或候选，确认新 AppID 后才清空候选及进度，保留文件、历史、部分下载和缓存。存储用目标代次拒绝旧目标响应；来源未确认媒体使用独立清空代次，确认或切换目标不失效，清空列表使在途结果失效，提交候选和写缓存时再次检查；按 `c` 清空也会使清空前尚未接纳的响应失效，保留当前目标和本地文件。下载中不允许切换目标。
 4. 直接响应按 Content-Type 或 URL 后缀识别媒体。匹配目标的 JSON 接口可提供图片、直链视频和直链音频；JSON m3u8 链接跳过，等待实际播放列表响应。JSON 提取的跨域链接仅保留 User-Agent、Referer、Accept、Accept-Language，不转发接口 Cookie、Authorization 或其他自定义鉴权头；同源指 scheme 与 host（含端口）一致。后续真实媒体响应会更新其重放请求头与媒体元数据，保留 JSON 标题。URL 所在对象的 `title`、`videoTitle`、`audioTitle`、`mediaTitle`、`caption`、`subject`、`name` 可作为候选标题。JSON 另支持相邻字段拼接（如 `url` + `urlToken`）、无后缀但字段名强相关的媒体地址；目标 AppID 已匹配时，`application/octet-stream` 等未知类型且不小于 256 KB 的响应作为“未知文件”兜底候选，不自动缓存或下载。另对小程序的 H5 页面/脚本（HTML/JS，≤ 4 MB，含 `miniProgram`、`jweixin`、`ckplayer` 或 `<video` 标记）扫描内联的视频、m3u8 与音频地址，作为来源未确认候选按类型显示；Referer 取页面自身；仅同源媒体复用页面 Cookie/Authorization，跨源只保留公开请求元数据，真实媒体响应的鉴权头不会被后续页面扫描覆盖，因此打开详情页即可出现候选，不依赖播放器真正发请求。扫描候选标记「H5 页面/脚本扫描（未播放验证）」，下载前未验证地址是否仍有效。
-5. 直链先写带资源标识的 `.part` 和校验元数据；仅有强 ETag 时以 Range/If-Range 续传，服务器返回新实体时重下，没有校验依据时也重下。旧版同名 `.part` 保留但不复用。HTTP 分段响应从 Content-Range 取得完整长度；提交前核对响应声明的长度，不再凭嗅探长度或已有部分大小直接完成。成功记录追加到下载目录的 `history.jsonl`，包含路径、来源域名、大小和 UTC 时间。
+5. 直链先写带资源标识的 `.part` 和校验元数据；仅有强 ETag 时以 Range/If-Range 续传，服务器返回新实体时重下，没有校验依据时也重下。旧版同名 `.part` 保留但不复用。HTTP 分段响应从 Content-Range 取得完整长度；提交前核对响应声明的长度，不再凭嗅探长度或已有部分大小直接完成。成功记录追加到下载根目录的 `history.jsonl`，包含路径、目标 AppID（`app_id`）、请求来源 AppID、资源类型、归属、来源域名、大小和 UTC 时间。
 6. m3u8 使用已捕获播放列表，缺失时允许远程回补，最后由 ffmpeg 输出 mp4；音频 m3u8 也沿用此流程。捕获缓存保留原始相对引用，在下载阶段统一解析；预取缓存按候选及播放列表内容隔离，避免更新后的播放列表误用原位置的分片，并按来源限定请求头；ffmpeg 获取分片时，经仅在下载期间运行的 `127.0.0.1` 随机端口入口读取缓存播放列表、分片及子播放列表，由 Go 按来源重放鉴权头，入口仅接受带随机标识且已登记的资源路径。主播放列表沿用此方式获取其子播放列表，不作为普通分片预取。跨源重定向同样不携带凭据。
 
 支持格式：图片 `jpg/png/webp/gif/bmp/avif`；直链视频 `mp4/webm/mov`；直链音频 `mp3/m4a/aac/wav/ogg/flac/opus/amr`。图片和直链媒体保存原文件；不提供转码、音轨提取或播放功能。归属取舍见 [ADR 0008](docs/adr/0008-target-attribution.md)，替代 [ADR 0003](docs/adr/0003-target-appid-filtering.md)。
+
+### 界面与外观（v0.2.0）
+
+TUI 为单主界面：品牌区（品牌图标、kicker/标题/副标题、右侧外观分段控件）→ 渐变分隔线 → 主区 → 底栏（GitHub 链接、退出按钮）。未选目标时主区是目标选择卡（AppID 输入、开始嗅探、自动发现）；已选目标后是目标条（AppID、代理、ffmpeg 状态、切换）、分类页签、候选表格与状态/进度行。目标覆盖层、详情抽屉、日志浮层、退出确认、旧证书确认都是覆盖层；页签、表格行、按钮和外观控件支持鼠标点击，键盘操作全部保留。
+
+- 外观模式：跟随系统/浅色/深色，`←/→` 或点击切换，立即生效；偏好原子写入下载目录的 `ui.json`。Windows 读 `HKCU\...\Themes\Personalize\AppsUseLightTheme`，macOS 读 `defaults read -g AppleInterfaceStyle`，读取失败回退深色；跟随系统时每 2 秒轮询。
+- 品牌 logo：启动、Bubble Tea 接管 stdin 之前探测终端图片能力（kitty 图形查询 + CSI 16t 像素格 + DA1）；只有收到正面回复才绘制内嵌 512×512 PNG（Sixel/kitty），输出层每帧补画，覆盖层打开、缩放与退出时关闭并清理。探测失败、`NO_COLOR`、tmux/screen、Apple Terminal、非 TTY 或窗口过矮时降级为块字符品牌图标；真图不改变布局高度上限（5 行）。可在真实终端运行 `go run ./build/logoprobe` 验证，重建图标运行 `go run ./build/genlogo`。
+- 已下载候选在当前进程内以行尾「已下载」标记（需宽度 ≥84 才显示状态列），详情抽屉显示本地路径；重复下载生成新文件。下载中退出需要二次确认，已完成文件保留。
+- 运行日志、debug 日志、`history.jsonl`、`ui.json`、根证书、受管 ffmpeg 与 `.ffmpeg` 失败日志仍在下载根目录；媒体、m3u8 缓存/分片和 `.part` 跟随目标目录。
+
+### 下载目录与命名（v0.2.0）
+
+`downloads/<目标 AppID>/<类型>/`，类型目录为 `图片`、`视频`、`音频`、`m3u8`、`其他`（未识别二进制）。m3u8 合并产物、播放列表缓存 `<候选ID>.m3u8` 与 `.segments` 分片都放在 `m3u8/`；合并成功的分片清理语义不变。文件名默认 `类型_YYYYMMDD-HHMMSS_候选ID前8位.扩展名`，本地时区，m3u8 合并产物固定 `.mp4`；同名冲突追加 `_2`、`_3`。目标候选按其 AppID 归档；来源未确认候选按下载时当前目标 AppID 归档，`history.jsonl` 同时记录请求来源 AppID。AppID 目录名做安全清洗并拒绝路径穿越，保留大小写。旧版平铺在下载根目录的媒体、`.part` 与缓存不迁移、不删除、不复用。`o`/`Ctrl+O` 优先打开当前目标目录，缺失或未选目标时打开下载根目录。取舍见 [ADR 0012](docs/adr/0012-per-appid-download-layout.md)。
 
 ## 配置
 
@@ -57,11 +72,11 @@ Windows 的 `PrepareConsole` 在配置、证书、代理初始化前只处理终
 | `proxy.hostname`、`proxy.port` | `127.0.0.1`、`2023` | 本地监听地址 |
 | `proxy.skipInstallRootCert` | `false` | 跳过根证书检查和自动安装；不替代证书信任配置 |
 | `proxy.upstreamProxy` | 空 | 上游代理地址 |
-| `target.appID`、`target.name` | 空 | 输入界面预填值；空 AppID 不表示接收全部媒体 |
+| `target.appID` | 空 | 目标选择卡的预填值；空 AppID 不表示接收全部媒体 |
 | `cert.file`、`cert.key` | 空、空 | 必须成对配置的 PEM 证书与 RSA 私钥路径；显式配置优先，无配置时生成独立证书，不再自动借用 mitmproxy 证书 |
 | `cert.name` | `Echo` | 仅兼容保留；信任检查使用证书指纹，不再使用此名称 |
 
-下载目录也保存缓存、日志、仅含公开证书的 `WxMiniVideoRoot.cer` 和受管下载的 ffmpeg；随包 ffmpeg 位于程序旁的 `ffmpeg/`，私钥单独保存于本机用户目录。移动便携目录时一并保留 `downloads/`；使用外部配置或显式目录时需另行保留该目录。取舍见 [ADR 0002](docs/adr/0002-portable-runtime-data.md) 和 [ADR 0005](docs/adr/0005-local-ca-lifecycle.md)。
+下载目录也保存缓存、日志、外观偏好 `ui.json`、仅含公开证书的 `WxMiniVideoRoot.cer` 和受管下载的 ffmpeg；随包 ffmpeg 位于程序旁的 `ffmpeg/`，私钥单独保存于本机用户目录。移动便携目录时一并保留 `downloads/`；使用外部配置或显式目录时需另行保留该目录。取舍见 [ADR 0002](docs/adr/0002-portable-runtime-data.md)、[ADR 0005](docs/adr/0005-local-ca-lifecycle.md) 和 [ADR 0012](docs/adr/0012-per-appid-download-layout.md)。
 
 ffmpeg 查找优先级为显式 `download.ffmpeg`、随包 ffmpeg、受管 ffmpeg。随包版本：Windows 与 macOS 均为固定官方源码自建（FFmpeg 9.0.2 + OpenSSL 3.5.9，LGPLv3，静态链接），Windows 为 `ffmpeg\ffmpeg.exe`，macOS 为 `.app` 外 `ffmpeg/ffmpeg-amd64`、`ffmpeg/ffmpeg-arm64`，不做 lipo。随包文件做存在/可执行检查，并以 3 秒超时执行 `-version` 探测；缓存路径、大小和修改时间对应的结果，替换文件后重测；缺失或损坏时回退受管下载。受管下载使用候选源列表：Windows 首选 gyan 9.0.2、备用 BtbN 2026-09-30 月末 8.1 LGPL；macOS 沿用 Martin 两个地址。每个源固定 URL 与 SHA-256，可换源重试；旧 marker 因摘要变化自动失效。版本和摘要在 `internal/minidownload/ffmpeg.go`，更新时需同时修改。自建流程与对应源码见 [ADR 0010](docs/adr/0010-source-built-ffmpeg.md) 和 `build/ffmpeg/README.md`。
 
@@ -97,7 +112,7 @@ ffmpeg 查找优先级为显式 `download.ffmpeg`、随包 ffmpeg、受管 ffmpe
 | m3u8 预取失败较多 | 将 `download.segmentConcurrency` 从 `6` 调低到 `4`，重新播放后重试。 |
 | m3u8 合并失败 | 先确认 `ffmpeg/` 未被隔离或删除；随包 ffmpeg 缺失或损坏时程序会自动下载受管 ffmpeg，也可指定 `download.ffmpeg`。查看错误给出的 `下载目录\.ffmpeg\<候选ID>.log`。日志会移除已捕获请求头值；分享前仍需检查 URL 中的签名和其他敏感信息。 |
 
-媒体界面补充按键：`1/2/3/4/5` 分类切换，`r` 刷新，`PgUp/PgDn` 翻阅日志，`Home/End` 到日志开头/末尾。输入与发现之间用 `Ctrl+D` 切换；输入界面用 `Esc/Ctrl+C` 退出。
+媒体界面补充按键：`1/2/3/4/5` 分类切换，`r`/`Ctrl+R` 刷新或重试代理，`PgUp/PgDn` 翻阅日志，`Home/End` 到日志开头/末尾，`i` 详情抽屉，`l` 日志浮层，`Esc` 关闭覆盖层；`Ctrl+O` 打开下载目录，`Ctrl+Q` 退出（下载中二次确认）。目标选择卡 `Ctrl+D` 打开目标覆盖层，`Esc` 退出程序。
 
 ## 开发验证
 
@@ -109,7 +124,7 @@ go vet ./...
 git diff --check
 ```
 
-测试覆盖来源过滤及副作用、发现/选择/切换、分类和下载、Windows 启动编排与参数传递。代理库 patch 的回归测试不在根模块的 `./...` 中，修改 `third_party/echo/` 后需运行 `go test -count=1 github.com/ltaoo/echo/...`。代理恢复回归使用替身，不更改真实系统代理或证书。自动化结果不能替代下面的真实微信验收。
+测试覆盖来源过滤及副作用、发现/选择/切换、分类和下载、Windows 启动编排与参数传递。v0.2.0 起另覆盖 `internal/tui/ui` 的布局度量/显示宽度/外观偏好读写、`internal/tui` 的鼠标命中与目标覆盖层选择/退出确认、`internal/miniprogram` 与 `internal/minidownload` 的下载目录分桶和文件命名、`internal/tui/logo` 的能力探测解析与 Sixel/kitty 编码。代理库 patch 的回归测试不在根模块的 `./...` 中，修改 `third_party/echo/` 后需运行 `go test -count=1 github.com/ltaoo/echo/...`。代理恢复回归使用替身，不更改真实系统代理或证书。自动化结果不能替代下面的真实微信验收，也不能替代真实终端中的图片显示与鼠标交互验收。
 
 可靠性回归还覆盖独立证书生成及复用、私钥 ACL、显式配置失败、指纹匹配、迁移确认、退出重试、完整代理快照、同名资源隔离、实体校验续传和鉴权头来源隔离。机器已安装 ffmpeg 时，测试会生成短音频分片并以本机 HTTP 服务验证预取与 ffmpeg 两种鉴权 m3u8 合并；未安装时跳过这一实际合并用例，仍执行播放列表入口测试，不自动下载 ffmpeg。新增回归覆盖随包 ffmpeg 路径与优先级、来源未确认媒体/未知二进制兜底、JSON 字段拼接、debug 日志脱敏、echo listener 回收、分片 `.part`/`.done` 复用判定。
 
@@ -125,7 +140,7 @@ Mac Release 更新时，下载通过验证的 Actions 原始通用 ZIP，不重�
 
 ffmpeg 自建迁移：已采用固定 FFmpeg/OpenSSL 官方源码自行构建，见 [ADR 0010](docs/adr/0010-source-built-ffmpeg.md) 和[构建说明](build/ffmpeg/README.md)。`.github/workflows/ffmpeg.yml` 为手动三架构构建并归档二进制、源码和验证记录；v0.1.9 随包 ffmpeg 已切换到自建版本，对应源码归档与二进制在同一 Release 提供。
 
-Windows 与 macOS 均只发布一个完整包，不提供不含 ffmpeg 的精简包。Windows 稳定包与 macOS 未签名测试包在同一 Release 并列提供，各自标注平台状态（当前版本 v0.1.9）。macOS 在仓库根目录执行 `go run ./build/macos`，产物为 `dist/wx-mini-video-macos-universal-unsigned.zip`；通用 `.app` 同时包含 amd64 与 arm64，包内包含应用、外部配置和说明、`.app` 外的 `ffmpeg/ffmpeg-amd64`、`ffmpeg/ffmpeg-arm64`、`ffmpeg/LICENSE.txt` 与 `THIRD-PARTY-NOTICES.md`，保留执行权限，不包含下载数据。签名与公证只覆盖 `.app`，包外 ffmpeg 未签名；用户须保留整个解压文件夹。
+Windows 与 macOS 均只发布一个完整包，不提供不含 ffmpeg 的精简包。Windows 稳定包与 macOS 未签名测试包在同一 Release 并列提供，各自标注平台状态（当前版本 v0.2.0）。macOS 在仓库根目录执行 `go run ./build/macos`，产物为 `dist/wx-mini-video-macos-universal-unsigned.zip`；通用 `.app` 同时包含 amd64 与 arm64，包内包含应用、外部配置和说明、`.app` 外的 `ffmpeg/ffmpeg-amd64`、`ffmpeg/ffmpeg-arm64`、`ffmpeg/LICENSE.txt` 与 `THIRD-PARTY-NOTICES.md`，保留执行权限，不包含下载数据。签名与公证只覆盖 `.app`，包外 ffmpeg 未签名；用户须保留整个解压文件夹。
 
 共用 Release 入口不改变 Mac 的测试状态；正式 Mac 支持仍须完成 `build/sign-macos.sh` 的 Developer ID 签名、公证及双架构真机验收。后补附件不移动既有发布标签，也不替换已发布的 Windows 附件；发布说明须按平台记录各自的实际构建提交与 SHA-256，不能将 Mac 构建来源写成原 Windows 标签提交。上传前确认两种薄 Mach-O 的 `vcs.revision` 均等于发布说明中的 Mac 构建提交、`vcs.modified=false`；上传后下载核对 SHA-256，确认最新版本标记正确、两平台附件均存在且既有 Windows 附件未变化。当前基础版本号见 `main.go`，版本历史见 CHANGELOG。
 
@@ -144,10 +159,11 @@ cmd /c build\build.bat windows
 当前只确认过普通用户 Windows Terminal 中显示正常；证书提权子进程、标准用户 + 独立管理员账号、真实微信音频及请求来源覆盖仍待人工验收。macOS 已列为后续真机验收目标，当前尚未验收，检查项见 [macOS 测试版说明](docs/macos-usage.md)。
 
 1. 双击启动，确认在 Windows Terminal 中运行；已在 Terminal 中不重复开窗；无 Terminal 时保留当前控制台。检查中文/空格路径和显式配置文件。首次安装根证书时应出现一次 UAC；取消后应给出可理解错误，重新启动可再次请求。发现两个小程序，确认 AppID 去重，未选择前无媒体候选或缓存。
-2. 分别用手动输入和发现选择目标，补填名称后重新加载图片、直链视频、直链音频和 m3u8。检查分类、标题、后缀、原文件保存和 m3u8 输出；核对 Referer 与目标一致，来源缺失的媒体应以 `?` 标记按类型显示并可下载，记录 `✓`/`?` 标记，不放宽目标过滤。
+2. 分别用手动输入和 `Ctrl+D` 目标覆盖层选择目标（选中即确认，不再补填名称），重新加载图片、直链视频、直链音频和 m3u8。检查分类、标题、后缀、原文件保存和 m3u8 输出；核对 Referer 与目标一致，来源缺失的媒体应以 `?` 标记按类型显示并可下载，记录 `✓`/`?` 标记，不放宽目标过滤。
 3. 同时操作其他小程序，确认其媒体不进入目标候选；来源未确认媒体允许出现其他来源内容，但应标记 `?` 并说明来源不可靠。匹配 JSON 的图片、直链视频和音频可出现，JSON m3u8 继续跳过。
-4. 按 `s` 切换目标，确认旧候选和进度清空、本地文件保留，旧响应不重新填充列表。下载中切换应被拒绝且下载继续。
+4. 按 `s` 打开目标覆盖层，先按 `Esc` 确认当前目标和候选保留；再切换到新目标，确认旧候选和进度清空、本地文件保留，旧响应不重新填充列表。下载中切换应被拒绝且下载继续。
 5. 从发现和媒体界面退出，核对原代理恢复；另检查异常退出后按排障步骤恢复。证书不会随退出卸载。验收记录不包含 Cookie、鉴权头值或带签名的完整媒体 URL。
 6. 确认 m3u8 首次下载无需联网准备 ffmpeg；删除 `ffmpeg/` 后确认自动回退受管下载并给出可理解提示。
 7. 设置 `WX_MINI_VIDEO_DEBUG=1` 后确认生成 `wx-mini-video-debug.log`，其中不含 URL query 或 Cookie 值。
 8. 在“标准用户运行微信 + 用另一个管理员账号提权”的机器上验证：程序以普通用户启动；首次安装根证书出现 UAC 后代理作用于当前用户；微信流量可被捕获；退出后代理恢复到该用户的原始设置。同时验证“同账号管理员”机器只需一次 UAC。
+9. v0.2.0 界面与目录：在 Windows Terminal 中检查品牌区/真图或块字符 logo、浅色/深色/跟随系统切换与重启保留、鼠标点击页签与行、`i` 详情抽屉、`l` 日志浮层、下载中退出确认；下载图片/视频/音频/m3u8 后核对 `downloads/<AppID>/<类型>/` 结构、文件名、`history.jsonl` 新字段与 `o` 打开的目标目录；旧平铺文件保持原样。
