@@ -1,6 +1,6 @@
 # 默认随完整包提供 ffmpeg，并把受管下载改为兜底
 
-状态：已确认（2026-10-25）。修订 [ADR 0001](0001-managed-ffmpeg.md)。
+状态：已由 [ADR 0010](0010-source-built-ffmpeg.md) 修订（2026-10-25）：v0.1.9 起随包 ffmpeg 改为固定官方源码自建；受管下载兜底继续使用下列第三方来源。修订 [ADR 0001](0001-managed-ffmpeg.md)。以下保留原始决策背景。
 
 ## 背景
 
@@ -24,5 +24,5 @@ v0.1.8 依赖的 Windows 受管 ffmpeg 固定下载地址（BtbN 日构建，202
 ## 后果
 
 - Windows 完整包约 42.6 MB、macOS 通用完整包约 72.1 MB，相对 v0.1.8 的 5 MB / 9.9 MB 明显增大；离线可完成 m3u8 合并。
-- 项目成为 ffmpeg 二进制再分发者，网络分发须履行 GPLv3 §6(d) 的对应源码义务；不得以实物分发条款下的书面要约代替。当前精确源码、依赖与构建材料未齐，源码索引保持未核实状态，公开发布前必须通过 `build/verify-release-sources.py`，不能仅附许可证就上传。项目自身仍为 MIT + Commons Clause，两者分别标识。
+- 项目成为 ffmpeg 二进制再分发者，网络分发须履行 GPLv3/LGPLv3 对应源码义务；不得以实物分发条款下的书面要约代替。v0.1.9 已改为自建 ffmpeg，并在同一 Release 提供对应源码归档；源码索引人工核对后由 `build/verify-release-sources.py` 校验。项目自身仍为 MIT + Commons Clause，两者分别标识。
 - macOS 随包 ffmpeg 位于 `.app` 外，用户只拖走 `.app` 会丢失 ffmpeg；文档要求保留整个文件夹。签名与公证只覆盖 `.app`。

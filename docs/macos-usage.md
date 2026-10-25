@@ -57,6 +57,6 @@ bash build/sign-macos.sh
 
 此命令会签名应用并将软件上传 Apple 公证服务，获得票据后附加至应用并重打包；执行前须具备对应发布授权。脚本只接收签名身份名与现有钥匙串配置名，不要求把私钥或密码写入仓库。当前环境没有执行此流程。
 
-签名与公证只覆盖 `.app`；`ffmpeg/` 位于包外，未签名、未公证，Gatekeeper 对其首次执行的行为仍需真机验证。随包 ffmpeg 为 GPLv3 独立程序，再分发材料见 `THIRD-PARTY-NOTICES.md`。
+签名与公证只覆盖 `.app`；`ffmpeg/` 位于包外，未签名、未公证，Gatekeeper 对其首次执行的行为仍需真机验证。随包 ffmpeg 为 LGPLv3 独立程序（自建，静态 OpenSSL），再分发材料见 `THIRD-PARTY-NOTICES.md`。
 
 完整项目说明与版本记录见 [项目主页](https://github.com/MuZiJin701/wx-mini-video)。

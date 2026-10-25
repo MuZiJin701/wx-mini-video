@@ -63,7 +63,7 @@ Windows 的 `PrepareConsole` 在配置、证书、代理初始化前只处理终
 
 下载目录也保存缓存、日志、仅含公开证书的 `WxMiniVideoRoot.cer` 和受管下载的 ffmpeg；随包 ffmpeg 位于程序旁的 `ffmpeg/`，私钥单独保存于本机用户目录。移动便携目录时一并保留 `downloads/`；使用外部配置或显式目录时需另行保留该目录。取舍见 [ADR 0002](docs/adr/0002-portable-runtime-data.md) 和 [ADR 0005](docs/adr/0005-local-ca-lifecycle.md)。
 
-ffmpeg 查找优先级为显式 `download.ffmpeg`、随包 ffmpeg、受管 ffmpeg。随包版本：Windows 为 gyan 9.0.2 essentials（包内 `ffmpeg\ffmpeg.exe`），macOS 为 Martin Riedl 9.0.2 的 amd64/arm64 原始二进制（包内 `ffmpeg/ffmpeg-amd64`、`ffmpeg/ffmpeg-arm64`，不做 lipo，运行时按 `runtime.GOARCH` 选择）。随包文件做存在/可执行检查，并以 3 秒超时执行 `-version` 探测；缓存路径、大小和修改时间对应的结果，替换文件后重测；缺失或损坏时回退受管下载。受管下载使用候选源列表：Windows 首选 gyan 9.0.2、备用 BtbN 2026-09-30 月末 8.1 LGPL；macOS 沿用 Martin 两个地址。每个源固定 URL 与 SHA-256，可换源重试；旧 marker 因摘要变化自动失效。版本和摘要在 `internal/minidownload/ffmpeg.go`，更新时需同时修改。取舍见 [ADR 0007](docs/adr/0007-bundled-ffmpeg.md)。
+ffmpeg 查找优先级为显式 `download.ffmpeg`、随包 ffmpeg、受管 ffmpeg。随包版本：Windows 与 macOS 均为固定官方源码自建（FFmpeg 9.0.2 + OpenSSL 3.5.9，LGPLv3，静态链接），Windows 为 `ffmpeg\ffmpeg.exe`，macOS 为 `.app` 外 `ffmpeg/ffmpeg-amd64`、`ffmpeg/ffmpeg-arm64`，不做 lipo。随包文件做存在/可执行检查，并以 3 秒超时执行 `-version` 探测；缓存路径、大小和修改时间对应的结果，替换文件后重测；缺失或损坏时回退受管下载。受管下载使用候选源列表：Windows 首选 gyan 9.0.2、备用 BtbN 2026-09-30 月末 8.1 LGPL；macOS 沿用 Martin 两个地址。每个源固定 URL 与 SHA-256，可换源重试；旧 marker 因摘要变化自动失效。版本和摘要在 `internal/minidownload/ffmpeg.go`，更新时需同时修改。自建流程与对应源码见 [ADR 0010](docs/adr/0010-source-built-ffmpeg.md) 和 `build/ffmpeg/README.md`。
 
 ## 证书风险与清理
 

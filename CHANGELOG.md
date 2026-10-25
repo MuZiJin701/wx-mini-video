@@ -4,12 +4,12 @@
 
 ## v0.1.9 · 2026-10-25
 
-- 新增从固定 FFmpeg 9.0.2 / OpenSSL 3.5.9 源码构建三架构 ffmpeg 的独立流程，归档源码、配置及日志，并增加本地/HTTP/TLS 1.2/TLS 1.3 下的十二项合成媒体实际合并验证；Windows amd64 已本地构建通过，三架构验收及稳定下载入口就绪前，不切换现用打包/受管来源，也不解除公开发布阻断。
+- 随包 ffmpeg 改为从固定 FFmpeg 9.0.2 / OpenSSL 3.5.9 官方源码自建，三架构均通过本地、HTTP、TLS 1.2、TLS 1.3 下的十二项合成媒体实际合并验证；对应源码归档与二进制一起随 v0.1.9 Release 提供。
 - 修复 Windows 证书提权子进程失败后仍等待两分钟的问题：跟踪进程结束与退出码，具体失败原因以系统弹窗显示；保留最终证书状态校验，成功退出但未安装/清理到位也会及时报错。
 - 证书提权失败弹窗按系统 OEM 代码页解码并置于前台，避免中文 Windows 上乱码或被主界面遮挡。
 - 修复 H5 跨源凭据重放，保留同源凭据和真实媒体响应的鉴权头；来源未确认候选新增独立清空代次，清空期间的在途响应不再重新入列，确认目标不丢首屏媒体。
-- 随包 ffmpeg 增加有超时的可运行性探测及缓存，损坏时正确进入受管下载兜底；Mac 正式签名包同步包含双架构 ffmpeg、许可和第三方声明并校验最终 ZIP。
-- 移除不适用于网络分发的源码书面要约，新增对应源码索引和公开发布前校验。当前完整源码/依赖/构建材料未齐，完整包暂不具备公开发布条件。
+- 随包 ffmpeg 增加有超时的可运行性探测及缓存，损坏时正确进入受管下载兜底；Mac 完整包同步包含双架构 ffmpeg、许可和第三方声明。
+- 自建 ffmpeg 的对应源码归档、构建参数、日志和验证记录随同一 Release 发布，替换此前不适用于网络分发的源码书面要约；`build/verify-release-sources.py` 已完成源码入口与实际下载摘要校验。
 - 修复中文 Windows 或从未配置系统代理时的启动失败：系统代理快照改用 Windows 注册表 API 读取，缺失的 `ProxyEnable`/`ProxyServer` 视为未配置，不再依赖 `reg.exe` 本地化错误文本。
 - 修复“标准用户运行微信 + 另一个管理员账号提权”场景：主程序不再整体提权，始终以当前用户运行并把代理写入当前用户 HKCU；仅安装根证书或清理旧共享证书时启动提权子进程请求 UAC。
 
@@ -17,11 +17,11 @@
 
 ### ffmpeg 与分发
 
-- Windows 完整包内置 gyan 9.0.2 essentials（GPLv3，已实测可运行）；macOS 内置 Martin Riedl 9.0.2 的 amd64/arm64 原始二进制，不做 lipo 合并，运行时按处理器选择。查找优先级为显式 `download.ffmpeg` > 随包 ffmpeg > 受管下载。
-- 修复 v0.1.8 Windows 受管下载地址 404：来源改为候选列表（gyan 9.0.2 首选、BtbN 2026-09-30 月末 8.1 LGPL 备用），下载增加 User-Agent、超时与换源；旧 marker 自动失效并重新获取，不阻断启动。
-- Windows 分发合并为单一完整包：移除 `windows-slim` 精简包附件与构建入口，随包 ffmpeg 缺失或损坏时自动下载受管 ffmpeg 兜底；`build.bat windows` 联网校验 ffmpeg 摘要，macOS 构建同步下载并校验双架构 ffmpeg。校验脚本与 CI 缓存同步更新。
-- 新增 `THIRD-PARTY-NOTICES.md` 与 `build/licenses/GPLv3.txt`，分别标识项目代码（MIT + Commons Clause）与随包 ffmpeg（GPLv3），并提供 GPLv3 §6 要求的源码获取说明。
-- 决策记录见 [ADR 0007](docs/adr/0007-bundled-ffmpeg.md)，修订 ADR 0001。
+- Windows 与 macOS 随包 ffmpeg 均改为固定官方源码自建（LGPLv3，静态 OpenSSL），Windows 和 macOS 三架构均通过十二项实际合并验证。
+- 对应源码归档 `corresponding-source-windows-amd64.tar.gz`、`corresponding-source-darwin-amd64.tar.gz`、`corresponding-source-darwin-arm64.tar.gz` 与安装包位于同一 Release；详细清单见 `THIRD-PARTY-NOTICES.md` 与 `build/ffmpeg-corresponding-sources.json`。
+- 保留受管下载兜底：随包缺失或损坏时仍从 gyan/BtbN/Martin 的固定候选源下载；这些二进制由客户端直接从上游获取，不包含在本发布包内。
+- Windows 分发保持单一完整包，不提供 `windows-slim` 精简包；`build.bat windows` 默认下载并校验 gyan ffmpeg，也支持通过 `WXMV_FFMPEG_DIR` 使用自建 ffmpeg 目录。macOS 构建同样支持该变量。
+- 源码构建、产物自检与三架构 CI 见 `build/ffmpeg/README.md`、`.github/workflows/ffmpeg.yml`；决策记录见 [ADR 0010](docs/adr/0010-source-built-ffmpeg.md)，修订 ADR 0007。
 
 ### 媒体嗅探
 
@@ -29,7 +29,7 @@
 - 取消独立的「未归属」分类与数字键 `6`：来源未确认媒体直接显示在对应类型分类中，用 `✓`/`?` 区分来源，避免用户误以为没有嗅探到视频。
 - 增加未知二进制兜底：目标 AppID 已匹配但 `Content-Type` 为 `application/octet-stream` 等未知类型且大小达到阈值时，作为“未知文件”候选显示，不自动缓存或下载。
 - JSON 识别增强：支持相邻字段拼接（如 `url` + `urlToken`）与无后缀但字段名强相关的媒体地址；来源未确认候选不写播放列表缓存。
-- 新增诊断日志：`--debug` 启动参数（会随 UAC/Terminal 重启转发）或 `WX_MINI_VIDEO_DEBUG=1` 环境变量启用，记录归属判断与丢弃原因，URL query 与 Cookie 值不落盘。
+- 新增诊断日志：`--debug` 启动参数（会随 Terminal 重启转发）或 `WX_MINI_VIDEO_DEBUG=1` 环境变量启用，记录归属判断与丢弃原因，URL query 与 Cookie 值不落盘。
 - 新增 `capture.showUnattributed` 配置（默认 `true`），可关闭来源未确认媒体（关闭后既不收集也不显示）。
 - 新增 H5 页面/脚本扫描：打开小程序 web-view 的 HTML/JS 详情页时提取内联视频/m3u8/音频地址，作为来源未确认候选按类型显示（标记“H5 页面/脚本扫描（未播放验证）”），不再依赖播放器真正发请求或未命中缓存。
 - 发现阶段（尚未确认目标）也收集来源未确认媒体与 H5 页面扫描结果，修复“打开小程序时自动加载的第一个页面/第一个入口”因目标为空而被丢弃、之后又被缓存无法再抓的问题；目标候选与播放列表缓存仍只在确认目标后产生。

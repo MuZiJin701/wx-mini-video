@@ -4,7 +4,7 @@
 
 ## 目标与支持范围
 
-按用户要求，Windows 稳定包与 Mac 未签名测试包在同一 [v0.1.8 Release](https://github.com/MuZiJin701/wx-mini-video/releases/tag/v0.1.8) 并列提供，分别标明状态、构建提交和 SHA-256。共用发布入口不表示 Mac 已达到正式发布门槛。
+按用户要求，Windows 稳定包与 Mac 未签名测试包在同一 [v0.1.9 Release](https://github.com/MuZiJin701/wx-mini-video/releases/tag/v0.1.9) 并列提供，分别标明状态、构建提交和 SHA-256。共用发布入口不表示 Mac 已达到正式发布门槛。
 
 - 在 Mac 本机运行，嗅探同一台 Mac 上微信小程序的媒体，保留现有目标选择、小程序发现、图片、直链视频、直链音频和 m3u8 媒体下载流程。
 - 首版面向普通用户公开发布，同时支持 Apple Silicon 和 Intel Mac。
@@ -22,7 +22,7 @@
 - 默认媒体目录为完整解压后的便携应用目录下的 `downloads/`，与 Windows 当前布局一致；自动创建目录，按 `o` 打开。
 - 配置及其他运行数据沿用便携布局。升级保留配置和 `downloads/`，不向应用包内部写入下载数据。完整包在 `.app` 外包含 `ffmpeg/`，用户须保留整个解压文件夹；只移动 `.app` 会丢失随包 ffmpeg。
 - 本工具生成的独立根证书与私钥保存在本机用户的受限目录中，不随压缩包或媒体目录移动，升级及移动程序不重新生成。遵循 [ADR 0005](adr/0005-local-ca-lifecycle.md) 的每用户本地独立证书原则；macOS 应使用持久目录，避免缓存清理造成换证书。
-- 默认完整包在 `.app` 外随附双架构 ffmpeg（Martin Riedl 9.0.2 原始构建，不做 lipo），完整解压后无需另行获取或配置；随包缺失或损坏时回退自动下载受管 ffmpeg，保留手动指定路径。签名与公证只覆盖 `.app`，包外 ffmpeg 未签名。见 [ADR 0007](adr/0007-bundled-ffmpeg.md)，修订 [ADR 0001](adr/0001-managed-ffmpeg.md)。
+- 默认完整包在 `.app` 外随附双架构自建 ffmpeg（固定 FFmpeg 9.0.2 + OpenSSL 3.5.9 源码构建，不做 lipo），完整解压后无需另行获取或配置；随包缺失或损坏时回退自动下载受管 ffmpeg，保留手动指定路径。签名与公证只覆盖 `.app`，包外 ffmpeg 未签名。见 [ADR 0010](adr/0010-source-built-ffmpeg.md)，修订 [ADR 0007](adr/0007-bundled-ffmpeg.md)。
 
 ## 授权与网络
 
@@ -46,7 +46,7 @@
 ## 代码现状与技术风险
 
 - 已补 Darwin 系统代理、证书信任库、私钥权限、终端启动和进程操作，并复用既有 TUI、目标过滤和下载流程；跨平台替身测试不操作真实系统代理或证书。
-- macOS 随包与受管 ffmpeg 固定为 Martin Riedl 的两种处理器 9.0.2 ZIP，均核对发布者 SHA-256 及下载样本摘要；样本 Mach-O 声明最低 macOS 12，未在当前 Windows 环境中执行这些程序。随包文件位于 `.app` 外，未经签名/公证，Gatekeeper 与实际启动行为须真机验证。
+- macOS 随包 ffmpeg 已改为固定 FFmpeg 9.0.2 + OpenSSL 3.5.9 官方源码自建，双架构分别通过十二项实际合并验证；对应源码归档与 v0.1.9 Release 二进制同页提供。受管兜底仍使用 Martin Riedl 的两份 9.0.2 ZIP。随包文件位于 `.app` 外，未经签名/公证，Gatekeeper 与实际启动行为须真机验证。
 - 网络监听当前检测活动默认路由接口变化；同一接口内切换 Wi-Fi 热点不保证被识别。实际系统授权、空代理地址恢复和 Terminal 自动化权限仍须用户验收。
 - [Apple App Translocation 说明](https://developer.apple.com/forums/thread/724969)指出，下载的应用可能从随机路径运行，通过应用路径寻找包外相邻文件可能失败，也没有受支持的方法取回原始应用路径。[Apple Gatekeeper 排障说明](https://developer.apple.com/forums/thread/706379)另记录了独立命令行工具经 Finder 双击被拦截的问题。这些官方记录说明需要实际分发验证，不能推断所有现行系统都必然出现相同行为。
 - 签名、公证、增加双击脚本或构建成功，都不能单独证明便携启动和微信嗅探可用。

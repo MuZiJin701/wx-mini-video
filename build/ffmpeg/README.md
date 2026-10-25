@@ -33,7 +33,7 @@ python3 -B build/ffmpeg/build.py darwin-arm64
 
 - `ffmpeg.zip`：独立二进制和合并的 LGPLv3/GPLv3、OpenSSL Apache-2.0 许可及 IJG 致谢。
 - `corresponding-source.tar.gz`：原始 FFmpeg/OpenSSL 源码归档、Windows 工具链源码、本目录构建和测试材料、实际配置文件、构建及验证日志。
-- `build-info.json`：输入摘要、实际 configure 参数、输出摘要及验证记录。该记录不是公开发布许可，也不自动将原源码索引标记为 reviewed。
+- `build-info.json`：输入摘要、实际 configure 参数、输出摘要及验证记录；三架构产物已验证，源码索引已随 v0.1.9 Release 填写并核对。
 
 源归档保留原始、校验过的上游源码。Windows 对 OpenSSL 的静态库归档规则做一个构建补丁：每次传给 ar 的对象文件由 500 个降到 100 个，避免长参数超过 Windows 命令行上限；不修改密码学实现，实际补丁保存在 `records/openssl-windows-ar.patch`，构建脚本会自动应用。Windows 许可文本还包含 w64devkit 提供的 MinGW 运行时声明。
 

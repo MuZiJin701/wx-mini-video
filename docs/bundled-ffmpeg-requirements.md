@@ -4,8 +4,8 @@
 
 ## 已确认
 
-- 2026-10-25 后续选型确认：采用固定官方 FFmpeg 源码与必要的 OpenSSL 依赖自行构建，三架构验证并归档材料后再替换随包版本；实施与验收边界见 [ADR 0010](adr/0010-source-built-ffmpeg.md)。
-- 2026-10-25 修复审查后用户确认：暂时保留现有第三方构建，完整包先不公开发布；不以未落实的源码书面要约代替网络分发所需的对应源码材料。
+- 2026-10-25 后续选型确认：采用固定官方 FFmpeg 源码与必要的 OpenSSL 依赖自行构建，三架构验证并归档材料后替换随包版本；实施与验收边界见 [ADR 0010](adr/0010-source-built-ffmpeg.md)。该方案已随 v0.1.9 发布，对应源码归档与二进制在同一 Release 提供。
+- 2026-10-25 修复审查后用户确认：不以未落实的源码书面要约代替网络分发所需的对应源码材料；该要求已由自建方案和同 Release 源码归档落实。
 
 - Q1：完整包随附 ffmpeg，用户完整解压后，首次下载 m3u8 无需另行联网获取 ffmpeg，也无需安装工具或填写可执行文件路径。媒体下载本身仍需要网络；保留当前 TUI 和下载操作。
 - Q2：同时提供 Windows amd64 与 macOS Intel / Apple Silicon 完整包。Mac 延续现有测试版状态，签名、公证与真实微信验收要求不变。
@@ -18,14 +18,14 @@
 - Windows 完整包允许 `README.md`、`wx-mini-video.exe`、`wx-mini-video.yaml`、`ffmpeg\ffmpeg.exe`、`ffmpeg\LICENSE.txt`、`THIRD-PARTY-NOTICES.md`。Mac 包允许说明、配置、`.app`（内部三文件）、`ffmpeg/ffmpeg-amd64`、`ffmpeg/ffmpeg-arm64`、`ffmpeg/LICENSE.txt`、`THIRD-PARTY-NOTICES.md`。
 - 随包 ffmpeg 通过 `os.Executable()` 定位；查找优先级为显式 `download.ffmpeg` > 随包 > 受管下载。随包文件不做每次渲染的哈希校验，只在启动时做一次存在/可执行/`-version` 探测。
 - 受管 ffmpeg 位于下载目录，复用需要同时匹配固定来源摘要和可执行文件摘要；随包文件不写 marker。旧版本下载的 marker 因来源摘要变化自动失效。
-- 随包 ffmpeg 是 GPLv3 独立程序，网络分发按 GPLv3 §6(d) 提供许可证全文、第三方声明与精确对应源码下载入口；不能用实物分发的书面要约代替，当前源码材料未齐，完整包公开发布保持阻断，项目代码许可与 ffmpeg 许可分别标识。
+- 随包 ffmpeg 是 LGPLv3 独立程序（自建，静态 OpenSSL），网络分发按 GPLv3/LGPLv3 §6(d) 在同一 Release 提供许可证全文、第三方声明与精确对应源码归档；不能用实物分发的书面要约代替。v0.1.9 已满足该要求，项目代码许可与 ffmpeg 许可分别标识。
 
 ## 外部来源核查
 
-2026-10-25 实测：原 Windows 固定地址（BtbN `autobuild-2026-08-11-13-11` 的 8.1.2）返回 404，且旧 URL 资产在月末包中的发布方 SHA-256 与代码内置值不一致，只换 tag 仍会校验失败。Windows 现选 gyan 9.0.2 essentials（200，约 109.5 MiB，GPLv3，包内自带 GPLv3 全文与 FFmpeg commit `946fcce07b`，已实测运行），备用 BtbN 2026-09-30 月末 8.1 LGPL。macOS 两个 Martin Riedl 9.0.2 地址（amd64/arm64）均 200，许可 GPLv3，ZIP 内不含许可证或源码，需由本项目补 GPLv3 全文与声明。完整包体积预计 Windows 约 42.6 MB、macOS 约 72.1 MB，低于 GitHub 单附件限制。
+2026-10-25 实测：原 Windows 固定地址（BtbN `autobuild-2026-08-11-13-11` 的 8.1.2）返回 404，且旧 URL 资产在月末包中的发布方 SHA-256 与代码内置值不一致，只换 tag 仍会校验失败。以下为旧受管来源核查记录，v0.1.9 随包已改为自建，受管兜底仍使用这些第三方来源：Windows 现选 gyan 9.0.2 essentials（200，约 109.5 MiB，GPLv3，包内自带 GPLv3 全文与 FFmpeg commit `946fcce07b`，已实测运行），备用 BtbN 2026-09-30 月末 8.1 LGPL。macOS 两个 Martin Riedl 9.0.2 地址（amd64/arm64）均 200，许可 GPLv3，ZIP 内不含许可证或源码，需由本项目补 GPLv3 全文与声明。完整包体积预计 Windows 约 42.6 MB、macOS 约 72.1 MB，低于 GitHub 单附件限制。
 
 ## 实施结果
 
-- Windows：`build.bat windows` 下载并校验 gyan ZIP，产出唯一完整包；`verify-package.ps1` 校验收到的条目集。
-- macOS：`build/macos` 下载并校验两份 Martin ZIP，解出 `ffmpeg/ffmpeg-amd64`、`ffmpeg/ffmpeg-arm64`（0755），打包 `ffmpeg/LICENSE.txt` 与 `THIRD-PARTY-NOTICES.md`；`verify-macos.py` 校验条目、权限与架构。
-- 自动下载改为候选源列表并支持换源；任一候选失败不影响其它候选。
+- Windows：`build.bat windows` 默认下载并校验 gyan ZIP，设置 `WXMV_FFMPEG_DIR` 可使用自建 ffmpeg 目录；产出唯一完整包，`verify-package.ps1` 校验条目。
+- macOS：`go run ./build/macos` 默认下载并校验两份 Martin ZIP；设置 `WXMV_FFMPEG_DIR` 可使用自建双架构 ffmpeg，打包 `ffmpeg/LICENSE.txt` 与 `THIRD-PARTY-NOTICES.md`；`verify-macos.py` 校验条目、权限与架构。
+- 自动下载保留候选源列表并支持换源；任一候选失败不影响其它候选。
