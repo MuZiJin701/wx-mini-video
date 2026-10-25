@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -23,6 +24,12 @@ import (
 	"wx_channel/internal/miniprogram"
 )
 
+// ErrRecordingStopped 表示用户停止直播录制；已录内容已保存为最终文件。
+var ErrRecordingStopped = errors.New("已停止直播录制")
+
+// ErrDownloadStopped 表示用户停止普通下载；未完成内容保留在 .part 文件，便于之后续传。
+var ErrDownloadStopped = errors.New("已停止下载")
+
 type Progress struct {
 	ID         string
 	Name       string
@@ -34,6 +41,7 @@ type Progress struct {
 	Items      int
 	Failed     int
 	Reused     int
+	Live       bool
 	StartedAt  time.Time
 	LastUpdate time.Time
 	Error      string
@@ -284,30 +292,44 @@ func (d *Downloader) Download(ctx context.Context, candidate miniprogram.Candida
 	}
 	name := OutputName(candidate, preferredName)
 	outputPath := outputPath(bucket, name)
-	d.emit(Progress{ID: candidate.ID, Name: name, Path: outputPath, Status: "starting", Total: candidate.ContentLength})
+	d.emit(Progress{ID: candidate.ID, Name: name, Path: outputPath, Status: "starting", Total: candidate.ContentLength, Live: candidate.Live})
+	var live bool
 	var err error
 	if miniprogram.MediaKind(candidate) == "m3u8" {
 		err = d.downloadM3U8(ctx, candidate, outputPath)
 	} else {
-		err = d.downloadDirect(ctx, candidate, outputPath)
+		live, err = d.downloadDirect(ctx, candidate, outputPath)
 	}
-	if err == nil {
+	// 用户主动停止时，ctx 取消会让底层错误看起来像下载失败；统一折算为“已停止”语义。
+	if err != nil && ctx.Err() != nil && !errors.Is(err, ErrRecordingStopped) && !errors.Is(err, ErrDownloadStopped) {
+		err = ErrDownloadStopped
+	}
+	if err == nil || errors.Is(err, ErrRecordingStopped) {
 		_ = d.appendHistory(candidate, outputPath, targetAppID)
 	}
-	d.finishProgress(candidate, name, outputPath, err)
+	d.finishProgress(candidate, name, outputPath, live, err)
 	return outputPath, err
 }
 
-func (d *Downloader) finishProgress(candidate miniprogram.Candidate, name, outputPath string, err error) {
+func (d *Downloader) finishProgress(candidate miniprogram.Candidate, name, outputPath string, live bool, err error) {
 	status := "done"
 	errText := ""
-	if err != nil {
+	downloadedPath := outputPath
+	switch {
+	case err == nil:
+	case errors.Is(err, ErrRecordingStopped):
+		status = "stopped"
+	case errors.Is(err, ErrDownloadStopped):
+		status = "stopped"
+		if !fileExists(outputPath) {
+			downloadedPath = partialPath(outputPath, candidate)
+		}
+	default:
 		status = "error"
 		errText = err.Error()
-	}
-	downloadedPath := outputPath
-	if err != nil && !fileExists(outputPath) {
-		downloadedPath = partialPath(outputPath, candidate)
+		if !fileExists(outputPath) {
+			downloadedPath = partialPath(outputPath, candidate)
+		}
 	}
 	total := candidate.ContentLength
 	if err == nil && candidate.Kind != "m3u8" {
@@ -320,6 +342,7 @@ func (d *Downloader) finishProgress(candidate miniprogram.Candidate, name, outpu
 		Status:     status,
 		Downloaded: fileSize(downloadedPath),
 		Total:      total,
+		Live:       live,
 		Error:      errText,
 	})
 }
@@ -964,18 +987,57 @@ func (p partialDownload) validator() string {
 	return ""
 }
 
-func (d *Downloader) downloadDirect(ctx context.Context, candidate miniprogram.Candidate, outputPath string) error {
+// sniffLiveFLV 在响应体开头确认 FLV 魔数，判断是否按直播录制处理。
+// 只有没有 Content-Length（分块传输）且地址或响应类型指向 FLV 时才嗅探，
+// 避免把普通分块响应误判成直播；嗅探不会消费正文。
+func sniffLiveFLV(candidate miniprogram.Candidate, resp *http.Response) bool {
+	if resp.ContentLength >= 0 {
+		return false
+	}
+	contentType := resp.Header.Get("Content-Type")
+	if !miniprogram.IsFLVContentType(contentType) && !miniprogram.IsFLVURL(candidate.URL) {
+		return false
+	}
+	buffered := bufio.NewReaderSize(resp.Body, 4096)
+	resp.Body = struct {
+		io.Reader
+		io.Closer
+	}{buffered, resp.Body}
+	head, err := buffered.Peek(4)
+	if err != nil && len(head) < 3 {
+		return false
+	}
+	return bytes.HasPrefix(head, []byte("FLV"))
+}
+
+// commitRecording 把已录制的 .part 保存为最终文件；没有内容时清理临时文件。
+func commitRecording(partPath, metaPath, outputPath string, written int64) error {
+	if written <= 0 {
+		_ = os.Remove(partPath)
+		_ = os.Remove(metaPath)
+		return nil
+	}
+	if err := commitPartFile(partPath, outputPath); err != nil {
+		return err
+	}
+	_ = os.Remove(metaPath)
+	return nil
+}
+
+func (d *Downloader) downloadDirect(ctx context.Context, candidate miniprogram.Candidate, outputPath string) (bool, error) {
 	partPath := partialPath(outputPath, candidate)
 	metaPath := partPath + ".json"
+	// 直播流没有总长度、也不能续传：疑似直播时直接从头录制，避免对直播地址发 Range 请求。
+	maybeLive := candidate.Live || miniprogram.IsFLVURL(candidate.URL)
 	var previous partialDownload
 	data, err := os.ReadFile(metaPath)
 	offset := int64(0)
-	if err == nil && json.Unmarshal(data, &previous) == nil && previous.validator() != "" {
+	if !maybeLive && err == nil && json.Unmarshal(data, &previous) == nil && previous.validator() != "" {
 		offset = fileSize(partPath)
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, candidate.URL, nil)
 	if err != nil {
-		return err
+		return false, err
 	}
 	for key, value := range candidate.Headers {
 		req.Header.Set(key, value)
@@ -989,7 +1051,10 @@ func (d *Downloader) downloadDirect(ctx context.Context, candidate miniprogram.C
 	}
 	resp, err := d.do(req)
 	if err != nil {
-		return err
+		if ctx.Err() != nil {
+			return false, ErrDownloadStopped
+		}
+		return false, err
 	}
 	if resp.StatusCode == http.StatusRequestedRangeNotSatisfiable && offset > 0 {
 		resp.Body.Close()
@@ -998,16 +1063,28 @@ func (d *Downloader) downloadDirect(ctx context.Context, candidate miniprogram.C
 		offset = 0
 		resp, err = d.do(req)
 		if err != nil {
-			return err
+			if ctx.Err() != nil {
+				return false, ErrDownloadStopped
+			}
+			return false, err
 		}
 	}
-	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusPartialContent {
-		return fmt.Errorf("下载失败，HTTP %s", resp.Status)
+		resp.Body.Close()
+		return false, fmt.Errorf("下载失败，HTTP %s", resp.Status)
 	}
+	live := sniffLiveFLV(candidate, resp)
+	defer resp.Body.Close()
 	total := resp.ContentLength
 	expectedBytes := resp.ContentLength
 	resumed := offset > 0 && resp.StatusCode == http.StatusPartialContent
+	if live {
+		// 直播流没有总长度，也没有“下载完成”的校验：持续录制到用户停止或服务端结束。
+		total = -1
+		expectedBytes = -1
+		resumed = false
+		offset = 0
+	}
 	if resp.StatusCode == http.StatusPartialContent {
 		start, end, full, valid := miniprogram.ParseContentRange(resp.Header.Get("Content-Range"))
 		expectedStart := int64(0)
@@ -1015,13 +1092,13 @@ func (d *Downloader) downloadDirect(ctx context.Context, candidate miniprogram.C
 			expectedStart = offset
 		}
 		if !valid || start != expectedStart || (resp.ContentLength >= 0 && resp.ContentLength != end-start+1) {
-			return fmt.Errorf("服务器返回了无效的 Content-Range")
+			return false, fmt.Errorf("服务器返回了无效的 Content-Range")
 		}
 		total = full
 		expectedBytes = end - start + 1
 		if resumed && ((previous.Total > 0 && previous.Total != full) || (resp.Header.Get("ETag") != "" && previous.ETag != resp.Header.Get("ETag"))) {
 			_ = os.Remove(metaPath)
-			return fmt.Errorf("资源已变化，无法安全续传，请重试以重新下载")
+			return false, fmt.Errorf("资源已变化，无法安全续传，请重试以重新下载")
 		}
 	}
 	if !resumed {
@@ -1034,11 +1111,11 @@ func (d *Downloader) downloadDirect(ctx context.Context, candidate miniprogram.C
 	}
 	meta, err := json.Marshal(metadata)
 	if err != nil {
-		return err
+		return false, err
 	}
 	// 先清除旧的续传依据，避免文件已重写但元数据仍指向旧实体。
 	if err := os.Remove(metaPath); err != nil && !os.IsNotExist(err) {
-		return err
+		return false, err
 	}
 	flags := os.O_CREATE | os.O_WRONLY
 	if resumed {
@@ -1048,34 +1125,65 @@ func (d *Downloader) downloadDirect(ctx context.Context, candidate miniprogram.C
 	}
 	file, err := os.OpenFile(partPath, flags, 0o600)
 	if err != nil {
-		return err
+		return false, err
 	}
 	if err := os.WriteFile(metaPath, meta, 0o600); err != nil {
 		file.Close()
-		return err
+		return false, err
 	}
 	reader := &progressReader{Reader: resp.Body, Total: total, Current: offset, OnProgress: func(downloaded, total int64) {
-		d.emit(Progress{ID: candidate.ID, Path: outputPath, Status: "downloading", Downloaded: downloaded, Total: total})
+		status := "downloading"
+		if live {
+			status = "recording"
+		}
+		d.emit(Progress{ID: candidate.ID, Path: outputPath, Status: status, Downloaded: downloaded, Total: total, Live: live})
 	}}
 	written, copyErr := io.Copy(file, reader)
 	closeErr := file.Close()
+	if live {
+		if copyErr != nil {
+			if ctx.Err() == nil {
+				return true, copyErr
+			}
+			// 用户停止录制：把已录内容保存为最终文件。
+			if err := commitRecording(partPath, metaPath, outputPath, written); err != nil {
+				return true, err
+			}
+			return true, ErrRecordingStopped
+		}
+		if closeErr != nil {
+			return true, closeErr
+		}
+		if written == 0 {
+			_ = os.Remove(metaPath)
+			return true, fmt.Errorf("直播流没有返回数据")
+		}
+		// 服务端结束或断开直播：把已录制内容保存为最终文件。
+		if err := commitRecording(partPath, metaPath, outputPath, written); err != nil {
+			return true, err
+		}
+		return true, nil
+	}
 	if copyErr != nil {
-		return copyErr
+		if ctx.Err() != nil {
+			return false, ErrDownloadStopped
+		}
+		return false, copyErr
 	}
 	if closeErr != nil {
-		return closeErr
+		return false, closeErr
 	}
 	if expectedBytes >= 0 && written != expectedBytes {
-		return fmt.Errorf("响应正文长度与声明不符，请重试")
+		return false, fmt.Errorf("响应正文长度与声明不符，请重试")
 	}
 	if total >= 0 && offset+written != total {
-		return fmt.Errorf("文件尚未完整下载（%d/%d 字节），请重试", offset+written, total)
+		return false, fmt.Errorf("文件尚未完整下载（%d/%d 字节），请重试", offset+written, total)
 	}
 	if err := commitPartFile(partPath, outputPath); err != nil {
-		return err
+		return false, err
 	}
 	_ = os.Remove(metaPath)
-	return nil
+	return false, nil
 }
 func commitPartFile(partPath, outputPath string) error {
 	if err := os.Rename(partPath, outputPath); err == nil {

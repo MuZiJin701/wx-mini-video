@@ -143,9 +143,13 @@ func (m model) quitConfirmPane() ([]string, []paneHit) {
 		width = m.screenWidth() - 2
 	}
 	inner := width - 2
+	message := "正在下载，退出会停止当前下载。"
+	if m.downloadLive {
+		message = "正在录制直播，退出会停止录制并保存已录内容。"
+	}
 	body := []string{
-		m.interiorLine("正在下载，退出会中断当前下载。", inner, m.st.text),
-		m.interiorLine("已完成文件会保留。", inner, m.st.muted),
+		m.interiorLine(message, inner, m.st.text),
+		m.interiorLine("未完成部分会保留在下载目录。", inner, m.st.muted),
 		m.interiorLine("", inner, m.st.text),
 	}
 	confirmLabel := "确认退出 · Enter"

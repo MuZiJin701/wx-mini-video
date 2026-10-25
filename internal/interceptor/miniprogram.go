@@ -58,6 +58,7 @@ func CreateMiniProgramInterceptorPlugin(target miniprogram.Target, store *minipr
 			contentLength := responseContentLength(ctx)
 			status := responseStatus(ctx)
 			domKind, domSuffix := miniprogram.Classify(contentType, rawURL)
+			live := miniprogram.LooksLikeLiveFLV(contentType, contentLength, rawURL)
 			headers := miniprogram.CleanHeaders(req.Header)
 			decision := ""
 			jsonCandidates := 0
@@ -71,7 +72,7 @@ func CreateMiniProgramInterceptorPlugin(target miniprogram.Target, store *minipr
 				decision = "drop:segment"
 			case domKind != "":
 				if confirmed {
-					addTargetResponseCandidate(store, dir, generation, target, appID, rawURL, contentType, contentLength, headers, domKind, domSuffix, ctx)
+					addTargetResponseCandidate(store, dir, generation, target, appID, rawURL, contentType, contentLength, headers, domKind, domSuffix, live, ctx)
 					decision = "admit-target"
 				} else if captureUnattributed {
 					// 未归属列表与目标无关：发现阶段（尚未确认目标）也收集，
@@ -86,6 +87,7 @@ func CreateMiniProgramInterceptorPlugin(target miniprogram.Target, store *minipr
 						ContentLength: contentLength,
 						Kind:          domKind,
 						Suffix:        domSuffix,
+						Live:          live,
 						Headers:       headers,
 					})
 					decision = "admit-unattributed"
@@ -138,6 +140,7 @@ func CreateMiniProgramInterceptorPlugin(target miniprogram.Target, store *minipr
 				TargetAppID:    target.AppID,
 				Kind:           domKind,
 				Decision:       decision,
+				Live:           live,
 				JSONCandidates: jsonCandidates,
 				ScanCandidates: scanCandidates,
 			})
@@ -145,7 +148,7 @@ func CreateMiniProgramInterceptorPlugin(target miniprogram.Target, store *minipr
 	}
 }
 
-func addTargetResponseCandidate(store *miniprogram.Store, dir string, generation uint64, target miniprogram.Target, sourceAppID, rawURL, contentType string, contentLength int64, headers map[string]string, kind, suffix string, ctx proxy.Context) {
+func addTargetResponseCandidate(store *miniprogram.Store, dir string, generation uint64, target miniprogram.Target, sourceAppID, rawURL, contentType string, contentLength int64, headers map[string]string, kind, suffix string, live bool, ctx proxy.Context) {
 	candidate := miniprogram.Candidate{
 		AppID:         target.AppID,
 		SourceAppID:   sourceAppID,
@@ -157,6 +160,7 @@ func addTargetResponseCandidate(store *miniprogram.Store, dir string, generation
 		ContentLength: contentLength,
 		Kind:          kind,
 		Suffix:        suffix,
+		Live:          live,
 		Headers:       headers,
 	}
 	candidate.ID = miniprogram.CandidateID(target.AppID, candidate.URL)
@@ -411,6 +415,7 @@ type debugResponse struct {
 	AppID          string
 	TargetAppID    string
 	Kind           string
+	Live           bool
 	Decision       string
 	JSONCandidates int
 	ScanCandidates int
@@ -449,6 +454,9 @@ func (l *debugLog) logResponse(entry debugResponse) {
 	}
 	if entry.JSONCandidates > 0 {
 		fields = append(fields, "json-candidates="+strconv.Itoa(entry.JSONCandidates))
+	}
+	if entry.Live {
+		fields = append(fields, "live=true")
 	}
 	if entry.ScanCandidates > 0 {
 		fields = append(fields, "scan-candidates="+strconv.Itoa(entry.ScanCandidates))

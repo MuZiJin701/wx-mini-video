@@ -50,6 +50,14 @@ func kindDisplay(kind string) string {
 	}
 }
 
+// candidateKindDisplay 在“类型”列和日志里显示媒体类型；疑似 HTTP-FLV 直播流单独标为直播流。
+func candidateKindDisplay(candidate miniprogram.Candidate) string {
+	if candidate.Live {
+		return "直播流"
+	}
+	return kindDisplay(candidate.Kind)
+}
+
 func sourceDisplay(source string) string {
 	switch source {
 	case "response":
@@ -92,6 +100,9 @@ func attributionDisplay(candidate miniprogram.Candidate) string {
 func candidateBasis(candidate miniprogram.Candidate) string {
 	if candidate.Provisional {
 		return "字段名推断（低置信）"
+	}
+	if candidate.Live {
+		return "HTTP-FLV 直播流（URL/响应识别）"
 	}
 	if candidate.Kind == "file" {
 		return "未知二进制兜底（≥256KB）"

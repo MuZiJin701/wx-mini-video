@@ -2,9 +2,9 @@
 
 ## 项目
 
-`wx-mini-video` 是 Windows 优先、同时提供 macOS 未签名测试版的 Go TUI：通过本地 HTTPS 代理识别 PC 微信目标小程序加载的图片、直链视频、直链音频和 m3u8，并下载到本地。
+`wx-mini-video` 是 Windows 优先、同时提供 macOS 未签名测试版的 Go TUI：通过本地 HTTPS 代理识别 PC 微信目标小程序加载的图片、直链视频、直链音频、m3u8 和 HTTP-FLV 直播流，并下载到本地。
 
-当前范围是通用小程序媒体嗅探与下载。保持单二进制 TUI、Echo 代理适配、Windows 系统代理与证书、macOS 系统代理与钥匙串、目标 AppID 严格归属、手动输入与小程序发现、图片/直链视频/直链音频下载及 m3u8 的 ffmpeg 合并。Windows 主程序以当前用户运行并优先使用已安装的 Terminal；只有安装根证书或清理旧共享证书时请求 UAC。Windows 与 macOS 均只分发一个完整包，随包附带 ffmpeg（Windows `ffmpeg\ffmpeg.exe`，macOS `.app` 外 `ffmpeg/ffmpeg-amd64|arm64`）；随包缺失或损坏时自动下载受管 ffmpeg 兜底。
+当前范围是通用小程序媒体嗅探与下载。保持单二进制 TUI、Echo 代理适配、Windows 系统代理与证书、macOS 系统代理与钥匙串、目标 AppID 严格归属、手动输入与小程序发现、图片/直链视频/直链音频/HTTP-FLV 直播流下载及 m3u8 的 ffmpeg 合并。Windows 主程序以当前用户运行并优先使用已安装的 Terminal；只有安装根证书或清理旧共享证书时请求 UAC。Windows 与 macOS 均只分发一个完整包，随包附带 ffmpeg（Windows `ffmpeg\ffmpeg.exe`，macOS `.app` 外 `ffmpeg/ffmpeg-amd64|arm64`）；随包缺失或损坏时自动下载受管 ffmpeg 兜底。
 
 ## 先读
 
@@ -14,6 +14,7 @@
 - **版本变更与发布合并：** `CHANGELOG.md`；发布操作见 `wx-mini-video-knowledge.md` 的“分发”。
 - **ffmpeg 随包、许可与源码义务：** `THIRD-PARTY-NOTICES.md`、`docs/adr/0007-bundled-ffmpeg.md`；源码自建流程见 `build/ffmpeg/README.md` 与 `docs/adr/0010-source-built-ffmpeg.md`；需求背景见 `docs/bundled-ffmpeg-requirements.md`。
 - **Windows 启动与提权边界：** `docs/adr/0009-user-scoped-windows-runtime.md`；Terminal 首选背景见 `docs/adr/0004-windows-terminal-startup.md`。
+- **直播流识别与录制：** 判定、停止与退出语义见 `docs/adr/0013-live-stream-recording.md`；识别入口 `internal/miniprogram/candidate.go`，录制与保存入口 `internal/minidownload/downloader.go`。
 - **历史计划与背景：** `docs/archive/`。
 - **代码入口：** 启动看 `main.go` 和 `internal/app/`；TUI 看 `internal/tui/model.go`；嗅探看 `internal/interceptor/miniprogram.go`；下载看 `internal/minidownload/`；代理库 patch 看 `third_party/echo/`。
 

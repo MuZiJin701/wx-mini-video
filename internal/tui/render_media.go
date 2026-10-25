@@ -21,7 +21,7 @@ func (m model) tableColumns(metrics ui.Metrics) []tableColumn {
 	width := metrics.ContentWidth
 	columns := []tableColumn{
 		{"时间", 8},
-		{"类型", 4},
+		{"类型", 6},
 		{"归属", 4},
 		{"大小", 8},
 	}
@@ -274,7 +274,7 @@ func (m model) renderCandidateTable(columns []tableColumn, maxRows, startY, left
 func (m model) rowValues(candidate miniprogram.Candidate, columns []tableColumn) []string {
 	values := []string{
 		candidate.CreatedAt.Format("15:04:05"),
-		kindDisplay(candidate.Kind),
+		candidateKindDisplay(candidate),
 		attributionMarker(candidate),
 		formatBytes(candidate.ContentLength),
 		sourceDisplay(candidate.Source),
@@ -283,6 +283,9 @@ func (m model) rowValues(candidate miniprogram.Candidate, columns []tableColumn)
 	status := ""
 	if m.downloading && m.downloadID == candidate.ID {
 		status = "下载中"
+		if m.progress.ID == candidate.ID && m.progress.Live {
+			status = "录制中"
+		}
 	} else if m.downloadedPath(candidate) != "" {
 		status = "已下载"
 	}
@@ -327,8 +330,11 @@ func (m model) candidateDetailLines(candidate miniprogram.Candidate, width int) 
 	}
 	lines := []string{
 		"标题: " + displayValue(candidate.Title),
-		"类型/来源: " + kindDisplay(candidate.Kind) + " / " + sourceDisplay(candidate.Source),
+		"类型/来源: " + candidateKindDisplay(candidate) + " / " + sourceDisplay(candidate.Source),
 		"归属: " + attributionDisplay(candidate),
+	}
+	if candidate.Live {
+		lines = append(lines, "直播: HTTP-FLV 直播流，下载会持续录制（不会自动结束，按 x 停止并保存）")
 	}
 	if downloaded != "" {
 		lines = append(lines, "本地路径: "+downloaded)
@@ -376,10 +382,13 @@ func (m model) renderStatusLine(y int, metrics ui.Metrics) string {
 		style = m.st.errStyle
 		text = "代理启动失败：" + m.startErr.Error() + "（按 r 重试）"
 		m.hits.add(left, y, width, 1, hitRetryProxy, 0)
-	case m.downloading || m.progress.Status == "done" || m.progress.Status == "error":
+	case m.downloading || m.progress.Status == "done" || m.progress.Status == "error" || m.progress.Status == "stopped":
 		style = m.st.success
 		if m.progress.Status == "error" {
 			style = m.st.errStyle
+		}
+		if m.progress.Status == "stopped" && !m.progress.Live {
+			style = m.st.warning
 		}
 		text = progressLine(m.progress)
 	case m.noticeText() != "":
@@ -431,9 +440,16 @@ func progressLine(progress minidownload.Progress) string {
 	case "downloading":
 		if progress.Total > 0 {
 			pct := int(float64(progress.Downloaded) / float64(progress.Total) * 100)
-			return fmt.Sprintf("下载中 %d%%  %s/%s", pct, formatBytes(progress.Downloaded), formatBytes(progress.Total))
+			return fmt.Sprintf("下载中 %d%%  %s/%s · 按 x 停止", pct, formatBytes(progress.Downloaded), formatBytes(progress.Total))
 		}
-		return "下载中 " + formatBytes(progress.Downloaded)
+		return "下载中 " + formatBytes(progress.Downloaded) + " · 按 x 停止"
+	case "recording":
+		return "录制直播中 " + formatBytes(progress.Downloaded) + "（不会自动结束，按 x 停止并保存）"
+	case "stopped":
+		if progress.Live {
+			return "直播录制已停止，已保存: " + progress.Path
+		}
+		return "下载已停止（未完成内容保留在下载目录）"
 	case "done":
 		return "下载完成: " + progress.Path
 	case "error":

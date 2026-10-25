@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -78,9 +79,16 @@ func (m model) startDownload(candidate miniprogram.Candidate) (tea.Model, tea.Cm
 	}
 	m.downloading = true
 	m.downloadID = candidate.ID
+	m.downloadLive = candidate.Live
 	m.showTargets = false
-	m.addLog("开始下载: " + attributionDisplay(candidate) + " " + kindDisplay(candidate.Kind) + " " + candidateLabel(candidate))
-	return m, downloadCmd(m.runtime, candidate)
+	m.addLog("开始下载: " + attributionDisplay(candidate) + " " + candidateKindDisplay(candidate) + " " + candidateLabel(candidate))
+	if candidate.Live {
+		m.addLog("识别为直播流：会持续录制且不会自动结束，按 x 停止并保存")
+		m.setNotice("直播流：下载会持续录制，按 x 停止并保存", 8*time.Second)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	m.downloadCancel = cancel
+	return m, downloadCmd(ctx, m.runtime, candidate)
 }
 
 func (m model) openDirectory() tea.Cmd {

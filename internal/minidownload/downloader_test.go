@@ -3,6 +3,7 @@ package minidownload
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -817,4 +818,127 @@ func stubDownloadClock(t *testing.T, at time.Time) {
 	old := now
 	now = func() time.Time { return at }
 	t.Cleanup(func() { now = old })
+}
+
+func TestDownloadRecordsLiveFLVUntilStopped(t *testing.T) {
+	frame := append([]byte("FLV\x01\x05\x00\x00\x00\x09"), make([]byte, 512)...)
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "video/x-flv")
+		flusher, _ := w.(http.Flusher)
+		for i := 0; i < 2000; i++ {
+			if _, err := w.Write(frame); err != nil {
+				return
+			}
+			if flusher != nil {
+				flusher.Flush()
+			}
+			select {
+			case <-r.Context().Done():
+				return
+			case <-time.After(2 * time.Millisecond):
+			}
+		}
+	}))
+	defer ts.Close()
+
+	d := New(t.TempDir())
+	var recording atomic.Bool
+	d.OnProgress = func(p Progress) {
+		if p.Status == "recording" && p.Live {
+			recording.Store(true)
+		}
+	}
+	candidate := miniprogram.Candidate{
+		ID:     "live-flv",
+		URL:    ts.URL + "/live/7559_esd.flv",
+		Kind:   "video",
+		Suffix: ".flv",
+		Live:   true,
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	type result struct {
+		output string
+		err    error
+	}
+	done := make(chan result, 1)
+	go func() {
+		output, err := d.Download(ctx, candidate, "", "")
+		done <- result{output: output, err: err}
+	}()
+
+	deadline := time.Now().Add(5 * time.Second)
+	for !recording.Load() {
+		if time.Now().After(deadline) {
+			t.Fatal("download never reported recording progress for the live flv stream")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	cancel()
+
+	got := <-done
+	if !errors.Is(got.err, ErrRecordingStopped) {
+		t.Fatalf("download error = %v, want ErrRecordingStopped", got.err)
+	}
+	if filepath.Ext(got.output) != ".flv" {
+		t.Fatalf("recording output = %q, want .flv suffix", got.output)
+	}
+	data, err := os.ReadFile(got.output)
+	if err != nil {
+		t.Fatalf("recording output missing: %v", err)
+	}
+	if len(data) == 0 || string(data[:3]) != "FLV" {
+		t.Fatalf("recording output = %d bytes starting %q, want FLV payload", len(data), data[:min(3, len(data))])
+	}
+	if fileExists(partialPath(got.output, candidate)) {
+		t.Fatal("recording .part file should be renamed after stopping")
+	}
+}
+
+func TestDownloadFiniteFLVIgnoresLiveHint(t *testing.T) {
+	body := append([]byte("FLV\x01\x05\x00\x00\x00\x09"), make([]byte, 4096)...)
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "video/x-flv")
+		w.Header().Set("Content-Length", strconv.Itoa(len(body)))
+		_, _ = w.Write(body)
+	}))
+	defer ts.Close()
+
+	var progress []Progress
+	d := New(t.TempDir())
+	d.OnProgress = func(p Progress) { progress = append(progress, p) }
+	candidate := miniprogram.Candidate{
+		ID:     "finite-flv",
+		URL:    ts.URL + "/clip.flv",
+		Kind:   "video",
+		Suffix: ".flv",
+		Live:   true,
+	}
+	output, err := d.Download(context.Background(), candidate, "", "")
+	if err != nil {
+		t.Fatalf("finite flv download failed: %v", err)
+	}
+	got, err := os.ReadFile(output)
+	if err != nil || len(got) != len(body) {
+		t.Fatalf("finite flv output = %d bytes (err %v), want %d", len(got), err, len(body))
+	}
+	last := progress[len(progress)-1]
+	if last.Status != "done" || last.Live {
+		t.Fatalf("last progress = %#v, want done without live flag", last)
+	}
+}
+
+func TestOutputNameKeepsSingleFLVSuffix(t *testing.T) {
+	candidate := miniprogram.Candidate{ID: "a187d7aeff6f", Kind: "video", Suffix: ".flv", Live: true}
+	if got := OutputName(candidate, "7559184446249188_esd.flv"); got != "7559184446249188_esd.flv" {
+		t.Fatalf("preferred flv name = %q, want unchanged", got)
+	}
+	name := OutputName(candidate, "")
+	if filepath.Ext(name) != ".flv" || strings.Count(name, ".flv") != 1 {
+		t.Fatalf("default flv name = %q, want exactly one .flv suffix", name)
+	}
+	if !strings.HasPrefix(name, "视频_") {
+		t.Fatalf("default flv name = %q, want video type prefix", name)
+	}
 }

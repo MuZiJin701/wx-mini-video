@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -80,11 +81,14 @@ type model struct {
 	showLogs        bool
 	logOffset       int
 
-	downloading   bool
-	progress      minidownload.Progress
-	downloaded    map[string]string
-	lastSavedPath string
-	downloadID    string
+	downloading       bool
+	progress          minidownload.Progress
+	downloaded        map[string]string
+	lastSavedPath     string
+	downloadID        string
+	downloadLive      bool
+	downloadCancel    context.CancelFunc
+	quitAfterDownload bool
 
 	logs        []string
 	notice      string
@@ -231,16 +235,36 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case downloadMsg:
 		m.downloading = false
 		m.downloadID = ""
-		if v.err != nil {
-			m.addLog("下载失败: " + v.err.Error())
-			m.setNotice("下载失败："+v.err.Error()+"（Enter 重试 / l 查看日志）", 10*time.Second)
-		} else {
+		m.downloadLive = false
+		if m.downloadCancel != nil {
+			m.downloadCancel()
+			m.downloadCancel = nil
+		}
+		switch {
+		case v.err == nil:
 			m.lastSavedPath = v.path
 			if v.candidateID != "" {
 				m.downloaded[v.candidateID] = v.path
 			}
 			m.addLog("下载完成: " + v.path)
 			m.setNotice("已保存 → "+m.relativeDownloadPath(v.path), 8*time.Second)
+		case errors.Is(v.err, minidownload.ErrRecordingStopped):
+			m.lastSavedPath = v.path
+			if v.candidateID != "" {
+				m.downloaded[v.candidateID] = v.path
+			}
+			m.addLog("已停止录制: " + v.path)
+			m.setNotice("已停止录制并保存 → "+m.relativeDownloadPath(v.path), 8*time.Second)
+		case errors.Is(v.err, minidownload.ErrDownloadStopped):
+			m.addLog("已停止下载，未完成内容保留在下载目录")
+			m.setNotice("已停止下载（未完成内容保留在下载目录）", 8*time.Second)
+		default:
+			m.addLog("下载失败: " + v.err.Error())
+			m.setNotice("下载失败："+v.err.Error()+"（Enter 重试 / l 查看日志）", 10*time.Second)
+		}
+		if m.quitAfterDownload {
+			m.quitAfterDownload = false
+			return m.beginStop()
 		}
 	case appearanceSavedMsg:
 		if v.err != nil {
@@ -483,9 +507,9 @@ func tick() tea.Cmd {
 	})
 }
 
-func downloadCmd(runtime *app.Runtime, candidate miniprogram.Candidate) tea.Cmd {
+func downloadCmd(ctx context.Context, runtime *app.Runtime, candidate miniprogram.Candidate) tea.Cmd {
 	return func() tea.Msg {
-		path, err := runtime.Download(context.Background(), candidate, "")
+		path, err := runtime.Download(ctx, candidate, "")
 		return downloadMsg{candidateID: candidate.ID, path: path, err: err}
 	}
 }

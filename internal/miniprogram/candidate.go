@@ -30,11 +30,14 @@ const (
 )
 
 type Candidate struct {
-	ID            string            `json:"id"`
-	AppID         string            `json:"app_id"`
-	SourceAppID   string            `json:"source_app_id,omitempty"`
-	Attribution   string            `json:"attribution,omitempty"`
-	Provisional   bool              `json:"provisional,omitempty"`
+	ID          string `json:"id"`
+	AppID       string `json:"app_id"`
+	SourceAppID string `json:"source_app_id,omitempty"`
+	Attribution string `json:"attribution,omitempty"`
+	Provisional bool   `json:"provisional,omitempty"`
+	// Live 表示疑似 HTTP-FLV 直播流：.flv 直链，或 FLV Content-Type 且没有可用的 Content-Length。
+	// 它没有总时长，下载等于持续录制、不会自动结束；下载时会再用响应头和 FLV 魔数确认。
+	Live          bool              `json:"live,omitempty"`
 	Title         string            `json:"title,omitempty"`
 	URL           string            `json:"url"`
 	SourceURL     string            `json:"source_url"`
@@ -154,6 +157,17 @@ func (s *Store) addUnattributed(candidate Candidate, generation *uint64) (Candid
 			existing.Suffix = candidate.Suffix
 			changed = true
 		}
+		// 真实响应比页面/JSON 推测更可信：用响应判定覆盖直播标记与后缀。
+		if candidate.Source == "response" {
+			if candidate.Live != existing.Live {
+				existing.Live = candidate.Live
+				changed = true
+			}
+			if candidate.Suffix != "" && candidate.Suffix != existing.Suffix {
+				existing.Suffix = candidate.Suffix
+				changed = true
+			}
+		}
 		if candidate.Title != "" && existing.Title == "" {
 			existing.Title = candidate.Title
 			changed = true
@@ -227,6 +241,7 @@ func (s *Store) add(candidate Candidate, generation *uint64, cache func() string
 			existing.Headers = candidate.Headers
 			existing.ContentType = candidate.ContentType
 			existing.ContentLength = candidate.ContentLength
+			existing.Live = candidate.Live
 			changed = true
 		}
 		if candidate.CachedPath != "" {
@@ -359,6 +374,8 @@ func ClassifyByContentType(contentType string) (kind, suffix string) {
 		return "video", ".mp4"
 	case "video/webm":
 		return "video", ".webm"
+	case "video/x-flv", "video/flv", "application/x-flv":
+		return "video", ".flv"
 	case "video/quicktime":
 		return "video", ".mov"
 	case "audio/mpeg", "audio/mp3":
@@ -398,7 +415,7 @@ func ClassifyByURL(rawURL string) (kind, suffix string) {
 			return "image", ".jpg"
 		}
 		return "image", ext
-	case ".mp4", ".webm", ".mov":
+	case ".mp4", ".webm", ".mov", ".flv":
 		return "video", ext
 	case ".mp3", ".m4a", ".aac", ".wav", ".ogg", ".flac", ".opus", ".amr":
 		return "audio", ext
@@ -420,6 +437,41 @@ func Classify(contentType, rawURL string) (kind, suffix string) {
 		return "", ""
 	}
 	return kind, suffix
+}
+
+// IsFLVContentType 判断响应 Content-Type 是否属于 HTTP-FLV。
+func IsFLVContentType(contentType string) bool {
+	mediaType := strings.ToLower(strings.TrimSpace(contentType))
+	if parsed, _, err := mime.ParseMediaType(mediaType); err == nil {
+		mediaType = parsed
+	}
+	switch mediaType {
+	case "video/x-flv", "video/flv", "application/x-flv":
+		return true
+	}
+	return false
+}
+
+// IsFLVURL 判断 URL 路径扩展名是否为 .flv。
+func IsFLVURL(rawURL string) bool {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return false
+	}
+	return strings.EqualFold(path.Ext(u.Path), ".flv")
+}
+
+// LooksLikeLiveFLV 判断媒体是否疑似 HTTP-FLV 直播流。
+// 带 Content-Length 的响应是可以完整下载的有限文件，不算直播；长度未知时，
+// FLV Content-Type 或 .flv 地址都按疑似直播处理——微信小程序常用 HTTP-FLV 做低延迟直播。
+func LooksLikeLiveFLV(contentType string, contentLength int64, rawURL string) bool {
+	if contentLength > 0 {
+		return false
+	}
+	if IsFLVContentType(contentType) {
+		return true
+	}
+	return IsFLVURL(rawURL)
 }
 
 func CleanHeaders(header http.Header) map[string]string {
@@ -521,7 +573,7 @@ func MediaURLsInText(text string) []Candidate {
 		if _, exists := seen[raw]; exists {
 			continue
 		}
-		seen[raw] = Candidate{URL: raw, Source: "html", Kind: kind, Suffix: suffix}
+		seen[raw] = Candidate{URL: raw, Source: "html", Kind: kind, Suffix: suffix, Live: IsFLVURL(raw)}
 	}
 	if len(seen) == 0 {
 		return nil
@@ -709,6 +761,7 @@ func walkJSONString(fieldPath, value, nearbyTitle string, tokens []jsonTokenFiel
 				FieldPath:   fieldPath,
 				Kind:        kind,
 				Suffix:      suffix,
+				Live:        IsFLVURL(urlValue),
 				Provisional: provisional,
 			}
 		}

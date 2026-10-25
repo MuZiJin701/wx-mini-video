@@ -226,7 +226,7 @@ func TestDownloadInProgressBlocksTargetSwitch(t *testing.T) {
 	}
 }
 
-func TestQuitDuringDownloadRequiresConfirmation(t *testing.T) {
+func TestQuitDuringDownloadStopsRecordingThenExits(t *testing.T) {
 	m := testModel(t)
 	m.targetReady = true
 	m.downloading = true
@@ -240,8 +240,13 @@ func TestQuitDuringDownloadRequiresConfirmation(t *testing.T) {
 	}
 	m, _ = targetKey(m, tea.KeyRunes, "q")
 	m, cmd = targetKey(m, tea.KeyEnter, "")
-	if cmd == nil || !m.stopping || m.confirmQuit {
-		t.Fatal("confirmed quit should start the stop flow")
+	if cmd != nil || m.stopping || !m.quitAfterDownload {
+		t.Fatal("confirmed quit should stop the download before exiting")
+	}
+	next, stopCmd := m.Update(downloadMsg{candidateID: "recording", path: "downloads/直播_1.flv", err: minidownload.ErrRecordingStopped})
+	m = next.(model)
+	if !m.stopping || stopCmd == nil || m.quitAfterDownload {
+		t.Fatal("quit should resume after the recording is finalized")
 	}
 }
 

@@ -580,3 +580,33 @@ func TestMiniProgramPluginDebugLogDisabledByDefault(t *testing.T) {
 		t.Fatalf("debug log should stay disabled by default: %v", err)
 	}
 }
+
+func TestMiniProgramPluginMarksLiveFLVResponse(t *testing.T) {
+	store := miniprogram.NewStore()
+	plugin := CreateMiniProgramInterceptorPlugin(miniprogram.Target{AppID: "wx123"}, store, t.TempDir())
+	referer := http.Header{"Referer": {"https://servicewechat.com/wx123/1/page-frame.html"}}
+
+	// 直播：FLV Content-Type 且没有 Content-Length（分块传输）。
+	plugin.OnResponse(&testProxyContext{
+		req:     &proxy.ContextReq{Method: http.MethodGet, URL: &proxy.ContextURL{String: "https://play-t-live.example.com/7559_esd.flv"}, Header: referer},
+		headers: http.Header{"Content-Type": {"video/x-flv"}},
+	})
+	// 有限文件：同样的 FLV 类型，但响应声明了长度。
+	plugin.OnResponse(&testProxyContext{
+		req:     &proxy.ContextReq{Method: http.MethodGet, URL: &proxy.ContextURL{String: "https://cdn.example.com/clip.flv"}, Header: referer},
+		headers: http.Header{"Content-Type": {"video/x-flv"}, "Content-Length": {"4096"}},
+	})
+
+	byURL := make(map[string]miniprogram.Candidate)
+	for _, candidate := range store.List("wx123") {
+		byURL[candidate.URL] = candidate
+	}
+	live, ok := byURL["https://play-t-live.example.com/7559_esd.flv"]
+	if !ok || !live.Live || live.Kind != "video" || live.Suffix != ".flv" {
+		t.Fatalf("live flv candidate = %#v, want video/.flv marked live", live)
+	}
+	finite, ok := byURL["https://cdn.example.com/clip.flv"]
+	if !ok || finite.Live || finite.Kind != "video" || finite.Suffix != ".flv" {
+		t.Fatalf("finite flv candidate = %#v, want video/.flv not live", finite)
+	}
+}

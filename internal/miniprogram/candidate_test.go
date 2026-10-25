@@ -403,3 +403,70 @@ func TestUnattributedGenerationInvalidatesOnlyOnClear(t *testing.T) {
 		t.Fatal("old response survived ClearUnattributed")
 	}
 }
+
+func TestClassifyRecognizesFLV(t *testing.T) {
+	cases := []struct {
+		name        string
+		contentType string
+		rawURL      string
+		wantKind    string
+		wantSuffix  string
+	}{
+		{name: "flv content type", contentType: "video/x-flv", rawURL: "https://live.example.com/channel/9", wantKind: "video", wantSuffix: ".flv"},
+		{name: "flv application type", contentType: "application/x-flv; charset=binary", rawURL: "https://live.example.com/channel/9", wantKind: "video", wantSuffix: ".flv"},
+		{name: "flv url extension", rawURL: "https://play-t-live.example.com/7559_esd.flv?auth=1", wantKind: "video", wantSuffix: ".flv"},
+	}
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			kind, suffix := Classify(tt.contentType, tt.rawURL)
+			if kind != tt.wantKind || suffix != tt.wantSuffix {
+				t.Fatalf("Classify(%q, %q) = (%q, %q), want (%q, %q)", tt.contentType, tt.rawURL, kind, suffix, tt.wantKind, tt.wantSuffix)
+			}
+		})
+	}
+}
+
+func TestLooksLikeLiveFLV(t *testing.T) {
+	cases := []struct {
+		name          string
+		contentType   string
+		contentLength int64
+		rawURL        string
+		want          bool
+	}{
+		{name: "flv type without length", contentType: "video/x-flv", rawURL: "https://live.example.com/a", want: true},
+		{name: "flv url without length", rawURL: "https://live.example.com/a.flv", want: true},
+		{name: "flv url with length", rawURL: "https://cdn.example.com/a.flv", contentLength: 1024, want: false},
+		{name: "mp4 url", rawURL: "https://cdn.example.com/a.mp4", want: false},
+		{name: "mp4 url with length", rawURL: "https://cdn.example.com/a.mp4", contentLength: 1024, want: false},
+	}
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := LooksLikeLiveFLV(tt.contentType, tt.contentLength, tt.rawURL); got != tt.want {
+				t.Fatalf("LooksLikeLiveFLV(%q, %d, %q) = %v, want %v", tt.contentType, tt.contentLength, tt.rawURL, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestExtractMediaURLsFromJSONMarksFLVLive(t *testing.T) {
+	body := []byte(`{"data":{"videoUrl":"https://play-t-live.example.com/7559184446249188_esd.flv"}}`)
+	got := ExtractMediaURLsFromJSON(body)
+	if len(got) != 1 {
+		t.Fatalf("candidates = %#v, want one flv candidate", got)
+	}
+	candidate := got[0]
+	if candidate.Kind != "video" || candidate.Suffix != ".flv" || !candidate.Live {
+		t.Fatalf("flv candidate = %#v, want video/.flv marked live", candidate)
+	}
+}
+
+func TestCandidateLiveJSONTag(t *testing.T) {
+	data, err := json.Marshal(Candidate{Live: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), `"live":true`) {
+		t.Fatalf("marshaled candidate = %q, want live tag", data)
+	}
+}

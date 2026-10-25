@@ -14,9 +14,9 @@ Windows 优先的单二进制 Go TUI，使用 Bubble Tea 和 Echo 代理适配�
 | `internal/tui/` | 单主界面与品牌区、目标选择、媒体视图、主题与外观、鼠标命中、下载与进度 |
 | `internal/tui/ui/` | 外观模式与 `ui.json`、系统明暗、主题色板、布局度量与显示宽度 |
 | `internal/tui/logo/` | 终端图片能力探测、Sixel/kitty 编码、每帧绘制与清理（失败静默降级） |
-| `internal/interceptor/miniprogram.go` | 请求来源过滤、媒体识别和播放列表缓存 |
-| `internal/miniprogram/` | 目标、发现列表与候选存储 |
-| `internal/minidownload/` | 直链下载、m3u8 与 ffmpeg（随包/受管） |
+| `internal/interceptor/miniprogram.go` | 请求来源过滤、媒体与 HTTP-FLV 直播流识别、播放列表缓存 |
+| `internal/miniprogram/` | 目标、发现列表与候选存储（含直播标记） |
+| `internal/minidownload/` | 直链下载（含直播录制）、m3u8 与 ffmpeg（随包/受管） |
 | `third_party/echo/` | 本地 patch 的代理库（MITM listener 回收） |
 
 ### 启动与代理
@@ -36,11 +36,11 @@ Windows 的 `PrepareConsole` 在配置、证书、代理初始化前只处理终
 1. 默认代理为 `127.0.0.1:2023`。从 HTTPS `servicewechat.com/<AppID>/<版本>/page-frame.html` 格式的 `Referer` 解析请求来源 AppID，完整匹配目标后才计入目标候选并缓存媒体；来源缺失、格式不符或其他 AppID 的媒体类响应作为**来源未确认**候选（`?` 标记）按类型并入候选列表（不写播放列表缓存、不自动下载），用户可查看和下载。目标候选不通过共享 CDN 或跨请求 URL 关联扩大范围。
 2. 发现阶段只登记 AppID（含首次出现与最近出现时间，仅本次运行保存），按 AppID 去重；目标覆盖层按最近出现时间倒序展示，选中即确认，不再有名称补填步骤（v0.2.0 删除小程序名称功能）。发现阶段不产生目标候选、不缓存播放列表，但来源未确认媒体照常收集（与目标无关），确认目标后按类型显示（`?` 标记）；这样打开小程序时自动加载的第一个页面不会因目标尚未确认而丢失。
 3. `s`/`Ctrl+D` 打开目标覆盖层；取消不会清空当前目标或候选，确认新 AppID 后才清空候选及进度，保留文件、历史、部分下载和缓存。存储用目标代次拒绝旧目标响应；来源未确认媒体使用独立清空代次，确认或切换目标不失效，清空列表使在途结果失效，提交候选和写缓存时再次检查；按 `c` 清空也会使清空前尚未接纳的响应失效，保留当前目标和本地文件。下载中不允许切换目标。
-4. 直接响应按 Content-Type 或 URL 后缀识别媒体。匹配目标的 JSON 接口可提供图片、直链视频和直链音频；JSON m3u8 链接跳过，等待实际播放列表响应。JSON 提取的跨域链接仅保留 User-Agent、Referer、Accept、Accept-Language，不转发接口 Cookie、Authorization 或其他自定义鉴权头；同源指 scheme 与 host（含端口）一致。后续真实媒体响应会更新其重放请求头与媒体元数据，保留 JSON 标题。URL 所在对象的 `title`、`videoTitle`、`audioTitle`、`mediaTitle`、`caption`、`subject`、`name` 可作为候选标题。JSON 另支持相邻字段拼接（如 `url` + `urlToken`）、无后缀但字段名强相关的媒体地址；目标 AppID 已匹配时，`application/octet-stream` 等未知类型且不小于 256 KB 的响应作为“未知文件”兜底候选，不自动缓存或下载。另对小程序的 H5 页面/脚本（HTML/JS，≤ 4 MB，含 `miniProgram`、`jweixin`、`ckplayer` 或 `<video` 标记）扫描内联的视频、m3u8 与音频地址，作为来源未确认候选按类型显示；Referer 取页面自身；仅同源媒体复用页面 Cookie/Authorization，跨源只保留公开请求元数据，真实媒体响应的鉴权头不会被后续页面扫描覆盖，因此打开详情页即可出现候选，不依赖播放器真正发请求。扫描候选标记「H5 页面/脚本扫描（未播放验证）」，下载前未验证地址是否仍有效。
-5. 直链先写带资源标识的 `.part` 和校验元数据；仅有强 ETag 时以 Range/If-Range 续传，服务器返回新实体时重下，没有校验依据时也重下。旧版同名 `.part` 保留但不复用。HTTP 分段响应从 Content-Range 取得完整长度；提交前核对响应声明的长度，不再凭嗅探长度或已有部分大小直接完成。成功记录追加到下载根目录的 `history.jsonl`，包含路径、目标 AppID（`app_id`）、请求来源 AppID、资源类型、归属、来源域名、大小和 UTC 时间。
+4. 直接响应按 Content-Type 或 URL 后缀识别媒体。FLV（`video/x-flv`、`video/flv`、`application/x-flv` 或 `.flv` 地址）按视频识别并保存 `.flv`；没有 Content-Length 的 FLV 响应或 `.flv` 地址标记为疑似 **HTTP-FLV 直播流**（`Candidate.Live`），真实响应会修正 JSON/H5 推测。匹配目标的 JSON 接口可提供图片、直链视频和直链音频；JSON m3u8 链接跳过，等待实际播放列表响应。JSON 提取的跨域链接仅保留 User-Agent、Referer、Accept、Accept-Language，不转发接口 Cookie、Authorization 或其他自定义鉴权头；同源指 scheme 与 host（含端口）一致。后续真实媒体响应会更新其重放请求头与媒体元数据，保留 JSON 标题。URL 所在对象的 `title`、`videoTitle`、`audioTitle`、`mediaTitle`、`caption`、`subject`、`name` 可作为候选标题。JSON 另支持相邻字段拼接（如 `url` + `urlToken`）、无后缀但字段名强相关的媒体地址；目标 AppID 已匹配时，`application/octet-stream` 等未知类型且不小于 256 KB 的响应作为“未知文件”兜底候选，不自动缓存或下载。另对小程序的 H5 页面/脚本（HTML/JS，≤ 4 MB，含 `miniProgram`、`jweixin`、`ckplayer` 或 `<video` 标记）扫描内联的视频、m3u8 与音频地址，作为来源未确认候选按类型显示；Referer 取页面自身；仅同源媒体复用页面 Cookie/Authorization，跨源只保留公开请求元数据，真实媒体响应的鉴权头不会被后续页面扫描覆盖，因此打开详情页即可出现候选，不依赖播放器真正发请求。扫描候选标记「H5 页面/脚本扫描（未播放验证）」，下载前未验证地址是否仍有效。
+5. 直链先写带资源标识的 `.part` 和校验元数据；仅有强 ETag 时以 Range/If-Range 续传，服务器返回新实体时重下，没有校验依据时也重下。旧版同名 `.part` 保留但不复用。HTTP 分段响应从 Content-Range 取得完整长度；提交前核对响应声明的长度，不再凭嗅探长度或已有部分大小直接完成。**HTTP-FLV 直播流**（`.flv` 地址或 `video/x-flv` 响应且没有 Content-Length）在响应头与 FLV 魔数确认后按持续录制处理：不发 Range、不校验总长度，按 `recording` 状态持续写入 `.part`；用户按 `x` 或确认退出时取消下载上下文，已录内容提交为 `.flv`（返回 `ErrRecordingStopped`，仍写入 `history.jsonl`）；服务端结束或断开则正常提交。普通下载被用户停止时保留 `.part`（返回 `ErrDownloadStopped`）。成功记录追加到下载根目录的 `history.jsonl`，包含路径、目标 AppID（`app_id`）、请求来源 AppID、资源类型、归属、来源域名、大小和 UTC 时间。
 6. m3u8 使用已捕获播放列表，缺失时允许远程回补，最后由 ffmpeg 输出 mp4；音频 m3u8 也沿用此流程。捕获缓存保留原始相对引用，在下载阶段统一解析；预取缓存按候选及播放列表内容隔离，避免更新后的播放列表误用原位置的分片，并按来源限定请求头；ffmpeg 获取分片时，经仅在下载期间运行的 `127.0.0.1` 随机端口入口读取缓存播放列表、分片及子播放列表，由 Go 按来源重放鉴权头，入口仅接受带随机标识且已登记的资源路径。主播放列表沿用此方式获取其子播放列表，不作为普通分片预取。跨源重定向同样不携带凭据。
 
-支持格式：图片 `jpg/png/webp/gif/bmp/avif`；直链视频 `mp4/webm/mov`；直链音频 `mp3/m4a/aac/wav/ogg/flac/opus/amr`。图片和直链媒体保存原文件；不提供转码、音轨提取或播放功能。归属取舍见 [ADR 0008](docs/adr/0008-target-attribution.md)，替代 [ADR 0003](docs/adr/0003-target-appid-filtering.md)。
+支持格式：图片 `jpg/png/webp/gif/bmp/avif`；直链视频 `mp4/webm/mov/flv`；直链音频 `mp3/m4a/aac/wav/ogg/flac/opus/amr`。图片和直链媒体保存原文件；不提供转码、音轨提取或播放功能。归属取舍见 [ADR 0008](docs/adr/0008-target-attribution.md)，替代 [ADR 0003](docs/adr/0003-target-appid-filtering.md)。
 
 ### 界面与外观（v0.2.0）
 
@@ -49,11 +49,12 @@ TUI 为单主界面：品牌区（品牌图标、kicker/标题/副标题、右�
 - 外观模式：跟随系统/浅色/深色，`←/→` 或点击切换，立即生效；偏好原子写入下载目录的 `ui.json`。Windows 读 `HKCU\...\Themes\Personalize\AppsUseLightTheme`，macOS 读 `defaults read -g AppleInterfaceStyle`，读取失败回退深色；跟随系统时每 2 秒轮询。
 - 品牌 logo：启动、Bubble Tea 接管 stdin 之前探测终端图片能力（kitty 图形查询 + CSI 16t 像素格 + DA1）；只有收到正面回复才绘制内嵌 512×512 PNG（Sixel/kitty），输出层每帧补画，覆盖层打开、缩放与退出时关闭并清理。探测失败、`NO_COLOR`、tmux/screen、Apple Terminal、非 TTY 或窗口过矮时降级为块字符品牌图标；真图不改变布局高度上限（5 行）。可在真实终端运行 `go run ./build/logoprobe` 验证，重建图标运行 `go run ./build/genlogo`。
 - 已下载候选在当前进程内以行尾「已下载」标记（需宽度 ≥84 才显示状态列），详情抽屉显示本地路径；重复下载生成新文件。下载中退出需要二次确认，已完成文件保留。
+- 直播流识别：列表「类型」列与详情显示「直播流」，详情给出「HTTP-FLV 直播流（URL/响应识别）」依据；下载时状态行显示「录制直播中 …（不会自动结束，按 x 停止并保存）」，行尾状态显示「录制中」。`x` 停止当前下载：直播录制取消后保存已录内容并标记已下载，普通下载保留 `.part`；下载中按 `q` 确认退出会先停止下载/录制、保存现场再恢复代理退出。
 - 运行日志、debug 日志、`history.jsonl`、`ui.json`、根证书、受管 ffmpeg 与 `.ffmpeg` 失败日志仍在下载根目录；媒体、m3u8 缓存/分片和 `.part` 跟随目标目录。
 
 ### 下载目录与命名（v0.2.0）
 
-`downloads/<目标 AppID>/<类型>/`，类型目录为 `图片`、`视频`、`音频`、`m3u8`、`其他`（未识别二进制）。m3u8 合并产物、播放列表缓存 `<候选ID>.m3u8` 与 `.segments` 分片都放在 `m3u8/`；合并成功的分片清理语义不变。文件名默认 `类型_YYYYMMDD-HHMMSS_候选ID前8位.扩展名`，本地时区，m3u8 合并产物固定 `.mp4`；同名冲突追加 `_2`、`_3`。目标候选按其 AppID 归档；来源未确认候选按下载时当前目标 AppID 归档，`history.jsonl` 同时记录请求来源 AppID。AppID 目录名做安全清洗并拒绝路径穿越，保留大小写。旧版平铺在下载根目录的媒体、`.part` 与缓存不迁移、不删除、不复用。`o`/`Ctrl+O` 优先打开当前目标目录，缺失或未选目标时打开下载根目录。取舍见 [ADR 0012](docs/adr/0012-per-appid-download-layout.md)。
+`downloads/<目标 AppID>/<类型>/`，类型目录为 `图片`、`视频`、`音频`、`m3u8`、`其他`（未识别二进制）。m3u8 合并产物、播放列表缓存 `<候选ID>.m3u8` 与 `.segments` 分片都放在 `m3u8/`；合并成功的分片清理语义不变。文件名默认 `类型_YYYYMMDD-HHMMSS_候选ID前8位.扩展名`，本地时区，m3u8 合并产物固定 `.mp4`，HTTP-FLV 直播录制保存 `.flv`；同名冲突追加 `_2`、`_3`。目标候选按其 AppID 归档；来源未确认候选按下载时当前目标 AppID 归档，`history.jsonl` 同时记录请求来源 AppID。AppID 目录名做安全清洗并拒绝路径穿越，保留大小写。旧版平铺在下载根目录的媒体、`.part` 与缓存不迁移、不删除、不复用。`o`/`Ctrl+O` 优先打开当前目标目录，缺失或未选目标时打开下载根目录。取舍见 [ADR 0012](docs/adr/0012-per-appid-download-layout.md)。
 
 ## 配置
 

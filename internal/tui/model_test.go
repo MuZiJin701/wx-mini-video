@@ -242,3 +242,64 @@ func TestHoverStateTracksRegions(t *testing.T) {
 		t.Fatal("hover state not cleared outside regions")
 	}
 }
+
+func TestCandidateKindDisplayMarksLive(t *testing.T) {
+	if got := candidateKindDisplay(miniprogram.Candidate{Kind: "video", Live: true}); got != "直播流" {
+		t.Fatalf("live kind display = %q, want 直播流", got)
+	}
+	if got := candidateKindDisplay(miniprogram.Candidate{Kind: "video"}); got != "视频" {
+		t.Fatalf("plain video kind display = %q, want 视频", got)
+	}
+	if got := candidateBasis(miniprogram.Candidate{Kind: "video", Live: true}); !strings.Contains(got, "直播流") {
+		t.Fatalf("live candidate basis = %q, want live explanation", got)
+	}
+}
+
+func TestProgressLineLiveStatuses(t *testing.T) {
+	recording := progressLine(minidownload.Progress{Status: "recording", Downloaded: 8 * 1024 * 1024, Live: true})
+	if !strings.Contains(recording, "录制直播中") || !strings.Contains(recording, "按 x 停止") {
+		t.Fatalf("recording line = %q, want live recording hint", recording)
+	}
+	stopped := progressLine(minidownload.Progress{Status: "stopped", Live: true, Path: "downloads/视频/x.flv"})
+	if !strings.Contains(stopped, "已保存") {
+		t.Fatalf("stopped live line = %q, want saved path", stopped)
+	}
+	plain := progressLine(minidownload.Progress{Status: "stopped"})
+	if !strings.Contains(plain, "下载已停止") {
+		t.Fatalf("stopped download line = %q, want stop notice", plain)
+	}
+}
+
+func TestStartLiveDownloadShowsRecordingHint(t *testing.T) {
+	m := testModel(t)
+	m.targetReady = true
+	candidate := miniprogram.Candidate{
+		ID:          "live-download",
+		URL:         "https://play-t-live.example.com/7559_esd.flv",
+		Kind:        "video",
+		Suffix:      ".flv",
+		Live:        true,
+		Attribution: miniprogram.AttributionConfirmed,
+	}
+	next, cmd := m.startDownload(candidate)
+	m = next.(model)
+	if cmd == nil || !m.downloading || !m.downloadLive || m.downloadCancel == nil {
+		t.Fatal("starting a live download should mark the model as recording")
+	}
+	m.downloadCancel()
+	if logs := strings.Join(m.logs, "\n"); !strings.Contains(logs, "直播流") {
+		t.Fatalf("logs = %q, want live stream hint", logs)
+	}
+	if !strings.Contains(m.notice, "录制") {
+		t.Fatalf("notice = %q, want recording notice", m.notice)
+	}
+	m.candidates = []miniprogram.Candidate{candidate}
+	m.category = categoryAll
+	m.progress = minidownload.Progress{ID: candidate.ID, Status: "recording", Downloaded: 2 * 1024 * 1024, Live: true}
+	view := m.View()
+	for _, want := range []string{"直播流", "录制中", "录制直播中"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("media view missing %q for live recording:\n%s", want, view)
+		}
+	}
+}
