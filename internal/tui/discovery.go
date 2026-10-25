@@ -61,7 +61,7 @@ func (m model) renderDiscovery() string {
 	var b strings.Builder
 	b.WriteString(titleStyle.Render("小程序发现"))
 	b.WriteString("\n\n请在 PC 微信中打开目标小程序，再从下面选择 AppID。\n")
-	b.WriteString("选定目标前不产生目标候选；发现的来源未确认媒体会在确认后进入 6 未归属。名称可在确认界面补填。\n")
+	b.WriteString("选定目标前不产生目标候选；发现的来源未确认媒体会在确认后按类型显示（? 标记）。名称可在确认界面补填。\n")
 	if m.startErr != nil {
 		b.WriteString(errorStyle.Render(fitLine("代理启动失败: "+m.startErr.Error()+"；按 r 重试", width-1)))
 	} else if m.started {

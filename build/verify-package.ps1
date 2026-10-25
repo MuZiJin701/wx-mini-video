@@ -1,26 +1,18 @@
-﻿# 校验 Windows 发布包条目集合；完整包额外检查随包 ffmpeg、许可与第三方声明。
+# 校验 Windows 发布包条目集合，并检查随包 ffmpeg、许可与第三方声明。
 param(
     [Parameter(Mandatory = $true)]
-    [string]$ZipPath,
-    [switch]$Slim
+    [string]$ZipPath
 )
 
 $ErrorActionPreference = 'Stop'
-$rootEntries = @(
+$expected = @(
     'README.md',
     'wx-mini-video.exe',
-    'wx-mini-video.yaml'
-)
-$ffmpegEntries = @(
+    'wx-mini-video.yaml',
     'ffmpeg/ffmpeg.exe',
     'ffmpeg/LICENSE.txt',
     'THIRD-PARTY-NOTICES.md'
 )
-if ($Slim) {
-    $expected = $rootEntries
-} else {
-    $expected = $rootEntries + $ffmpegEntries
-}
 $ffmpegMinBytes = 50MB
 
 if (-not (Test-Path -LiteralPath $ZipPath -PathType Leaf)) {
@@ -48,11 +40,6 @@ try {
     $expectedSorted = @($expected | Sort-Object -Unique)
     if ($actual.Count -ne $expectedSorted.Count -or (Compare-Object -ReferenceObject $expectedSorted -DifferenceObject $actual)) {
         throw "Unexpected package contents. Expected: $($expectedSorted -join ', '); actual: $($actual -join ', ')"
-    }
-
-    if ($Slim) {
-        Write-Output "Package contents verified (slim): $ZipPath"
-        return
     }
 
     $ffmpeg = $entries['ffmpeg/ffmpeg.exe']
@@ -84,7 +71,7 @@ try {
         }
     }
 
-    Write-Output "Package contents verified (complete): $ZipPath"
+    Write-Output "Package contents verified: $ZipPath"
 } finally {
     $archive.Dispose()
 }

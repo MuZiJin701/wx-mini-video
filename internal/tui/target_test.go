@@ -144,7 +144,7 @@ func TestManualTargetUsesTrimmedAppIDWithOptionalName(t *testing.T) {
 	if got := runtime.Candidates(); len(got) != 1 || got[0].AppID != "wx123" {
 		t.Fatalf("manual AppID was not used for filtering: %#v", got)
 	}
-	for _, text := range []string{"更多资料", "重新打开", "来源不明"} {
+	for _, text := range []string{"更多资料", "重新打开", "来源未确认"} {
 		view := m.View() + m.renderTargetInput() + strings.Join(m.logs, "\n")
 		if !strings.Contains(view, text) {
 			t.Fatalf("missing user guidance %q", text)

@@ -10,7 +10,6 @@ set FFMPEG_CACHE=%ROOT_DIR%\dist\ffmpeg-cache
 set TARGET=%~1
 if "%TARGET%" equ "" set TARGET=windows
 if /I "%TARGET%" equ "windows" goto windows
-if /I "%TARGET%" equ "windows-slim" goto windows_slim
 if /I "%TARGET%" equ "usage" goto usage
 if /I "%TARGET%" equ "help" goto usage
 echo Unknown target: %TARGET%
@@ -30,21 +29,7 @@ call :package
 if errorlevel 1 exit /b 1
 powershell -NoProfile -ExecutionPolicy Bypass -File "%ROOT_DIR%\build\verify-package.ps1" -ZipPath "%ZIP_PATH%"
 if errorlevel 1 exit /b 1
-echo Done (complete package): %ZIP_PATH%
-exit /b 0
-
-:windows_slim
-set DIST_DIR=%ROOT_DIR%\dist\wx-mini-video-windows-amd64-slim
-set ZIP_PATH=%ROOT_DIR%\dist\wx-mini-video-windows-amd64-slim.zip
-call :prepare
-if errorlevel 1 exit /b 1
-call :compile
-if errorlevel 1 exit /b 1
-call :package
-if errorlevel 1 exit /b 1
-powershell -NoProfile -ExecutionPolicy Bypass -File "%ROOT_DIR%\build\verify-package.ps1" -ZipPath "%ZIP_PATH%" -Slim
-if errorlevel 1 exit /b 1
-echo Done (slim package): %ZIP_PATH%
+echo Done: %ZIP_PATH%
 exit /b 0
 
 :compile
@@ -74,7 +59,6 @@ exit /b 0
 
 :usage
 echo Usage: build.bat [target]
-echo   windows       - complete Windows amd64 zip with bundled ffmpeg 9.0.2 (default)
-echo   windows-slim  - portable Windows amd64 zip without ffmpeg
-echo   usage         - print this message
+echo   windows  - complete Windows amd64 zip with bundled ffmpeg 9.0.2 (default, auto-downloads if missing)
+echo   usage    - print this message
 exit /b 1

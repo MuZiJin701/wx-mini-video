@@ -80,10 +80,9 @@ const (
 	categoryVideo category = "video"
 	categoryM3U8  category = "m3u8"
 	categoryAudio category = "audio"
-	categoryOther category = "other"
 )
 
-var categories = []category{categoryAll, categoryImage, categoryVideo, categoryM3U8, categoryAudio, categoryOther}
+var categories = []category{categoryAll, categoryImage, categoryVideo, categoryM3U8, categoryAudio}
 
 var (
 	titleStyle    = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("42"))
@@ -174,8 +173,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.setCategory(categoryM3U8)
 		case "5":
 			m.setCategory(categoryAudio)
-		case "6":
-			m.setCategory(categoryOther)
 		case "up", "k":
 			if m.selected > 0 {
 				m.selected--
@@ -197,7 +194,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.otherCandidates = nil
 			m.selected = 0
 			m.progress = minidownload.Progress{}
-			m.addLog("已清空候选资源（含未归属列表）")
+			m.addLog("已清空候选资源（含来源未确认媒体）")
 		case "s":
 			if m.downloading {
 				m.showLogs = true
@@ -214,7 +211,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.progress = minidownload.Progress{}
 			m.downloadPath = ""
 			m.showDetails = false
-			m.addLog("请选择目标，确认后重新打开图片或播放视频或音频；未归属列表会保留")
+			m.addLog("请选择目标，确认后重新打开图片或播放视频或音频；来源未确认的媒体会保留")
 		case "l":
 			m.showLogs = !m.showLogs
 		case "i":
@@ -395,9 +392,9 @@ func (m model) viewContent() string {
 		b.WriteString(errorStyle.Render(fitLine("代理未启动: "+m.startErr.Error()+"；按 r 重试", m.width-1)))
 		b.WriteString("\n")
 	} else if m.started {
-		status := "代理运行中。建议先按 c 清空，再打开目标图片或播放目标视频或音频；来源不明的媒体会进入 6 未归属。"
+		status := "代理运行中。建议先按 c 清空，再打开目标图片或播放目标视频或音频；来源未确认的媒体会以 ? 标记混入对应分类。"
 		if m.showUnattributedEnabled() && len(m.otherCandidates) > 0 {
-			status = fmt.Sprintf("代理运行中。检测到 %d 个未归属媒体（来源未确认），按 6 查看并可下载；目标列表只显示来源匹配的媒体。", len(m.otherCandidates))
+			status = fmt.Sprintf("代理运行中。共 %d 个候选，其中 %d 个来源未确认（以 ? 标记）；目标候选标记 ✓。", len(m.displayCandidates()), len(m.otherCandidates))
 		}
 		b.WriteString(okStyle.Render(fitLine(status, m.width-1)))
 		b.WriteString("\n")
@@ -406,7 +403,7 @@ func (m model) viewContent() string {
 		b.WriteString("\n")
 	}
 
-	shortcuts := "快捷键: s 切换目标  Tab 分类  1/2/3/4/5/6 全部/图片/视频/m3u8/音频/未归属  ↑/↓ 选择  i 详情  d/Enter 下载  c 清空  l 日志  q 退出"
+	shortcuts := "快捷键: s 切换目标  Tab 分类  1/2/3/4/5 全部/图片/视频/m3u8/音频  ↑/↓ 选择  i 详情  d/Enter 下载  c 清空  l 日志  q 退出"
 	b.WriteString(mutedStyle.Render(fitLine(shortcuts, m.width-1)))
 	b.WriteString("\n")
 	b.WriteString(m.renderCategoryTabs())
@@ -469,7 +466,7 @@ func (m model) updateTargetInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.runtime.SetTarget(miniprogram.Target{AppID: m.appIDInput, Name: m.nameInput})
 		m.targetReady = true
 		m.inputErr = ""
-		m.addLog("已选定目标，请重新打开图片或播放视频或音频；来源不明的媒体会进入未归属列表")
+		m.addLog("已选定目标，请重新打开图片或播放视频或音频；来源未确认的媒体会以 ? 标记并按类型显示")
 		return m.ensureProxy()
 	default:
 		if len(msg.Runes) == 0 {
@@ -495,7 +492,7 @@ func (m model) renderTargetInput() string {
 	b.WriteString(titleStyle.Render("微信小程序媒体下载"))
 	b.WriteString("\n\n")
 	b.WriteString("输入目标 AppID，或按 Ctrl+D 自动发现小程序。名称可选。\n")
-	b.WriteString("目标 AppID 匹配的媒体进入 1-5 分类；来源不明的媒体进入 6 未归属列表，下载时使用其真实请求头。\n")
+	b.WriteString("目标 AppID 匹配的媒体标记 ✓；来源未确认的媒体标记 ?，按类型并入对应分类，下载时使用其真实请求头。\n")
 	b.WriteString("查找 AppID：手机微信打开小程序 → 右上角 … → 小程序介绍 → 更多资料。\n\n")
 	b.WriteString(renderInputLine("AppID", m.appIDInput, m.inputFocus == 0, width))
 	b.WriteString("\n")
@@ -543,14 +540,12 @@ func (m model) renderCandidates(maxLines int) string {
 	if maxLines <= 0 {
 		return ""
 	}
-	if m.activeCategory() == categoryOther && !m.showUnattributedEnabled() {
-		return mutedStyle.Render(fitLine("未归属列表已在配置 capture.showUnattributed 中关闭；改为 true 后重启。", m.width-1)) + "\n"
-	}
-	if len(m.candidates) == 0 && len(m.otherCandidates) == 0 {
-		return mutedStyle.Render(fitLine("暂无候选资源。按 1 查看全部、6 查看未归属；重新打开或播放目标媒体。", m.width-1)) + "\n"
+	all := m.displayCandidates()
+	if len(all) == 0 {
+		return mutedStyle.Render(fitLine("暂无候选资源。按 1 查看全部；重新打开或播放目标媒体。", m.width-1)) + "\n"
 	}
 	if len(visibleCandidates) == 0 {
-		return mutedStyle.Render(fitLine(fmt.Sprintf("当前分类暂无资源。已嗅探 %d 个目标资源、%d 个未归属资源，按 1 查看全部、5 查看音频、6 查看未归属，或 Tab 切换分类。", len(m.candidates), len(m.otherCandidates)), m.width-1)) + "\n"
+		return mutedStyle.Render(fitLine(fmt.Sprintf("当前分类暂无资源。已嗅探 %d 个候选（其中 %d 个来源未确认），按 1 查看全部、5 查看音频，或 Tab 切换分类。", len(all), len(m.otherCandidates)), m.width-1)) + "\n"
 	}
 
 	visible := maxLines
@@ -852,8 +847,8 @@ func (m *model) refresh() {
 	} else {
 		m.otherCandidates = nil
 	}
-	if m.showUnattributedEnabled() && len(m.otherCandidates) > 0 && prevOther == 0 && m.activeCategory() != categoryOther {
-		m.addLog(fmt.Sprintf("检测到未归属媒体 %d 个，按 6 查看（来源未确认）", len(m.otherCandidates)))
+	if m.showUnattributedEnabled() && len(m.otherCandidates) > 0 && prevOther == 0 {
+		m.addLog(fmt.Sprintf("检测到来源未确认媒体 %d 个，已按类型并入列表（以 ? 标记）", len(m.otherCandidates)))
 	}
 	visible := m.filteredCandidates()
 	if len(visible) > prevLen && (prevLen == 0 || prevSelected == prevLen-1) {
@@ -875,7 +870,7 @@ func (m model) activeCategory() category {
 	return m.category
 }
 
-// showUnattributedEnabled 报告未归属媒体列表是否启用；关闭时既不收集也不展示。
+// showUnattributedEnabled 报告是否收集来源未确认媒体；关闭时既不收集也不显示。
 func (m model) showUnattributedEnabled() bool {
 	if m.runtime == nil {
 		return true
@@ -883,17 +878,35 @@ func (m model) showUnattributedEnabled() bool {
 	return !m.runtime.Settings.HideUnattributed
 }
 
-func (m model) filteredCandidates() []miniprogram.Candidate {
-	active := m.activeCategory()
-	// 未归属列表独立展示；1-5 分类只显示目标候选，避免两类候选混在一起。
-	if active == categoryOther {
-		return m.otherCandidates
-	}
-	if active == categoryAll {
+// displayCandidates 合并目标候选与来源未确认候选，按 URL 去重，目标候选优先。
+func (m model) displayCandidates() []miniprogram.Candidate {
+	if len(m.otherCandidates) == 0 {
 		return m.candidates
 	}
-	out := make([]miniprogram.Candidate, 0, len(m.candidates))
+	out := make([]miniprogram.Candidate, 0, len(m.candidates)+len(m.otherCandidates))
+	seen := make(map[string]struct{}, len(m.candidates))
 	for _, candidate := range m.candidates {
+		out = append(out, candidate)
+		seen[candidate.URL] = struct{}{}
+	}
+	for _, candidate := range m.otherCandidates {
+		if _, exists := seen[candidate.URL]; exists {
+			continue
+		}
+		seen[candidate.URL] = struct{}{}
+		out = append(out, candidate)
+	}
+	return out
+}
+
+func (m model) filteredCandidates() []miniprogram.Candidate {
+	active := m.activeCategory()
+	pool := m.displayCandidates()
+	if active == categoryAll {
+		return pool
+	}
+	out := make([]miniprogram.Candidate, 0, len(pool))
+	for _, candidate := range pool {
 		if candidate.Kind == string(active) {
 			out = append(out, candidate)
 		}
@@ -938,14 +951,12 @@ func (m model) renderCategoryTabs() string {
 }
 
 func (m model) categoryCount(item category) int {
+	pool := m.displayCandidates()
 	if item == categoryAll {
-		return len(m.candidates)
-	}
-	if item == categoryOther {
-		return len(m.otherCandidates)
+		return len(pool)
 	}
 	count := 0
-	for _, candidate := range m.candidates {
+	for _, candidate := range pool {
 		if candidate.Kind == string(item) {
 			count++
 		}
@@ -1058,8 +1069,6 @@ func categoryDisplay(value category) string {
 		return "m3u8"
 	case categoryAudio:
 		return "音频"
-	case categoryOther:
-		return "未归属"
 	default:
 		return string(value)
 	}

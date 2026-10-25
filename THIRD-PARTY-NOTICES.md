@@ -26,9 +26,9 @@
 - 许可：GPLv3。包内 `ffmpeg/LICENSE.txt` 为 GPLv3 全文。
 - 两个二进制放在 `.app` 之外，签名/公证只覆盖 `wx-mini-video.app`；用户升级时须保留整个文件夹。
 
-## 即时下载的受管 ffmpeg（精简包或其他平台）
+## 即时下载的受管 ffmpeg（随包缺失或损坏时）
 
-`windows-slim` 精简包和 macOS 未随包场景下，首次下载 m3u8 时按固定候选源下载并校验 ffmpeg：
+随包 ffmpeg 缺失、损坏或被隔离时，程序按固定候选源下载并校验 ffmpeg：
 
 - Windows：首选 gyan.dev 9.0.2 essentials（同上），备用 [BtbN/FFmpeg-Builds 月末构建 `autobuild-2026-09-30-13-08`](https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-09-30-13-08/ffmpeg-n8.1.3-9-g29e619e767-win64-lgpl-8.1.zip)（8.1，LGPL，ZIP SHA-256 `4a7642b2264c03e8a0ce8a3825b933ee5580656f45695a086fe7e294045ffc0a`）。
 - macOS：沿用上表 Martin Riedl 9.0.2 的 amd64 / arm64 ZIP。

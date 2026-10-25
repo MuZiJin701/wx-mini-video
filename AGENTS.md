@@ -4,7 +4,7 @@
 
 `wx-mini-video` 是 Windows 优先、同时提供 macOS 未签名测试版的 Go TUI：通过本地 HTTPS 代理识别 PC 微信目标小程序加载的图片、直链视频、直链音频和 m3u8，并下载到本地。
 
-当前范围是通用小程序媒体嗅探与下载。保持单二进制 TUI、Echo 代理适配、Windows 系统代理与证书、macOS 系统代理与钥匙串、目标 AppID 严格归属、手动输入与小程序发现、图片/直链视频/直链音频下载及 m3u8 的 ffmpeg 合并。Windows 启动请求 UAC 并优先使用已安装的 Terminal。默认分发完整包，随包附带 ffmpeg（Windows `ffmpeg\ffmpeg.exe`，macOS `.app` 外 `ffmpeg/ffmpeg-amd64|arm64`）；`windows-slim` 精简包首次需要时自动下载受管 ffmpeg。
+当前范围是通用小程序媒体嗅探与下载。保持单二进制 TUI、Echo 代理适配、Windows 系统代理与证书、macOS 系统代理与钥匙串、目标 AppID 严格归属、手动输入与小程序发现、图片/直链视频/直链音频下载及 m3u8 的 ffmpeg 合并。Windows 启动请求 UAC 并优先使用已安装的 Terminal。Windows 与 macOS 均只分发一个完整包，随包附带 ffmpeg（Windows `ffmpeg\ffmpeg.exe`，macOS `.app` 外 `ffmpeg/ffmpeg-amd64|arm64`）；随包缺失或损坏时自动下载受管 ffmpeg 兜底。
 
 ## 先读
 
@@ -23,12 +23,12 @@
 - 用户可见行为、配置、构建或发布变化时同步更新对应文档；维护决策写入 `docs/adr/`。
 - 面向用户、维护者和 agent 的项目文档使用中文；代码标识、命令和专有名词保留原文。
 - `dist/`、`downloads/`、截图、海报、日志、临时 exe、ffmpeg 二进制与许可文本缓存只留本地，不加入提交；`build/licenses/` 下的 GPL 全文与根目录 `THIRD-PARTY-NOTICES.md` 例外，必须提交。
-- 目标归属、未归属列表与来源标记的语义见 `docs/adr/0008-target-attribution.md`；不要为了“多抓”而放宽目标候选的严格匹配。
+- 目标归属、来源未确认候选的显示方式与来源标记的语义见 `docs/adr/0008-target-attribution.md`；不要为了“多抓”而放宽目标候选的严格匹配。
 
 ## 验证与提交
 
 - Go 代码修改后运行 `go test -count=1 ./...`、`go vet ./...`；修改 `third_party/echo/` 后额外运行 `go test -count=1 github.com/ltaoo/echo/...`。
-- Windows 分发改动后运行 `cmd /c build\build.bat windows`（完整包，需联网下载并校验 ffmpeg，缓存于 `dist/ffmpeg-cache/`，由 `build/fetch-ffmpeg.ps1` 下载）与 `cmd /c build\build.bat windows-slim`；完整包只可包含 `README.md`、`wx-mini-video.exe`、`wx-mini-video.yaml`、`ffmpeg\ffmpeg.exe`、`ffmpeg\LICENSE.txt`、`THIRD-PARTY-NOTICES.md`，精简包只可包含前三个文件。
+- Windows 分发改动后运行 `cmd /c build\build.bat windows`（唯一分发包，含随包 ffmpeg；需联网下载并校验 ffmpeg，缓存于 `dist/ffmpeg-cache/`，由 `build/fetch-ffmpeg.ps1` 下载）；包内只可包含 `README.md`、`wx-mini-video.exe`、`wx-mini-video.yaml`、`ffmpeg\ffmpeg.exe`、`ffmpeg\LICENSE.txt`、`THIRD-PARTY-NOTICES.md`。
 - macOS 分发改动后运行 `go run ./build/macos` 和 `python3 build/verify-macos.py`；通用包包含应用、配置、说明、`ffmpeg/ffmpeg-amd64`、`ffmpeg/ffmpeg-arm64`、`ffmpeg/LICENSE.txt` 与 `THIRD-PARTY-NOTICES.md`。
 - 文档改动至少运行 `git diff --check`。
 - 每次完成修改后提交 Git；除非用户明确要求，不推送远程仓库。

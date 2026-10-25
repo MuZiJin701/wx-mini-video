@@ -99,19 +99,18 @@ func TestAudioCategorySelectsAndStartsDownload(t *testing.T) {
 	if !next.(model).downloading || cmd == nil {
 		t.Fatal("Enter should start the selected audio download")
 	}
-	// Existing keys remain stable; Tab from m3u8 enters audio, then unattributed, then wraps to all.
+	// Existing keys remain stable; Tab from m3u8 enters audio, then wraps to all.
 	m, _ = targetKey(m, tea.KeyRunes, "4")
 	m, _ = targetKey(m, tea.KeyTab, "")
 	if m.category != categoryAudio {
 		t.Fatal("Tab from m3u8 should enter audio")
 	}
 	m, _ = targetKey(m, tea.KeyTab, "")
-	if m.category != categoryOther {
-		t.Fatal("Tab from audio should enter unattributed")
+	if m.category != categoryAll {
+		t.Fatalf("Tab from audio should wrap to all, got %q", m.category)
 	}
-	m, _ = targetKey(m, tea.KeyTab, "")
 	if len(m.filteredCandidates()) != 2 {
-		t.Fatal("Tab from unattributed should show all media")
+		t.Fatal("all category should show every candidate")
 	}
 }
 
@@ -273,7 +272,7 @@ func TestCandidateListLineTruncatesLongResource(t *testing.T) {
 	}
 }
 
-func TestOtherCategoryShowsOnlyUnattributedWithMarkers(t *testing.T) {
+func TestUnattributedCandidatesDisplayedInTypeCategories(t *testing.T) {
 	confirmed := miniprogram.Candidate{
 		Kind: "video", URL: "https://cdn.example.com/target.mp4",
 		Attribution: miniprogram.AttributionConfirmed, SourceAppID: "wx123",
@@ -289,36 +288,39 @@ func TestOtherCategoryShowsOnlyUnattributedWithMarkers(t *testing.T) {
 		category:        categoryVideo,
 		width:           140, height: 30,
 	}
-	if got := m.filteredCandidates(); len(got) != 1 || got[0].URL != confirmed.URL {
-		t.Fatalf("video category = %#v, want only the confirmed candidate", got)
-	}
-
-	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("6")})
-	m = next.(model)
-	if m.category != categoryOther {
-		t.Fatalf("6 should select unattributed category, got %q", m.category)
-	}
-	if got := m.filteredCandidates(); len(got) != 1 || got[0].URL != unattributed.URL {
-		t.Fatalf("unattributed category = %#v, want only the H5 candidate", got)
+	if got := m.filteredCandidates(); len(got) != 2 {
+		t.Fatalf("video category = %#v, want confirmed + unattributed", got)
 	}
 	view := m.View()
-	for _, want := range []string{"6 未归属(1)", "?"} {
+	for _, want := range []string{"3 视频(2)", "?", "✓"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("View() = %q, want %q", view, want)
 		}
 	}
+	if strings.Contains(view, "未归属") {
+		t.Fatalf("View() should no longer expose an unattributed category: %q", view)
+	}
 
+	// 数字键 6 不再存在；按 6 不应改变分类。
+	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("6")})
+	if got := next.(model).category; got != categoryVideo {
+		t.Fatalf("6 should no longer switch category, got %q", got)
+	}
+
+	// 全部同时包含目标与来源未确认候选。
 	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("1")})
 	all := next.(model)
-	if got := all.filteredCandidates(); len(got) != 1 || got[0].URL != confirmed.URL {
-		t.Fatalf("all category = %#v, want only target candidates", got)
+	if got := all.filteredCandidates(); len(got) != 2 {
+		t.Fatalf("all category = %#v, want both candidates", got)
 	}
-	if view := all.View(); !strings.Contains(view, "✓") {
-		t.Fatalf("confirmed candidate should be marked with ✓: %q", view)
+	if view := all.View(); !strings.Contains(view, "✓") || !strings.Contains(view, "?") {
+		t.Fatalf("all category should mark both sources: %q", view)
 	}
 
-	m.showDetails = true
-	details := strings.Join(m.selectedCandidateDetails(), "\n")
+	// 详情仍显示来源未确认与判定依据。
+	all.showDetails = true
+	all.selected = 1
+	details := strings.Join(all.selectedCandidateDetails(), "\n")
 	for _, want := range []string{"来源未确认", "来源 AppID", "响应类型/URL 推断，来源未知"} {
 		if !strings.Contains(details, want) {
 			t.Fatalf("details = %q, want %q", details, want)
@@ -350,8 +352,8 @@ func TestTickRefreshLoadsUnattributedCandidates(t *testing.T) {
 	if len(got.otherCandidates) != 1 || len(m.candidates) != 0 {
 		t.Fatalf("refresh candidates=%#v other=%#v", got.candidates, got.otherCandidates)
 	}
-	if len(got.filteredCandidates()) != 0 {
-		t.Fatal("default video category must not mix in unattributed candidates")
+	if visible := got.filteredCandidates(); len(visible) != 1 || visible[0].URL != "https://h5.example.com/lesson.mp4" {
+		t.Fatalf("default video category should include unattributed candidates: %#v", visible)
 	}
 }
 

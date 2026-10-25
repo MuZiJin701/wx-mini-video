@@ -8,17 +8,17 @@ v0.1.8 依赖的 Windows 受管 ffmpeg 固定下载地址（BtbN 日构建，202
 
 ## 决策
 
-- 默认分发**完整包**：Windows 包内为 `ffmpeg\ffmpeg.exe`，macOS 包内为 `.app` 外的 `ffmpeg/ffmpeg-amd64`、`ffmpeg/ffmpeg-arm64`；随包附 `ffmpeg/LICENSE.txt` 与根目录 `THIRD-PARTY-NOTICES.md`。保留 `windows-slim` 精简包构建入口，发布时精简包作为并列附件保留。
+- Windows 与 macOS 均只分发**一个完整包**：Windows 包内为 `ffmpeg\ffmpeg.exe`，macOS 包内为 `.app` 外的 `ffmpeg/ffmpeg-amd64`、`ffmpeg/ffmpeg-arm64`；随包附 `ffmpeg/LICENSE.txt` 与根目录 `THIRD-PARTY-NOTICES.md`。不再提供不含 ffmpeg 的精简包。
 - ffmpeg 查找优先级：显式 `download.ffmpeg` > 随包 ffmpeg > 受管下载的 ffmpeg。随包文件只做“存在 + 可执行”的轻量检查，不在渲染路径做大文件哈希；缺失或损坏时自动回退受管下载。
 - 随包 ffmpeg 通过 `os.Executable()` 定位，不使用 `Config.RootDir`（设置 `WX_MINI_VIDEO_CONFIG` 时后者会变成配置目录）；macOS 从 `.app/Contents/MacOS` 回退到 `.app` 父目录。
 - Windows 随包固定 **gyan 9.0.2 essentials**（GPLv3，包内带 GPLv3 全文与 FFmpeg commit `946fcce07b`）；macOS 随包固定 **Martin Riedl 9.0.2 amd64/arm64 原始构建**，不 `lipo` 合并（避免构成 GPLv3 §5 修改版），运行时按 `runtime.GOARCH` 选择。
 - 受管下载改为候选源列表：Windows 首选 gyan 9.0.2、备用 BtbN 2026-09-30 月末 8.1 LGPL；macOS 沿用 Martin 9.0.2 两个地址。每个源独立固定 URL 与 SHA-256，下载失败可换源；旧 marker 因摘要变化自动失效并重新获取，不阻断启动。
-- 构建：`build.bat windows` 默认产出完整包（构建时联网下载并校验 SHA-256，缓存在 `dist/`），`build.bat windows-slim` 保留原三文件包；`build/macos` 同样下载并校验两份 Martin ZIP。两个包校验脚本按新条目集更新。
+- 构建：`build.bat windows` 产出唯一 Windows 完整包（构建时联网下载并校验 SHA-256，缓存在 `dist/`）；`build/macos` 同样下载并校验两份 Martin ZIP。两个平台的校验脚本按各自条目集更新。
 
 ## 备选方案
 
 - **go:embed 嵌入可执行文件**：包内文件数不变，但 Windows exe 会增大约 100–165 MB、首次释放再占一份磁盘，且同一文件包含 GPL 作品会提高 combined work 认定风险；不采用。
-- **只修自动下载、不内置**：改动最小，但首次仍需下载 100 MB 以上，且依赖第三方地址长期可用，不满足“默认开箱可用”；仅作为精简包路径保留。
+- **只修自动下载、不内置**：改动最小，但首次仍需下载 100 MB 以上，且依赖第三方地址长期可用，不满足“默认开箱可用”；不提供独立精简包分发。
 - **自建最小 LGPL ffmpeg**：体积与许可更优，但构建与格式覆盖成本高，留待后续评估。
 
 ## 后果

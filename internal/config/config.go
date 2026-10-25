@@ -117,7 +117,7 @@ func registerDefaults() {
 	Register(ConfigItem{Key: "download.segmentRetries", Type: ConfigTypeInt, Default: 3, Title: "分片重试次数", Group: "Download"})
 	Register(ConfigItem{Key: "download.keepSegments", Type: ConfigTypeBool, Default: false, Title: "保留分片缓存", Group: "Download"})
 	Register(ConfigItem{Key: "download.mode", Type: ConfigTypeString, Default: "auto", Title: "m3u8 下载模式", Group: "Download"})
-	Register(ConfigItem{Key: "capture.showUnattributed", Type: ConfigTypeBool, Default: true, Title: "显示未归属媒体", Group: "Capture"})
+	Register(ConfigItem{Key: "capture.showUnattributed", Type: ConfigTypeBool, Default: true, Title: "收集来源未确认媒体", Group: "Capture"})
 	Register(ConfigItem{Key: "proxy.system", Type: ConfigTypeBool, Default: true, Title: "设置系统代理", Group: "Proxy"})
 	Register(ConfigItem{Key: "proxy.hostname", Type: ConfigTypeString, Default: "127.0.0.1", Title: "代理主机", Group: "Proxy"})
 	Register(ConfigItem{Key: "proxy.port", Type: ConfigTypeInt, Default: 2023, Title: "代理端口", Group: "Proxy"})

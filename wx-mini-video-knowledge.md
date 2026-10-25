@@ -30,10 +30,10 @@ Windows 的 `PrepareConsole` 在配置、证书、代理初始化前检查实际
 
 ### 目标与媒体
 
-1. 默认代理为 `127.0.0.1:2023`。从 HTTPS `servicewechat.com/<AppID>/<版本>/page-frame.html` 格式的 `Referer` 解析请求来源 AppID，完整匹配目标后才计入目标候选并缓存媒体；来源缺失、格式不符或其他 AppID 的媒体类响应进入独立的**未归属媒体**列表（不写播放列表缓存、不自动下载），用户可显式查看和下载。目标候选不通过共享 CDN 或跨请求 URL 关联扩大范围。
-2. 发现阶段只登记 AppID，按 AppID 去重；即使只有一个也需选择。名称缺失时显示“名称未识别”，可补填，映射只在本次运行保留。发现阶段不产生目标候选、不缓存播放列表，但来源未确认的媒体会收入未归属列表（与目标无关），确认目标后可在 `6` 查看；这样打开小程序时自动加载的第一个页面不会因目标尚未确认而丢失。
+1. 默认代理为 `127.0.0.1:2023`。从 HTTPS `servicewechat.com/<AppID>/<版本>/page-frame.html` 格式的 `Referer` 解析请求来源 AppID，完整匹配目标后才计入目标候选并缓存媒体；来源缺失、格式不符或其他 AppID 的媒体类响应作为**来源未确认**候选（`?` 标记）按类型并入候选列表（不写播放列表缓存、不自动下载），用户可查看和下载。目标候选不通过共享 CDN 或跨请求 URL 关联扩大范围。
+2. 发现阶段只登记 AppID，按 AppID 去重；即使只有一个也需选择。名称缺失时显示“名称未识别”，可补填，映射只在本次运行保留。发现阶段不产生目标候选、不缓存播放列表，但来源未确认媒体照常收集（与目标无关），确认目标后按类型显示（`?` 标记）；这样打开小程序时自动加载的第一个页面不会因目标尚未确认而丢失。
 3. 切换目标清空候选及进度，保留文件、历史、部分下载和缓存。存储用目标代次拒绝旧响应，提交候选和写缓存时再次检查；按 `c` 清空也会使清空前尚未接纳的响应失效，保留当前目标和本地文件。下载中不允许切换目标。
-4. 直接响应按 Content-Type 或 URL 后缀识别媒体。匹配目标的 JSON 接口可提供图片、直链视频和直链音频；JSON m3u8 链接跳过，等待实际播放列表响应。JSON 提取的跨域链接仅保留 User-Agent、Referer、Accept、Accept-Language，不转发接口 Cookie、Authorization 或其他自定义鉴权头；同源指 scheme 与 host（含端口）一致。后续真实媒体响应会更新其重放请求头与媒体元数据，保留 JSON 标题。URL 所在对象的 `title`、`videoTitle`、`audioTitle`、`mediaTitle`、`caption`、`subject`、`name` 可作为候选标题。JSON 另支持相邻字段拼接（如 `url` + `urlToken`）、无后缀但字段名强相关的媒体地址；目标 AppID 已匹配时，`application/octet-stream` 等未知类型且不小于 256 KB 的响应作为“未知文件”兜底候选，不自动缓存或下载。另对小程序的 H5 页面/脚本（HTML/JS，≤ 4 MB，含 `miniProgram`、`jweixin`、`ckplayer` 或 `<video` 标记）扫描内联的视频、m3u8 与音频地址，收入未归属列表；Referer 取页面自身、Cookie 沿用页面请求，因此打开详情页即可出现候选，不依赖播放器真正发请求。扫描候选标记「H5 页面/脚本扫描（未播放验证）」，下载前未验证地址是否仍有效。
+4. 直接响应按 Content-Type 或 URL 后缀识别媒体。匹配目标的 JSON 接口可提供图片、直链视频和直链音频；JSON m3u8 链接跳过，等待实际播放列表响应。JSON 提取的跨域链接仅保留 User-Agent、Referer、Accept、Accept-Language，不转发接口 Cookie、Authorization 或其他自定义鉴权头；同源指 scheme 与 host（含端口）一致。后续真实媒体响应会更新其重放请求头与媒体元数据，保留 JSON 标题。URL 所在对象的 `title`、`videoTitle`、`audioTitle`、`mediaTitle`、`caption`、`subject`、`name` 可作为候选标题。JSON 另支持相邻字段拼接（如 `url` + `urlToken`）、无后缀但字段名强相关的媒体地址；目标 AppID 已匹配时，`application/octet-stream` 等未知类型且不小于 256 KB 的响应作为“未知文件”兜底候选，不自动缓存或下载。另对小程序的 H5 页面/脚本（HTML/JS，≤ 4 MB，含 `miniProgram`、`jweixin`、`ckplayer` 或 `<video` 标记）扫描内联的视频、m3u8 与音频地址，作为来源未确认候选按类型显示；Referer 取页面自身、Cookie 沿用页面请求，因此打开详情页即可出现候选，不依赖播放器真正发请求。扫描候选标记「H5 页面/脚本扫描（未播放验证）」，下载前未验证地址是否仍有效。
 5. 直链先写带资源标识的 `.part` 和校验元数据；仅有强 ETag 时以 Range/If-Range 续传，服务器返回新实体时重下，没有校验依据时也重下。旧版同名 `.part` 保留但不复用。HTTP 分段响应从 Content-Range 取得完整长度；提交前核对响应声明的长度，不再凭嗅探长度或已有部分大小直接完成。成功记录追加到下载目录的 `history.jsonl`，包含路径、来源域名、大小和 UTC 时间。
 6. m3u8 使用已捕获播放列表，缺失时允许远程回补，最后由 ffmpeg 输出 mp4；音频 m3u8 也沿用此流程。捕获缓存保留原始相对引用，在下载阶段统一解析；预取缓存按候选及播放列表内容隔离，避免更新后的播放列表误用原位置的分片，并按来源限定请求头；ffmpeg 获取分片时，经仅在下载期间运行的 `127.0.0.1` 随机端口入口读取缓存播放列表、分片及子播放列表，由 Go 按来源重放鉴权头，入口仅接受带随机标识且已登记的资源路径。主播放列表沿用此方式获取其子播放列表，不作为普通分片预取。跨源重定向同样不携带凭据。
 
@@ -48,7 +48,7 @@ Windows 的 `PrepareConsole` 在配置、证书、代理初始化前检查实际
 | `download.dir` | 空 | 配置目录下的 `downloads/`；普通发布包即 exe 旁。显式相对路径按当前工作目录解析，建议使用绝对路径。 |
 | `download.ffmpeg` | 空 | 优先级最高；指定本地可执行文件完整路径。为空时依次使用随包 ffmpeg（完整包）和受管 ffmpeg。旧值 `ffmpeg` 视为空，不查找系统 PATH。 |
 | `download.mode` | `auto` | 媒体播放列表分片数 ≥20 时并发预取，否则由 ffmpeg 经本机入口获取；`prefetch` 强制预取媒体分片，`remote-ffmpeg` 由 ffmpeg 获取。主播放列表始终由 ffmpeg 选择子播放列表。 |
-| `capture.showUnattributed` | `true` | 是否收集并展示未归属媒体列表（按 `6`）。关闭后来源未确认的媒体既不进入目标候选，也不进入未归属列表。 |
+| `capture.showUnattributed` | `true` | 是否收集来源未确认媒体（以 `?` 标记并入类型分类）。关闭后来源未确认媒体既不收集也不显示。 |
 | `download.segmentConcurrency` | `6` | 预取分片并发数 |
 | `download.segmentRetries` | `3` | 分片失败重试次数 |
 | `download.keepSegments` | `false` | 合并成功后是否保留分片缓存 |
@@ -87,15 +87,15 @@ ffmpeg 查找优先级为显式 `download.ffmpeg`、随包 ffmpeg、受管 ffmpe
 | --- | --- |
 | 异常退出后网络不通 | 重开 exe → `Ctrl+D` → 等待“代理运行中”→ `q`。输入界面直接退出不会触发恢复；若启动失败，检查代理端口，或在 Windows 代理设置中核对并移除本工具残留地址。 |
 | 证书失败 | 确认同意 UAC。理解上节风险后，可手动将下载目录的 `WxMiniVideoRoot.cer` 安装到根信任库；代理运行时也可访问 `http://127.0.0.1:2023/cert` 获取证书（改端口后相应调整）。 |
-| 没有候选或音频 | 核对目标 AppID，按 `1` 查看全部、`5` 查看音频、`6` 查看未归属媒体，再重新加载媒体。缺失匹配 Referer 的媒体会进入未归属列表，不会进入目标列表；手动输入不能绕过。 |
-| 未归属列表 | H5/web-view、原生播放器和 CDN 媒体常无小程序 page-frame Referer，会进入此列表；下载沿用真实响应的 Referer/Cookie。列表上限 500 条，按 `c` 清空。代理运行期间本机其他微信内容（如公众号文章图片）也可能进入该列表，来源不可靠。 |
+| 没有候选或音频 | 核对目标 AppID，按 `1` 查看全部、`5` 查看音频，再重新加载媒体。缺失匹配 Referer 的媒体会以 `?` 标记按类型显示，不会成为目标候选；手动输入不能绕过。 |
+| 来源未确认媒体 | H5/web-view、原生播放器和 CDN 媒体常无小程序 page-frame Referer，会以 `?` 标记混入对应类型分类；下载沿用真实响应的 Referer/Cookie。来源未确认列表上限 500 条，按 `c` 清空。代理运行期间本机其他微信内容（如公众号文章图片）也可能出现，来源不可靠。 |
 | 需要诊断嗅探 | 以 `wx-mini-video.exe --debug` 启动（参数会随 UAC/Terminal 重启转发，不依赖环境变量继承），日志写入 `下载目录\wx-mini-video-debug.log`；记录归属判断与丢弃原因，URL query 与 Cookie 值不落盘，分享前仍需检查。环境变量 `WX_MINI_VIDEO_DEBUG=1` 仍可直接使用。 |
 | 资源过多 | 按 `c` 清空，再打开目标内容；使用分类缩小列表。 |
 | 中文缺失 | 使用 Windows Terminal，或给传统控制台选择支持中文的字体。程序不自动安装 Terminal 或更改默认终端。 |
 | m3u8 预取失败较多 | 将 `download.segmentConcurrency` 从 `6` 调低到 `4`，重新播放后重试。 |
-| m3u8 合并失败 | 完整包先确认 `ffmpeg/` 未被隔离或删除，必要时重新解压；精简包会自动下载受管 ffmpeg，也可指定 `download.ffmpeg`。查看错误给出的 `下载目录\.ffmpeg\<候选ID>.log`。日志会移除已捕获请求头值；分享前仍需检查 URL 中的签名和其他敏感信息。 |
+| m3u8 合并失败 | 先确认 `ffmpeg/` 未被隔离或删除；随包 ffmpeg 缺失或损坏时程序会自动下载受管 ffmpeg，也可指定 `download.ffmpeg`。查看错误给出的 `下载目录\.ffmpeg\<候选ID>.log`。日志会移除已捕获请求头值；分享前仍需检查 URL 中的签名和其他敏感信息。 |
 
-媒体界面补充按键：`1/2/3/4/5` 目标分类、`6` 未归属媒体，`r` 刷新，`PgUp/PgDn` 翻阅日志，`Home/End` 到日志开头/末尾。输入与发现之间用 `Ctrl+D` 切换；输入界面用 `Esc/Ctrl+C` 退出。
+媒体界面补充按键：`1/2/3/4/5` 分类切换，`r` 刷新，`PgUp/PgDn` 翻阅日志，`Home/End` 到日志开头/末尾。输入与发现之间用 `Ctrl+D` 切换；输入界面用 `Esc/Ctrl+C` 退出。
 
 ## 开发验证
 
@@ -109,7 +109,7 @@ git diff --check
 
 测试覆盖来源过滤及副作用、发现/选择/切换、分类和下载、Windows 启动编排与参数传递。代理库 patch 的回归测试不在根模块的 `./...` 中，修改 `third_party/echo/` 后需运行 `go test -count=1 github.com/ltaoo/echo/...`。代理恢复回归使用替身，不更改真实系统代理或证书。自动化结果不能替代下面的真实微信验收。
 
-可靠性回归还覆盖独立证书生成及复用、私钥 ACL、显式配置失败、指纹匹配、迁移确认、退出重试、完整代理快照、同名资源隔离、实体校验续传和鉴权头来源隔离。机器已安装 ffmpeg 时，测试会生成短音频分片并以本机 HTTP 服务验证预取与 ffmpeg 两种鉴权 m3u8 合并；未安装时跳过这一实际合并用例，仍执行播放列表入口测试，不自动下载 ffmpeg。新增回归覆盖随包 ffmpeg 路径与优先级、未归属媒体/未知二进制兜底、JSON 字段拼接、debug 日志脱敏、echo listener 回收、分片 `.part`/`.done` 复用判定。
+可靠性回归还覆盖独立证书生成及复用、私钥 ACL、显式配置失败、指纹匹配、迁移确认、退出重试、完整代理快照、同名资源隔离、实体校验续传和鉴权头来源隔离。机器已安装 ffmpeg 时，测试会生成短音频分片并以本机 HTTP 服务验证预取与 ffmpeg 两种鉴权 m3u8 合并；未安装时跳过这一实际合并用例，仍执行播放列表入口测试，不自动下载 ffmpeg。新增回归覆盖随包 ffmpeg 路径与优先级、来源未确认媒体/未知二进制兜底、JSON 字段拼接、debug 日志脱敏、echo listener 回收、分片 `.part`/`.done` 复用判定。
 
 GitHub Actions 的 [macOS 工作流](.github/workflows/macos.yml) 在 `macos-15-intel` 与 `macos-15` 上分别核对 amd64 / arm64 原生环境，运行全量测试、`go vet`、通用包构建（含随包双架构 ffmpeg）及 `python3 build/verify-macos.py`，并校验包内 ffmpeg 条目与权限。推送 main、PR 或手动 `workflow_dispatch` 触发；测试包保存为 7 天 Actions 附件，不自动替换 Release。
 
@@ -127,10 +127,9 @@ Windows 稳定包与 macOS 未签名测试包在同一 Release 并列提供，�
 
 ```powershell
 cmd /c build\build.bat windows
-cmd /c build\build.bat windows-slim
 ```
 
-`windows` 构建完整包（联网下载并校验 gyan ffmpeg，缓存在 `dist/ffmpeg-cache/`），产物为 `dist\wx-mini-video-windows-amd64\` 和同名 zip，包内精确包含 `README.md`、`wx-mini-video.exe`、`wx-mini-video.yaml`、`ffmpeg\ffmpeg.exe`、`ffmpeg\LICENSE.txt`、`THIRD-PARTY-NOTICES.md`；`windows-slim` 产出 `dist\wx-mini-video-windows-amd64-slim\` 与同名 zip，仅前三项。脚本执行 `build\verify-package.ps1`。README 的图片和扩展文档使用在线链接；离线时仍可按文字步骤操作。`dist/`、下载数据和临时产物不提交。
+`windows` 构建唯一 Windows 包（联网下载并校验 gyan ffmpeg，缓存在 `dist/ffmpeg-cache/`），产物为 `dist\wx-mini-video-windows-amd64\` 和同名 zip，包内精确包含 `README.md`、`wx-mini-video.exe`、`wx-mini-video.yaml`、`ffmpeg\ffmpeg.exe`、`ffmpeg\LICENSE.txt`、`THIRD-PARTY-NOTICES.md`。脚本执行 `build\verify-package.ps1`。README 的图片和扩展文档使用在线链接；离线时仍可按文字步骤操作。`dist/`、下载数据和临时产物不提交。
 
 随包 ffmpeg 为 GPLv3 独立程序：发布前确认 `THIRD-PARTY-NOTICES.md` 与 `build/licenses/GPLv3.txt` 已提交并随包；GPLv3 §6 的对应源码义务按声明中的书面要约或托管方式履行。项目代码仍为 MIT + Commons Clause，两者分别标识，不能把 Commons Clause 施加到 ffmpeg。
 
@@ -141,9 +140,9 @@ cmd /c build\build.bat windows-slim
 当前只确认过管理员 Windows Terminal 中显示正常；完整 UAC/Terminal 重启链路、真实微信音频及请求来源覆盖仍待人工验收。macOS 已列为后续真机验收目标，当前尚未验收，检查项见 [macOS 测试版说明](docs/macos-usage.md)。
 
 1. 双击启动并同意 UAC，确认进入管理员 Terminal；已在管理员 Terminal 中不重复开窗。检查取消 UAC、无 Terminal、中文/空格路径和显式配置文件。发现两个小程序，确认 AppID 去重，未选择前无媒体候选或缓存。
-2. 分别用手动输入和发现选择目标，补填名称后重新加载图片、直链视频、直链音频和 m3u8。检查分类、标题、后缀、原文件保存和 m3u8 输出；核对 Referer 与目标一致，来源缺失的媒体应进入未归属列表（按 `6`）并可下载，记录 `✓`/`?` 标记，不放宽目标过滤。
-3. 同时操作其他小程序，确认其媒体不进入目标列表；未归属列表允许出现其他来源媒体，但应标记未确认并说明来源不可靠。匹配 JSON 的图片、直链视频和音频可出现，JSON m3u8 继续跳过。
+2. 分别用手动输入和发现选择目标，补填名称后重新加载图片、直链视频、直链音频和 m3u8。检查分类、标题、后缀、原文件保存和 m3u8 输出；核对 Referer 与目标一致，来源缺失的媒体应以 `?` 标记按类型显示并可下载，记录 `✓`/`?` 标记，不放宽目标过滤。
+3. 同时操作其他小程序，确认其媒体不进入目标候选；来源未确认媒体允许出现其他来源内容，但应标记 `?` 并说明来源不可靠。匹配 JSON 的图片、直链视频和音频可出现，JSON m3u8 继续跳过。
 4. 按 `s` 切换目标，确认旧候选和进度清空、本地文件保留，旧响应不重新填充列表。下载中切换应被拒绝且下载继续。
 5. 从发现和媒体界面退出，核对原代理恢复；另检查异常退出后按排障步骤恢复。证书不会随退出卸载。验收记录不包含 Cookie、鉴权头值或带签名的完整媒体 URL。
-6. 完整包确认 m3u8 首次下载无需联网准备 ffmpeg；删除 `ffmpeg/` 后确认回退受管下载并给出可理解提示。精简包确认首次自动下载并校验。
+6. 确认 m3u8 首次下载无需联网准备 ffmpeg；删除 `ffmpeg/` 后确认自动回退受管下载并给出可理解提示。
 7. 设置 `WX_MINI_VIDEO_DEBUG=1` 后确认生成 `wx-mini-video-debug.log`，其中不含 URL query 或 Cookie 值。
