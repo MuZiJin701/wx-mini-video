@@ -245,6 +245,94 @@ func TestEditingInputClearsDiscoveryPick(t *testing.T) {
 	}
 }
 
+// TestInputEnterConfirmsTypedValueDespiteListPick 输入框聚焦按 Enter 时只确认输入框
+// 自己的文本，不能被发现列表里旧的选中项覆盖。
+func TestInputEnterConfirmsTypedValueDespiteListPick(t *testing.T) {
+	m := testModel(t)
+	m.started = true
+	now := time.Now()
+	m.targetReady = true
+	m.appIDInput = "wx111"
+	m.inputCursor = len([]rune("wx111"))
+	m.programs = []miniprogram.Program{
+		{AppID: "wx111", LastSeen: now},
+		{AppID: "wx222", LastSeen: now.Add(-time.Second)},
+	}
+	m.selectedProgram = "wx111"
+	m.focus = focusPrograms
+	m, _ = targetKey(m, tea.KeyDown, "")
+	if m.selectedProgram != "wx222" || !m.programPicked {
+		t.Fatalf("down should pick wx222 from the list: program=%q picked=%v", m.selectedProgram, m.programPicked)
+	}
+	m, _ = targetKey(m, tea.KeyShiftTab, "")
+	if m.focus != focusInput {
+		t.Fatalf("shift+tab should return to the input, got %v", m.focus)
+	}
+	m, _ = targetKey(m, tea.KeyEnter, "")
+	if m.runtime.Settings.Target.AppID != "wx111" {
+		t.Fatalf("input Enter must confirm the typed value, target=%q", m.runtime.Settings.Target.AppID)
+	}
+	if m.targetExpanded {
+		t.Fatal("input Enter should confirm and collapse the target area")
+	}
+}
+
+// TestMouseButtonsIgnoreKeyboardFocus 鼠标点击按钮必须执行该按钮自己的动作，
+// 不能因键盘焦点停在另一个按钮上而执行焦点对应的动作。
+func TestMouseButtonsIgnoreKeyboardFocus(t *testing.T) {
+	m := testModel(t)
+	m.started = true
+	now := time.Now()
+	m.targetReady = true
+	m.targetExpanded = true
+	m.appIDInput = "wx111"
+	m.inputCursor = len([]rune("wx111"))
+	m.programs = []miniprogram.Program{
+		{AppID: "wx111", LastSeen: now},
+		{AppID: "wx222", LastSeen: now.Add(-time.Second)},
+	}
+	m.selectedProgram = "wx111"
+	m.focus = focusPrograms
+	m, _ = targetKey(m, tea.KeyDown, "")
+	// 键盘焦点停在“取消”上，但鼠标点击“确认目标”必须确认而不是取消。
+	m.focus = focusCancel
+	m.width, m.height = 110, 40
+	_ = m.View()
+	confirm, ok := findHit(m, hitTargetConfirm)
+	if !ok {
+		t.Fatal("confirm button hit region missing")
+	}
+	clicked := clickHitRegion(t, m, confirm)
+	if clicked.targetExpanded {
+		t.Fatal("clicking confirm while focus is on cancel executed cancel instead of confirm")
+	}
+	if clicked.runtime.Settings.Target.AppID != "wx222" {
+		t.Fatalf("confirm button should use the picked discovery program, target=%q", clicked.runtime.Settings.Target.AppID)
+	}
+
+	// 反向：键盘焦点停在“确认”上，鼠标点击“取消”必须取消而不是确认。
+	cancelModel := testModel(t)
+	cancelModel.started = true
+	cancelModel.targetReady = true
+	cancelModel.targetExpanded = true
+	cancelModel.appIDInput = "wx111"
+	cancelModel.focus = focusConfirm
+	cancelModel.width, cancelModel.height = 110, 40
+	cancelModel.runtime.SetTarget(miniprogram.Target{AppID: "wx111"})
+	_ = cancelModel.View()
+	cancel, ok := findHit(cancelModel, hitTargetCancel)
+	if !ok {
+		t.Fatal("cancel button hit region missing")
+	}
+	cancelled := clickHitRegion(t, cancelModel, cancel)
+	if cancelled.targetExpanded {
+		t.Fatal("clicking cancel should collapse the editor")
+	}
+	if !cancelled.targetReady || cancelled.runtime.Settings.Target.AppID != "wx111" {
+		t.Fatalf("clicking cancel must keep the current target: ready=%v target=%q", cancelled.targetReady, cancelled.runtime.Settings.Target.AppID)
+	}
+}
+
 func TestStartupDiscoveryDoesNotConfirmPrefilledTarget(t *testing.T) {
 	runtime := targetRuntime(t)
 	runtime.Settings.Target = miniprogram.Target{AppID: "wx123"}

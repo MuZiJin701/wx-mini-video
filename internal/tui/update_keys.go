@@ -125,15 +125,17 @@ func (m model) handleTargetAreaKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "enter":
 		switch m.focus {
 		case focusPrograms:
-			return m.confirmSelectedProgram()
+			return m.confirmTargetFromList()
 		case focusCancel:
 			m.cancelTargetSwitch()
 			return m, nil
 		case focusAppearance:
 			m.openAppearanceDropdown()
 			return m, nil
+		case focusConfirm:
+			return m.confirmTargetButton()
 		default:
-			return m.confirmFocusedTarget()
+			return m.confirmTargetFromInput()
 		}
 	}
 	if m.focus == focusInput {

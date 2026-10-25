@@ -33,17 +33,26 @@ func prepareDiscoveryTarget(runtime *app.Runtime, prefill string) string {
 
 // ---- 目标选择 ----
 
-func (m model) confirmFocusedTarget() (tea.Model, tea.Cmd) {
-	switch m.focus {
-	case focusPrograms:
-		return m.confirmSelectedProgram()
-	case focusCancel:
-		m.cancelTargetSwitch()
-		return m, nil
-	case focusAppearance:
-		m.openAppearanceDropdown()
+// confirmTargetFromInput 是输入框自己的确认动作（输入框聚焦时按 Enter）：
+// 只确认输入框文本，不受发现列表旧选择或当前焦点影响。
+func (m model) confirmTargetFromInput() (tea.Model, tea.Cmd) {
+	if trimSpaceText(m.appIDInput) == "" {
+		m.inputErr = "请输入 AppID，或按 Tab 选择已发现的小程序"
 		return m, nil
 	}
+	return m.confirmTargetInput()
+}
+
+// confirmTargetFromList 是发现列表自己的确认动作（列表聚焦时按 Enter）：
+// 只确认列表中选中的 AppID。
+func (m model) confirmTargetFromList() (tea.Model, tea.Cmd) {
+	return m.confirmSelectedProgram()
+}
+
+// confirmTargetButton 是“确认目标”按钮的动作（按钮聚焦时 Enter 或鼠标点击），
+// 与键盘焦点无关：用户主动选过发现项且此后未编辑输入框时确认该发现项，
+// 否则确认输入框文本。
+func (m model) confirmTargetButton() (tea.Model, tea.Cmd) {
 	if m.programPicked && m.selectedProgram != "" {
 		return m.confirmSelectedProgram()
 	}

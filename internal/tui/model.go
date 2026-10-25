@@ -471,7 +471,9 @@ func (m model) activateHit(region hitRegion) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case hitTargetConfirm:
-		return m.confirmFocusedTarget()
+		// 按钮动作与键盘焦点无关：鼠标点击“确认目标”始终执行确认，
+		// 不会因为键盘焦点停在“取消”上而执行取消。
+		return m.confirmTargetButton()
 	case hitTargetCancel:
 		m.cancelTargetSwitch()
 		return m, nil
