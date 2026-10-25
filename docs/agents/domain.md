@@ -33,7 +33,8 @@
 │   ├── 0009-user-scoped-windows-runtime.md
 │   ├── 0010-source-built-ffmpeg.md
 │   ├── 0011-single-main-surface-ui.md
-│   └── 0012-per-appid-download-layout.md
+│   ├── 0012-per-appid-download-layout.md
+│   └── 0013-live-stream-recording.md
 └── wx-mini-video-knowledge.md
 ```
 

@@ -1,6 +1,6 @@
 # macOS 测试版
 
-适用目标：macOS 13 及以上，Apple Silicon 与 Intel 共用一个 ZIP。保留 Windows 版的终端界面、目标 AppID 严格归属、来源未确认媒体按类型显示、图片、直链视频、直链音频及 m3u8 下载流程。
+适用目标：macOS 13 及以上，Apple Silicon 与 Intel 共用一个 ZIP。保留 Windows 版的终端界面、目标 AppID 严格归属、来源未确认媒体按类型显示、图片、直链视频、直链音频、m3u8 下载，以及 HTTP-FLV 直播流识别与持续录制流程。
 
 [下载 v0.1.9 Mac 通用 ZIP](https://github.com/MuZiJin701/wx-mini-video/releases/download/v0.1.9/wx-mini-video-macos-universal-unsigned.zip)。Windows 与 Mac 包在同一 [v0.1.9 Release](https://github.com/MuZiJin701/wx-mini-video/releases/tag/v0.1.9) 并列提供，平台状态分别标注。应用内版本号见 `main.go`（当前源码 v0.2.0；发布前 Release 仍为 v0.1.9），Mac 附件的具体构建提交与 SHA-256 见发布说明。
 
@@ -13,7 +13,7 @@
 3. 若提示找不到配置文件，先核对完整解压；首次运行或移动文件夹后，请在 Finder 中将 `.app` 拖出解压文件夹，再拖回原文件夹，重新双击。macOS 可能临时移动新下载的应用，此步骤及不同系统版本的实际行为仍待验证；不要将配置或下载文件放入 `.app` 内部。
 4. 按系统提示允许控制 Terminal，随后在终端界面输入目标 AppID，或按 `Ctrl+D` 发现并选择小程序。进入发现或选择目标后才启动代理。
 5. 首次启动代理时允许将本机独立根证书添加到当前用户默认钥匙串并建立信任。启用和恢复系统代理时会请求管理员授权；终端主体保持普通用户运行。
-6. 代理运行后重新打开目标图片或播放视频、音频。按 `1` 查看全部；来源未确认媒体以 `?` 标记并入对应分类。`d` 或 `Enter` 下载，`o` 打开下载目录。m3u8 使用随包 `ffmpeg/` 中对应处理器的 ffmpeg，无需联网准备；随包文件缺失或损坏时自动回退受管下载，也可在 `download.ffmpeg` 指定已有可执行文件。
+6. 代理运行后重新打开目标图片或播放视频、音频。按 `1` 查看全部；来源未确认媒体以 `?` 标记并入对应分类。`d` 或 `Enter` 下载，`o` 打开下载目录。m3u8 使用随包 `ffmpeg/` 中对应处理器的 ffmpeg，无需联网准备；随包文件缺失或损坏时自动回退受管下载，也可在 `download.ffmpeg` 指定已有可执行文件。HTTP-FLV 直播流会标记为「直播流」，下载会持续录制且不会自动结束，按 `x` 停止并保存为 `.flv`（与 Windows 行为一致）。
 7. 按 `q` 退出，并允许恢复启动前的代理。恢复失败时按 `r` 重试；仅在理解需要自行恢复网络设置后按 `f` 强制退出。
 
 媒体默认保存在解压文件夹内自动创建的 `downloads/`。升级时替换 `.app`，保留原配置和 `downloads/`。本机独立根证书与私钥保存在 `~/Library/Application Support/wx-mini-video/certificates/root-ca.pem`，不随文件夹移动或分发。
@@ -31,7 +31,7 @@
 
 项目提供 [macOS 原生 CI](https://github.com/MuZiJin701/wx-mini-video/actions/workflows/macos.yml)，分别验证 Intel 与 Apple Silicon 的原生测试、随包/受管 ffmpeg 校验与 m3u8 合并、便携包及终端内启动。以对应提交的 Actions 结果为准；CI 不操作真实系统代理或安装证书，也不覆盖 Finder 双击、系统授权和真实微信验收。
 
-请分别在两种处理器上记录机型、macOS 版本、微信版本，以及首次双击、Terminal 授权、证书授权、图片/直链视频/直链音频/m3u8、网络切换和退出恢复的结果。验证完整解压后、移动目录后、中文及空格路径中的配置和 `downloads/` 均位于原便携目录。
+请分别在两种处理器上记录机型、macOS 版本、微信版本，以及首次双击、Terminal 授权、证书授权、图片/直链视频/直链音频/m3u8、HTTP-FLV 直播流录制（`x` 停止保存）、网络切换和退出恢复的结果。验证完整解压后、移动目录后、中文及空格路径中的配置和 `downloads/` 均位于原便携目录。
 
 反馈错误摘要即可；不要发送私钥、Cookie、鉴权头或带签名的完整媒体 URL。签名、公证与编译成功均不代表真实微信嗅探已经通过。
 

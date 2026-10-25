@@ -24,7 +24,7 @@ func init() {
 }
 
 // PreviewKinds 是文档预览支持的界面名称。
-var PreviewKinds = []string{"home", "waiting", "discovered", "media", "downloaded", "logs"}
+var PreviewKinds = []string{"home", "waiting", "discovered", "media", "recording", "downloaded", "logs"}
 
 // RenderPreview 渲染一个固定尺寸的界面预览。
 func RenderPreview(kind string, width, height int) (string, error) {
@@ -84,8 +84,23 @@ func buildPreviewModel(kind string, width, height int) (model, error) {
 		m.started = true
 		m.category = categoryAll
 		m.candidates = previewCandidates()
-		m.selected = 2
+		m.selected = previewLiveIndex(m.candidates)
 		m.showDetails = true
+	case "recording":
+		m.targetReady = true
+		m.started = true
+		m.category = categoryAll
+		m.candidates = previewCandidates()
+		m.selected = previewLiveIndex(m.candidates)
+		m.downloading = true
+		m.downloadLive = true
+		m.downloadID = m.candidates[m.selected].ID
+		m.progress = minidownload.Progress{
+			ID:         m.downloadID,
+			Status:     "recording",
+			Downloaded: 96 * 1024 * 1024,
+			Live:       true,
+		}
 	case "downloaded":
 		m.targetReady = true
 		m.started = true
@@ -120,6 +135,9 @@ func previewLogs() []string {
 		"13:00:31 检测到来源未确认媒体，已按类型并入列表（以 ? 标记）",
 		"13:01:08 开始下载: 来源已确认 视频 甄选自营 · 封面",
 		"13:01:12 下载完成: downloads/wx6ab29f61bd262656/视频/视频_20261025-130512_9f8e7d6c.mp4",
+		"13:01:20 开始下载: 来源已确认 直播流 东方甄选直播 · 双11专场",
+		"13:01:20 识别为直播流：会持续录制且不会自动结束，按 x 停止并保存",
+		"13:02:41 已停止录制: downloads/wx6ab29f61bd262656/视频/视频_20261025-130241_00000003.flv",
 	}
 }
 
@@ -131,23 +149,25 @@ func previewCandidates() []miniprogram.Candidate {
 		source string
 		size   int64
 		attr   string
+		live   bool
 	}{
-		{"甄选自营 · 封面", "image", "json", 1_258_291, miniprogram.AttributionConfirmed},
-		{"甄选自营 · 限时补贴", "image", "json", 876_544, miniprogram.AttributionConfirmed},
-		{"课程详情页视频", "video", "html", 13_002_291, miniprogram.AttributionUnattributed},
-		{"甄选自营 · 肉禽海产", "image", "json", 1_572_664, miniprogram.AttributionConfirmed},
-		{"甄选自营 · 时令果蔬", "image", "json", 1_310_720, miniprogram.AttributionConfirmed},
-		{"甄选自营 · 乳品烘焙", "image", "json", 982_016, miniprogram.AttributionConfirmed},
-		{"甄选自营 · 粮油干货", "image", "json", 1_048_576, miniprogram.AttributionConfirmed},
-		{"宣传片", "m3u8", "response", 24_117_248, miniprogram.AttributionConfirmed},
-		{"背景音乐", "audio", "json", 3_145_728, miniprogram.AttributionConfirmed},
-		{"甄选自营 · 旅游度假", "image", "json", 1_703_936, miniprogram.AttributionConfirmed},
-		{"甄选自营 · 日化美妆", "image", "json", 1_205_862, miniprogram.AttributionConfirmed},
-		{"甄选自营 · 家纺家居", "image", "json", 1_454_080, miniprogram.AttributionConfirmed},
+		{"甄选自营 · 封面", "image", "json", 1_258_291, miniprogram.AttributionConfirmed, false},
+		{"甄选自营 · 限时补贴", "image", "json", 876_544, miniprogram.AttributionConfirmed, false},
+		{"东方甄选直播 · 双11专场", "video", "json", 0, miniprogram.AttributionConfirmed, true},
+		{"课程详情页视频", "video", "html", 13_002_291, miniprogram.AttributionUnattributed, false},
+		{"甄选自营 · 肉禽海产", "image", "json", 1_572_664, miniprogram.AttributionConfirmed, false},
+		{"甄选自营 · 时令果蔬", "image", "json", 1_310_720, miniprogram.AttributionConfirmed, false},
+		{"甄选自营 · 乳品烘焙", "image", "json", 982_016, miniprogram.AttributionConfirmed, false},
+		{"甄选自营 · 粮油干货", "image", "json", 1_048_576, miniprogram.AttributionConfirmed, false},
+		{"宣传片", "m3u8", "response", 24_117_248, miniprogram.AttributionConfirmed, false},
+		{"背景音乐", "audio", "json", 3_145_728, miniprogram.AttributionConfirmed, false},
+		{"甄选自营 · 旅游度假", "image", "json", 1_703_936, miniprogram.AttributionConfirmed, false},
+		{"甄选自营 · 日化美妆", "image", "json", 1_205_862, miniprogram.AttributionConfirmed, false},
+		{"甄选自营 · 家纺家居", "image", "json", 1_454_080, miniprogram.AttributionConfirmed, false},
 	}
 	out := make([]miniprogram.Candidate, 0, len(items))
 	for i, item := range items {
-		url := fmt.Sprintf("https://cdn.example.com/media/%02d.%s", i+1, previewExt(item.kind))
+		url := fmt.Sprintf("https://cdn.example.com/media/%02d.%s", i+1, previewExt(item.kind, item.live))
 		out = append(out, miniprogram.Candidate{
 			ID:            fmt.Sprintf("%08x%032x", i+1, i+1),
 			AppID:         "wx6ab29f61bd262656",
@@ -159,10 +179,20 @@ func previewCandidates() []miniprogram.Candidate {
 			Attribution:   item.attr,
 			CreatedAt:     base.Add(time.Duration(i) * 17 * time.Second),
 			SourceAppID:   sourceAppID(item.attr),
+			Live:          item.live,
 			Headers:       map[string]string{"Referer": "https://servicewechat.com/wx6ab29f61bd262656/12/page-frame.html", "User-Agent": "MicroMessenger"},
 		})
 	}
 	return out
+}
+
+func previewLiveIndex(candidates []miniprogram.Candidate) int {
+	for i, candidate := range candidates {
+		if candidate.Live {
+			return i
+		}
+	}
+	return 0
 }
 
 func sourceAppID(attribution string) string {
@@ -172,7 +202,10 @@ func sourceAppID(attribution string) string {
 	return "wx6ab29f61bd262656"
 }
 
-func previewExt(kind string) string {
+func previewExt(kind string, live bool) string {
+	if live {
+		return "flv"
+	}
 	switch kind {
 	case "image":
 		return "jpg"

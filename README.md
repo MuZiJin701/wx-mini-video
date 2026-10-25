@@ -33,7 +33,7 @@ v0.2.0 起 TUI 为单主界面：顶部是品牌区（终端支持图片时显�
 
 右上角「外观」支持**跟随系统 / 浅色 / 深色**：用 `←/→` 或鼠标点击切换，立即生效，选择保存在 `downloads/ui.json`，下次启动沿用。Windows 读取系统应用明暗设置，macOS 读取系统外观；读取失败时按深色显示。
 
-![媒体列表：选择候选并下载](https://raw.githubusercontent.com/MuZiJin701/wx-mini-video/main/docs/images/使用界面.png)
+![媒体列表：选择候选并下载（示例选中直播流）](https://raw.githubusercontent.com/MuZiJin701/wx-mini-video/main/docs/images/使用界面.png)
 
 <details>
 <summary>查看操作截图</summary>
@@ -53,6 +53,10 @@ v0.2.0 起 TUI 为单主界面：顶部是品牌区（终端支持图片时显�
 下载完成后行尾显示「已下载」，按 `o` 查看文件：
 
 ![下载完成](https://raw.githubusercontent.com/MuZiJin701/wx-mini-video/main/docs/images/下载完成.png)
+
+直播流会标记为「直播流」，按 `d` 开始持续录制，状态行显示已录大小，按 `x` 停止并保存：
+
+![直播录制](https://raw.githubusercontent.com/MuZiJin701/wx-mini-video/main/docs/images/直播录制.png)
 
 </details>
 

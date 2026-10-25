@@ -33,7 +33,7 @@ Since v0.2.0 the TUI has a single main surface: a brand area at the top (a bitma
 
 The **appearance** control supports **follow system / light / dark**, switched with `←/→` or a click, effective immediately and remembered in `downloads/ui.json`. Windows reads the system app theme; macOS reads the system appearance; when unavailable the UI falls back to dark.
 
-![Media list: select a candidate and download](https://raw.githubusercontent.com/MuZiJin701/wx-mini-video/main/docs/images/使用界面.png)
+![Media list: select a candidate and download (live stream selected)](https://raw.githubusercontent.com/MuZiJin701/wx-mini-video/main/docs/images/使用界面.png)
 
 <details>
 <summary>View workflow screenshots</summary>
@@ -53,6 +53,10 @@ Selecting an AppID confirms the target immediately (no name step):
 When the download finishes, the row shows "downloaded"; press `o` to view the file:
 
 ![Completed download](https://raw.githubusercontent.com/MuZiJin701/wx-mini-video/main/docs/images/下载完成.png)
+
+Live streams are labelled `直播流` (live stream); press `d` to start a continuous recording, watch the recorded size in the status line, and press `x` to stop and save:
+
+![Live recording](https://raw.githubusercontent.com/MuZiJin701/wx-mini-video/main/docs/images/直播录制.png)
 
 </details>
 
