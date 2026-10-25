@@ -27,8 +27,17 @@ import (
 // ErrRecordingStopped 表示用户停止直播录制；已录内容已保存为最终文件。
 var ErrRecordingStopped = errors.New("已停止直播录制")
 
+// ErrRecordingInterrupted 表示直播在非用户停止的情况下中断（如断网、unexpected EOF）；
+// 已录内容已尽量保存为最终文件，中断原因附在错误信息中。
+var ErrRecordingInterrupted = errors.New("直播流意外中断")
+
 // ErrDownloadStopped 表示用户停止普通下载；未完成内容保留在 .part 文件，便于之后续传。
 var ErrDownloadStopped = errors.New("已停止下载")
+
+// isContextCancellation 只匹配真正的上下文取消/超时，用于把“用户停止”与保存失败区分开。
+func isContextCancellation(err error) bool {
+	return errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
+}
 
 type Progress struct {
 	ID         string
@@ -290,7 +299,10 @@ func (d *Downloader) Download(ctx context.Context, candidate miniprogram.Candida
 	if err := os.MkdirAll(bucket, 0o755); err != nil {
 		return "", fmt.Errorf("创建下载目录 %s 失败: %w", bucket, err)
 	}
-	name := OutputName(candidate, preferredName)
+	name := priorRecordingName(bucket, candidate, preferredName)
+	if name == "" {
+		name = OutputName(candidate, preferredName)
+	}
 	outputPath := outputPath(bucket, name)
 	d.emit(Progress{ID: candidate.ID, Name: name, Path: outputPath, Status: "starting", Total: candidate.ContentLength, Live: candidate.Live})
 	var live bool
@@ -300,11 +312,12 @@ func (d *Downloader) Download(ctx context.Context, candidate miniprogram.Candida
 	} else {
 		live, err = d.downloadDirect(ctx, candidate, outputPath)
 	}
-	// 用户主动停止时，ctx 取消会让底层错误看起来像下载失败；统一折算为“已停止”语义。
-	if err != nil && ctx.Err() != nil && !errors.Is(err, ErrRecordingStopped) && !errors.Is(err, ErrDownloadStopped) {
+	// 只有真正的取消错误才折算为“已停止”；保存/重命名等失败必须原样暴露给用户。
+	if err != nil && ctx.Err() != nil && isContextCancellation(err) &&
+		!errors.Is(err, ErrRecordingStopped) && !errors.Is(err, ErrDownloadStopped) && !errors.Is(err, ErrRecordingInterrupted) {
 		err = ErrDownloadStopped
 	}
-	if err == nil || errors.Is(err, ErrRecordingStopped) {
+	if err == nil || errors.Is(err, ErrRecordingStopped) || errors.Is(err, ErrRecordingInterrupted) {
 		_ = d.appendHistory(candidate, outputPath, targetAppID)
 	}
 	d.finishProgress(candidate, name, outputPath, live, err)
@@ -319,6 +332,9 @@ func (d *Downloader) finishProgress(candidate miniprogram.Candidate, name, outpu
 	case err == nil:
 	case errors.Is(err, ErrRecordingStopped):
 		status = "stopped"
+	case errors.Is(err, ErrRecordingInterrupted):
+		status = "interrupted"
+		errText = err.Error()
 	case errors.Is(err, ErrDownloadStopped):
 		status = "stopped"
 		if !fileExists(outputPath) {
@@ -364,6 +380,9 @@ func (d *Downloader) downloadM3U8(ctx context.Context, candidate miniprogram.Can
 		d.emit(Progress{ID: candidate.ID, Path: outputPath, Status: "cache-m3u8"})
 		localPath, err := d.cacheM3U8FromURL(ctx, candidate, bucket)
 		if err != nil {
+			if ctx.Err() != nil {
+				return ErrDownloadStopped
+			}
 			return fmt.Errorf("没有拿到 m3u8 本地缓存，远程 playlist 也已不可用(%v)。请重新播放目标媒体后重试", err)
 		}
 		inputURL = localPath
@@ -385,6 +404,9 @@ func (d *Downloader) downloadM3U8(ctx context.Context, candidate miniprogram.Can
 	if d.chooseM3U8Mode(playlistBody) == "prefetch" && !bytes.Contains(playlistBody, []byte("#EXT-X-STREAM-INF")) && !bytes.Contains(playlistBody, []byte("#EXT-X-MEDIA:")) {
 		localPlaylist, stats, err := d.localizeM3U8(ctx, bucket, candidate.ID, playlistBody, candidate.Headers, candidate.URL)
 		if err != nil {
+			if ctx.Err() != nil {
+				return ErrDownloadStopped
+			}
 			return err
 		}
 		inputURL = localPlaylist
@@ -392,6 +414,9 @@ func (d *Downloader) downloadM3U8(ctx context.Context, candidate miniprogram.Can
 	} else {
 		remoteInput, closeServer, err := d.servePlaylist(ctx, candidate, playlistBody)
 		if err != nil {
+			if ctx.Err() != nil {
+				return ErrDownloadStopped
+			}
 			return err
 		}
 		defer closeServer()
@@ -400,6 +425,9 @@ func (d *Downloader) downloadM3U8(ctx context.Context, candidate miniprogram.Can
 	d.emit(Progress{ID: candidate.ID, Path: outputPath, Status: "ffmpeg", Total: totalDuration})
 	err = d.runFFmpeg(ctx, candidate, inputURL, outputPath, totalDuration)
 	if err != nil {
+		if ctx.Err() != nil {
+			return ErrDownloadStopped
+		}
 		return fmt.Errorf("ffmpeg 合并失败(%s): %w", source, err)
 	}
 	if !d.KeepSegments && segmentStats.Dir != "" {
@@ -977,7 +1005,45 @@ type partialDownload struct {
 }
 
 func partialPath(outputPath string, candidate miniprogram.Candidate) string {
-	return outputPath + "." + miniprogram.CandidateID(candidate.AppID, candidate.URL) + ".part"
+	return outputPath + partialSuffix(candidate)
+}
+
+// partialSuffix 是带候选标识的部分下载后缀，用于在目录里反查同一候选的遗留 .part。
+func partialSuffix(candidate miniprogram.Candidate) string {
+	return "." + miniprogram.CandidateID(candidate.AppID, candidate.URL) + ".part"
+}
+
+// priorRecordingName 在默认命名路径下复用同一候选遗留的 .part 基名，保证秒级重试仍能续传。
+// 指定 preferredName 时沿用显式命名；疑似直播（含 .flv 地址）不复用，避免覆盖上一次未保存的录制。
+func priorRecordingName(bucket string, candidate miniprogram.Candidate, preferredName string) string {
+	if strings.TrimSpace(preferredName) != "" || candidate.Live || miniprogram.IsFLVURL(candidate.URL) {
+		return ""
+	}
+	suffix := partialSuffix(candidate)
+	entries, err := os.ReadDir(bucket)
+	if err != nil {
+		return ""
+	}
+	best := ""
+	var bestTime time.Time
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), suffix) {
+			continue
+		}
+		name := strings.TrimSuffix(entry.Name(), suffix)
+		if name == "" || safeOutputName(name) != name {
+			continue
+		}
+		info, err := entry.Info()
+		if err != nil {
+			continue
+		}
+		if best == "" || info.ModTime().After(bestTime) {
+			best = name
+			bestTime = info.ModTime()
+		}
+	}
+	return best
 }
 
 func (p partialDownload) validator() string {
@@ -1142,19 +1208,32 @@ func (d *Downloader) downloadDirect(ctx context.Context, candidate miniprogram.C
 	closeErr := file.Close()
 	if live {
 		if copyErr != nil {
-			if ctx.Err() == nil {
-				return true, copyErr
+			// 用户停止录制：提交已录内容；保存失败要单独暴露，不能伪装成“已停止”。
+			if ctx.Err() != nil {
+				if written == 0 {
+					_ = os.Remove(partPath)
+					_ = os.Remove(metaPath)
+					return true, fmt.Errorf("直播流没有返回数据")
+				}
+				if err := commitRecording(partPath, metaPath, outputPath, written); err != nil {
+					return true, fmt.Errorf("已停止录制，但保存已录内容失败: %w", err)
+				}
+				return true, ErrRecordingStopped
 			}
-			// 用户停止录制：把已录内容保存为最终文件。
-			if err := commitRecording(partPath, metaPath, outputPath, written); err != nil {
-				return true, err
+			// 异常断流（断网、unexpected EOF 等）：先保全已录内容，再报告中断原因。
+			if written > 0 {
+				if err := commitRecording(partPath, metaPath, outputPath, written); err != nil {
+					return true, fmt.Errorf("直播流中断（%v），且保存已录内容失败: %w", copyErr, err)
+				}
+				return true, fmt.Errorf("%w：%v", ErrRecordingInterrupted, copyErr)
 			}
-			return true, ErrRecordingStopped
+			return true, copyErr
 		}
 		if closeErr != nil {
 			return true, closeErr
 		}
 		if written == 0 {
+			_ = os.Remove(partPath)
 			_ = os.Remove(metaPath)
 			return true, fmt.Errorf("直播流没有返回数据")
 		}

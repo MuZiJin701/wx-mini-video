@@ -942,3 +942,173 @@ func TestOutputNameKeepsSingleFLVSuffix(t *testing.T) {
 		t.Fatalf("default flv name = %q, want video type prefix", name)
 	}
 }
+
+func TestDownloadLiveInterruptedKeepsRecording(t *testing.T) {
+	frame := append([]byte("FLV\x01\x05\x00\x00\x00\x09"), make([]byte, 512)...)
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "video/x-flv")
+		flusher := w.(http.Flusher)
+		for i := 0; i < 4; i++ {
+			if _, err := w.Write(frame); err != nil {
+				return
+			}
+			flusher.Flush()
+		}
+		panic(http.ErrAbortHandler)
+	}))
+	defer ts.Close()
+
+	d := New(t.TempDir())
+	candidate := miniprogram.Candidate{ID: "live-interrupted", AppID: "wx123", URL: ts.URL + "/live/7559_esd.flv", Kind: "video", Suffix: ".flv", Live: true}
+	output, err := d.Download(context.Background(), candidate, "", "wx123")
+	if !errors.Is(err, ErrRecordingInterrupted) {
+		t.Fatalf("error = %v, want ErrRecordingInterrupted", err)
+	}
+	data, readErr := os.ReadFile(output)
+	if readErr != nil || len(data) == 0 || string(data[:3]) != "FLV" {
+		t.Fatalf("interrupted recording not saved: %v, %d bytes", readErr, len(data))
+	}
+	if fileExists(partialPath(output, candidate)) {
+		t.Fatal("interrupted recording .part should be committed")
+	}
+	history, readErr := os.ReadFile(filepath.Join(d.Dir, "history.jsonl"))
+	if readErr != nil {
+		t.Fatalf("history missing for interrupted recording: %v", readErr)
+	}
+	lines := strings.Split(strings.TrimSpace(string(history)), "\n")
+	var record DownloadHistory
+	if err := json.Unmarshal([]byte(lines[len(lines)-1]), &record); err != nil {
+		t.Fatalf("history record invalid: %v", err)
+	}
+	if record.Path != output || record.Size == 0 {
+		t.Fatalf("history record = %#v, want saved interrupted recording", record)
+	}
+}
+
+func TestDownloadStopReportsSaveFailure(t *testing.T) {
+	frame := append([]byte("FLV\x01\x05\x00\x00\x00\x09"), make([]byte, 512)...)
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "video/x-flv")
+		flusher := w.(http.Flusher)
+		for {
+			if _, err := w.Write(frame); err != nil {
+				return
+			}
+			flusher.Flush()
+			select {
+			case <-r.Context().Done():
+				return
+			case <-time.After(2 * time.Millisecond):
+			}
+		}
+	}))
+	defer ts.Close()
+
+	d := New(t.TempDir())
+	stubDownloadClock(t, time.Date(2026, 10, 25, 13, 0, 0, 0, time.Local))
+	candidate := miniprogram.Candidate{ID: "stop-save-fail", AppID: "wx123", URL: ts.URL + "/live/stop_save_fail.flv", Kind: "video", Suffix: ".flv", Live: true}
+	// 用非空目录预占最终路径，使提交重命名必然失败。
+	blocked := filepath.Join(d.Dir, "wx123", miniprogram.DirVideos, OutputName(candidate, ""))
+	if err := os.MkdirAll(filepath.Join(blocked, "inner"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(blocked, "inner", "keep.txt"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var recording atomic.Bool
+	d.OnProgress = func(p Progress) {
+		if p.Status == "recording" && p.Live {
+			recording.Store(true)
+		}
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() {
+		_, err := d.Download(ctx, candidate, "", "wx123")
+		done <- err
+	}()
+	deadline := time.Now().Add(5 * time.Second)
+	for !recording.Load() {
+		if time.Now().After(deadline) {
+			t.Fatal("没有进入录制状态")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	cancel()
+	err := <-done
+	if err == nil || errors.Is(err, ErrDownloadStopped) || errors.Is(err, ErrRecordingStopped) {
+		t.Fatalf("save failure was masked as normal stop: %v", err)
+	}
+	if !strings.Contains(err.Error(), "保存已录内容失败") {
+		t.Fatalf("error = %v, want save failure detail", err)
+	}
+	if !fileExists(partialPath(filepath.Join(blocked), candidate)) {
+		t.Fatal("save failure should keep the recorded .part for recovery")
+	}
+}
+
+func TestDownloadRetryAfterSecondBoundaryResumes(t *testing.T) {
+	body := []byte(strings.Repeat("wx-mini-video", 1024))
+	half := len(body) / 2
+	var mu sync.Mutex
+	var ranges []string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		ranges = append(ranges, r.Header.Get("Range"))
+		mu.Unlock()
+		w.Header().Set("ETag", `"original"`)
+		if r.Header.Get("Range") == "" {
+			w.Header().Set("Content-Length", strconv.Itoa(len(body)))
+			_, _ = w.Write(body[:half])
+			return
+		}
+		if got, want := r.Header.Get("Range"), "bytes="+strconv.Itoa(half)+"-"; got != want {
+			t.Errorf("Range = %q, want %q", got, want)
+		}
+		if r.Header.Get("If-Range") != `"original"` {
+			t.Error("resume did not validate the original entity")
+		}
+		w.Header().Set("Content-Range", fmt.Sprintf("bytes %d-%d/%d", half, len(body)-1, len(body)))
+		w.WriteHeader(http.StatusPartialContent)
+		_, _ = w.Write(body[half:])
+	}))
+	defer ts.Close()
+
+	d := New(t.TempDir())
+	base := time.Date(2026, 10, 25, 13, 0, 0, 0, time.Local)
+	oldNow := now
+	calls := 0
+	now = func() time.Time {
+		calls++
+		if calls <= 1 {
+			return base
+		}
+		return base.Add(time.Second)
+	}
+	defer func() { now = oldNow }()
+
+	candidate := miniprogram.Candidate{ID: "retry-boundary", AppID: "wx123", URL: ts.URL + "/resume.mp4", Kind: "video", Suffix: ".mp4", ContentLength: int64(len(body))}
+	first, err := d.Download(context.Background(), candidate, "", "wx123")
+	if err == nil {
+		t.Fatal("first download should fail after the server closes the response early")
+	}
+	second, err := d.Download(context.Background(), candidate, "", "wx123")
+	if err != nil {
+		t.Fatalf("retry after the second boundary failed: %v", err)
+	}
+	if first != second {
+		t.Fatalf("retry used a new output name: %q vs %q", first, second)
+	}
+	data, err := os.ReadFile(second)
+	if err != nil || string(data) != string(body) {
+		t.Fatalf("resumed content mismatch: %d bytes, err %v", len(data), err)
+	}
+	mu.Lock()
+	got := append([]string(nil), ranges...)
+	mu.Unlock()
+	if len(got) != 2 || got[0] != "" || !strings.HasPrefix(got[1], "bytes=") {
+		t.Fatalf("requests = %v, want first full GET and second Range request", got)
+	}
+}

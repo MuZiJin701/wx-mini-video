@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"time"
+
 	tea "github.com/charmbracelet/bubbletea"
 	"wx_channel/pkg/certificate"
 )
@@ -28,6 +30,19 @@ func (m model) beginStop() (tea.Model, tea.Cmd) {
 func (m model) requestQuit() (tea.Model, tea.Cmd) {
 	if m.downloading {
 		m.confirmQuit = true
+		return m, nil
+	}
+	return m.beginStop()
+}
+
+// confirmQuitNow 执行退出确认：下载/录制中先停止并保存现场，等 downloadMsg 收尾后再退出。
+func (m model) confirmQuitNow() (tea.Model, tea.Cmd) {
+	if m.downloading {
+		m.quitAfterDownload = true
+		if m.downloadCancel != nil {
+			m.downloadCancel()
+		}
+		m.setNotice("正在停止下载，完成后退出…", 10*time.Second)
 		return m, nil
 	}
 	return m.beginStop()

@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -301,5 +302,105 @@ func TestStartLiveDownloadShowsRecordingHint(t *testing.T) {
 		if !strings.Contains(view, want) {
 			t.Fatalf("media view missing %q for live recording:\n%s", want, view)
 		}
+	}
+}
+
+func TestProgressLineInterruptedStatus(t *testing.T) {
+	line := progressLine(minidownload.Progress{
+		Status: "interrupted",
+		Live:   true,
+		Path:   "downloads/wx123/视频/直播_1.flv",
+		Error:  "直播流意外中断：unexpected EOF",
+	})
+	if !strings.Contains(line, "直播中断并保存") || !strings.Contains(line, "unexpected EOF") {
+		t.Fatalf("interrupted line = %q, want saved path and reason", line)
+	}
+}
+
+func TestDownloadInterruptedMarksRecordingSaved(t *testing.T) {
+	m := testModel(t)
+	next, _ := m.Update(downloadMsg{
+		candidateID: "live-interrupted",
+		path:        "downloads/wx123/视频/直播_1.flv",
+		err:         fmt.Errorf("%w：unexpected EOF", minidownload.ErrRecordingInterrupted),
+	})
+	m = next.(model)
+	if m.downloaded["live-interrupted"] == "" {
+		t.Fatal("interrupted recording should be marked downloaded")
+	}
+	if !strings.Contains(strings.Join(m.logs, "\n"), "直播中断") {
+		t.Fatalf("logs = %v, want interruption log", m.logs)
+	}
+	if !strings.Contains(m.notice, "已保存已录内容") {
+		t.Fatalf("notice = %q, want saved recording notice", m.notice)
+	}
+}
+
+func TestMouseDiscoverStartsProxy(t *testing.T) {
+	m := testModel(t)
+	m.targetReady = false
+	_ = m.View()
+	region, ok := findHit(m, hitDiscover)
+	if !ok {
+		t.Fatal("target card discovery button hit missing")
+	}
+	next, cmd := m.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: region.x + 1, Y: region.y + 1})
+	m = next.(model)
+	if cmd == nil || !m.starting || !m.showTargets {
+		t.Fatalf("mouse discovery should start the proxy: cmd=%v starting=%v showTargets=%v", cmd, m.starting, m.showTargets)
+	}
+}
+
+func TestMouseQuitConfirmStartsStop(t *testing.T) {
+	m := testModel(t)
+	m.targetReady = true
+	m.confirmQuit = true
+	_ = m.View()
+	region, ok := findHit(m, hitQuitConfirm)
+	if !ok {
+		t.Fatal("quit confirmation button hit missing")
+	}
+	hovered, _ := m.Update(tea.MouseMsg{Action: tea.MouseActionMotion, X: region.x + 1, Y: region.y + 1})
+	if h := hovered.(model); !h.hits.isHovered(hitQuitConfirm, 0) {
+		t.Fatal("hover over quit confirmation button was ignored")
+	}
+	next, cmd := m.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: region.x + 1, Y: region.y + 1})
+	m = next.(model)
+	if cmd == nil || !m.stopping || m.confirmQuit {
+		t.Fatalf("mouse quit confirmation should start the stop flow: cmd=%v stopping=%v confirmQuit=%v", cmd, m.stopping, m.confirmQuit)
+	}
+}
+
+func TestMouseQuitConfirmDuringDownloadStopsFirst(t *testing.T) {
+	m := testModel(t)
+	m.targetReady = true
+	m.downloading = true
+	m.confirmQuit = true
+	canceled := false
+	m.downloadCancel = func() { canceled = true }
+	_ = m.View()
+	region, ok := findHit(m, hitQuitConfirm)
+	if !ok {
+		t.Fatal("quit confirmation button hit missing")
+	}
+	next, cmd := m.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: region.x + 1, Y: region.y + 1})
+	m = next.(model)
+	if cmd != nil || m.stopping || !m.quitAfterDownload || !canceled {
+		t.Fatalf("quit during download should stop the download first: cmd=%v stopping=%v quitAfterDownload=%v canceled=%v", cmd, m.stopping, m.quitAfterDownload, canceled)
+	}
+}
+
+func TestMouseLegacyKeepDismissesPrompt(t *testing.T) {
+	m := testModel(t)
+	m.legacyPrompt = true
+	_ = m.View()
+	region, ok := findHit(m, hitLegacyKeep)
+	if !ok {
+		t.Fatal("legacy certificate keep button hit missing")
+	}
+	next, cmd := m.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: region.x + 1, Y: region.y + 1})
+	m = next.(model)
+	if cmd == nil || m.legacyPrompt || !m.legacyChecked || !m.starting {
+		t.Fatalf("mouse legacy keep should dismiss the prompt: cmd=%v prompt=%v checked=%v starting=%v", cmd, m.legacyPrompt, m.legacyChecked, m.starting)
 	}
 }

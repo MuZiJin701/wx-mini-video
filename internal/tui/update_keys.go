@@ -28,16 +28,7 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		switch key {
 		case "enter", "y":
 			m.confirmQuit = false
-			if m.downloading {
-				// 先停止下载/录制，等 downloadMsg 到达并保存好现场后再退出。
-				m.quitAfterDownload = true
-				if m.downloadCancel != nil {
-					m.downloadCancel()
-				}
-				m.setNotice("正在停止下载，完成后退出…", 10*time.Second)
-				return m, nil
-			}
-			return m.beginStop()
+			return m.confirmQuitNow()
 		case "esc", "n", "q", "ctrl+c":
 			m.confirmQuit = false
 		}

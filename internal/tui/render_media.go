@@ -382,12 +382,12 @@ func (m model) renderStatusLine(y int, metrics ui.Metrics) string {
 		style = m.st.errStyle
 		text = "代理启动失败：" + m.startErr.Error() + "（按 r 重试）"
 		m.hits.add(left, y, width, 1, hitRetryProxy, 0)
-	case m.downloading || m.progress.Status == "done" || m.progress.Status == "error" || m.progress.Status == "stopped":
+	case m.downloading || m.progress.Status == "done" || m.progress.Status == "error" || m.progress.Status == "stopped" || m.progress.Status == "interrupted":
 		style = m.st.success
 		if m.progress.Status == "error" {
 			style = m.st.errStyle
 		}
-		if m.progress.Status == "stopped" && !m.progress.Live {
+		if (m.progress.Status == "stopped" && !m.progress.Live) || m.progress.Status == "interrupted" {
 			style = m.st.warning
 		}
 		text = progressLine(m.progress)
@@ -450,6 +450,8 @@ func progressLine(progress minidownload.Progress) string {
 			return "直播录制已停止，已保存: " + progress.Path
 		}
 		return "下载已停止（未完成内容保留在下载目录）"
+	case "interrupted":
+		return "直播中断并保存: " + progress.Path + "（" + progress.Error + "）"
 	case "done":
 		return "下载完成: " + progress.Path
 	case "error":

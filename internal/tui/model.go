@@ -255,6 +255,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.addLog("已停止录制: " + v.path)
 			m.setNotice("已停止录制并保存 → "+m.relativeDownloadPath(v.path), 8*time.Second)
+		case errors.Is(v.err, minidownload.ErrRecordingInterrupted):
+			m.lastSavedPath = v.path
+			if v.candidateID != "" {
+				m.downloaded[v.candidateID] = v.path
+			}
+			m.addLog("直播中断: " + v.err.Error())
+			m.setNotice("直播中断，已保存已录内容 → "+m.relativeDownloadPath(v.path)+"（"+v.err.Error()+"）", 10*time.Second)
 		case errors.Is(v.err, minidownload.ErrDownloadStopped):
 			m.addLog("已停止下载，未完成内容保留在下载目录")
 			m.setNotice("已停止下载（未完成内容保留在下载目录）", 8*time.Second)
@@ -283,18 +290,20 @@ func (m model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	if m.stopping || m.stopErr != nil || m.networkPause {
 		return m, nil
 	}
-	if m.confirmQuit || m.legacyPrompt {
-		return m, nil
-	}
-	switch msg.Button {
-	case tea.MouseButtonWheelUp:
-		return m.scrollBy(-3), nil
-	case tea.MouseButtonWheelDown:
-		return m.scrollBy(3), nil
+	// 退出确认与旧证书确认是模态覆盖层：只允许命中它们自己的按钮，其余鼠标事件忽略。
+	modal := m.confirmQuit || m.legacyPrompt
+	if !modal {
+		switch msg.Button {
+		case tea.MouseButtonWheelUp:
+			return m.scrollBy(-3), nil
+		case tea.MouseButtonWheelDown:
+			return m.scrollBy(3), nil
+		}
 	}
 	switch msg.Action {
 	case tea.MouseActionMotion:
-		if region, ok := m.hits.find(msg.X, msg.Y); ok {
+		region, ok := m.hits.find(msg.X, msg.Y)
+		if ok && (!modal || overlayHitAction(region.action)) {
 			m.hits.setHover(region.action, region.index)
 		} else {
 			m.hits.clearHover()
@@ -305,12 +314,17 @@ func (m model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		region, ok := m.hits.find(msg.X, msg.Y)
+		if modal {
+			if !ok || !overlayHitAction(region.action) {
+				return m, nil
+			}
+			return m.activateHit(region)
+		}
 		if !ok {
-			if m.showLogs || m.showDetails || m.showTargets || m.confirmQuit {
+			if m.showLogs || m.showDetails || m.showTargets {
 				m.showLogs = false
 				m.showDetails = false
 				m.showTargets = false
-				m.confirmQuit = false
 			}
 			return m, nil
 		}
@@ -318,6 +332,15 @@ func (m model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	default:
 		return m, nil
 	}
+}
+
+// overlayHitAction 判断命中动作是否属于退出确认/旧证书确认面板的按钮。
+func overlayHitAction(action hitAction) bool {
+	switch action {
+	case hitQuitConfirm, hitOverlayCancel, hitLegacyClean, hitLegacyKeep:
+		return true
+	}
+	return false
 }
 
 func (m model) scrollBy(delta int) model {
@@ -361,7 +384,7 @@ func (m model) activateHit(region hitRegion) (tea.Model, tea.Cmd) {
 		return m.confirmTargetInput()
 	case hitDiscover:
 		m.openTargetOverlay()
-		return m, nil
+		return m.ensureProxy()
 	case hitTargetSwitch:
 		if m.downloading {
 			m.setNotice("下载正在进行，完成后才能切换目标。", 5*time.Second)
@@ -401,7 +424,8 @@ func (m model) activateHit(region hitRegion) (tea.Model, tea.Cmd) {
 		m.showLogs = false
 		return m, nil
 	case hitQuitConfirm:
-		return m.beginStop()
+		m.confirmQuit = false
+		return m.confirmQuitNow()
 	case hitLegacyClean:
 		m.legacyPrompt = false
 		m.starting = true
