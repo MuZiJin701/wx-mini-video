@@ -1,6 +1,6 @@
 # 从官方源码自行构建 ffmpeg，归档完整构建材料
 
-状态：2026-10-25 用户确认，实施中；Windows amd64 已本地构建并通过十二项实际合并验证，Mac 两架构与 Actions 验收待执行。修订 [ADR 0007](0007-bundled-ffmpeg.md) 的第三方二进制选型，完整包与自动下载兜底体验保持不变。
+状态：2026-10-25 已实施；Windows amd64 本地构建、macOS Intel 与 Apple Silicon Actions 构建均通过十二项实际合并验证，对应源码归档已随 v0.1.9 Release 提供。修订 [ADR 0007](0007-bundled-ffmpeg.md) 的第三方二进制选型，完整包与自动下载兜底体验保持不变。
 
 ## 原因
 

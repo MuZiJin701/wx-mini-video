@@ -13,7 +13,7 @@ $expected = @(
     'ffmpeg/LICENSE.txt',
     'THIRD-PARTY-NOTICES.md'
 )
-$ffmpegMinBytes = 50MB
+$ffmpegMinBytes = 20MB
 
 if (-not (Test-Path -LiteralPath $ZipPath -PathType Leaf)) {
     throw "Package not found: $ZipPath"

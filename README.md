@@ -4,18 +4,14 @@
 
 [下载最新版](https://github.com/MuZiJin701/wx-mini-video/releases/latest) · [English](https://github.com/MuZiJin701/wx-mini-video/blob/main/README.en.md)
 
-Windows 与 macOS 包在同一个 [v0.1.8 Release](https://github.com/MuZiJin701/wx-mini-video/releases/tag/v0.1.8) 中并列提供：
+Windows 与 macOS 包在同一个 [v0.1.9 Release](https://github.com/MuZiJin701/wx-mini-video/releases/tag/v0.1.9) 中并列提供：
 
 | 平台 | 下载 | 状态 |
 | --- | --- | --- |
-| Windows amd64 | [Windows ZIP](https://github.com/MuZiJin701/wx-mini-video/releases/download/v0.1.8/wx-mini-video-windows-amd64.zip) | 稳定版 |
-| macOS 13+ · Apple Silicon / Intel | [Mac 通用 ZIP](https://github.com/MuZiJin701/wx-mini-video/releases/download/v0.1.8/wx-mini-video-macos-universal-unsigned.zip) | 未签名测试版 |
+| Windows amd64 | [Windows ZIP](https://github.com/MuZiJin701/wx-mini-video/releases/download/v0.1.9/wx-mini-video-windows-amd64.zip) | 稳定版 |
+| macOS 13+ · Apple Silicon / Intel | [Mac 通用 ZIP](https://github.com/MuZiJin701/wx-mini-video/releases/download/v0.1.9/wx-mini-video-macos-universal-unsigned.zip) | 未签名测试版 |
 
-> 版本说明：上面链接的 v0.1.8 附件仍是旧结构（不含 ffmpeg，且 Windows 自动下载地址已失效）；随包 ffmpeg、来源未确认媒体合并显示等改动从下一个版本开始提供。
-
-> 当前完整包仍处于开发验证阶段；ffmpeg 对应源码材料未齐，尚不能公开发布。发布条件见 [第三方声明](THIRD-PARTY-NOTICES.md#对应源码与公开发布状态)。
-
-正在迁移到从官方源码自行构建的 ffmpeg；构建与验证方式见[源码构建说明](build/ffmpeg/README.md)。三种架构验证完成前，现有完整包的来源与发布状态保持不变。
+> 本版随包 ffmpeg 由固定官方源码自建；对应源码归档与二进制在同一 Release 提供，文件名 `corresponding-source-windows-amd64.tar.gz`、`corresponding-source-darwin-amd64.tar.gz`、`corresponding-source-darwin-arm64.tar.gz`，说明见 [第三方声明](THIRD-PARTY-NOTICES.md#对应源码)。构建与验证方式见[源码构建说明](build/ffmpeg/README.md)。
 
 Mac 包完整解压后双击 `.app`，媒体保存在解压目录的 `downloads/`。签名、公证和真实 Mac 微信验收尚未完成；首次打开可能需要系统允许或移动应用的引导。详见 [macOS 测试版说明](https://github.com/MuZiJin701/wx-mini-video/blob/main/docs/macos-usage.md)。下面的开始步骤适用于 Windows。
 

@@ -123,9 +123,9 @@ Mac Release 更新时，下载通过验证的 Actions 原始通用 ZIP，不重�
 
 ## 分发
 
-ffmpeg 自建迁移：用户已确认采用固定 FFmpeg/OpenSSL 官方源码自行构建，见 [ADR 0010](docs/adr/0010-source-built-ffmpeg.md) 和[构建说明](build/ffmpeg/README.md)。新工作流 `.github/workflows/ffmpeg.yml` 仅手动执行，三种架构分别构建并归档二进制、源码和验证记录；它不发布 Release。三架构原生验收与稳定源码下载入口未就绪前，以下现行打包/受管来源及公开发布阻断继续保留。
+ffmpeg 自建迁移：已采用固定 FFmpeg/OpenSSL 官方源码自行构建，见 [ADR 0010](docs/adr/0010-source-built-ffmpeg.md) 和[构建说明](build/ffmpeg/README.md)。`.github/workflows/ffmpeg.yml` 为手动三架构构建并归档二进制、源码和验证记录；v0.1.9 随包 ffmpeg 已切换到自建版本，对应源码归档与二进制在同一 Release 提供。
 
-Windows 与 macOS 均只发布一个完整包，不提供不含 ffmpeg 的精简包。Windows 稳定包与 macOS 未签名测试包在同一 Release 并列提供，各自标注平台状态（最近已发布版本为 v0.1.8，当前开发版为 v0.1.9）。macOS 在仓库根目录执行 `go run ./build/macos`，产物为 `dist/wx-mini-video-macos-universal-unsigned.zip`；通用 `.app` 同时包含 amd64 与 arm64，包内包含应用、外部配置和说明、`.app` 外的 `ffmpeg/ffmpeg-amd64`、`ffmpeg/ffmpeg-arm64`、`ffmpeg/LICENSE.txt` 与 `THIRD-PARTY-NOTICES.md`，保留执行权限，不包含下载数据。签名与公证只覆盖 `.app`，包外 ffmpeg 未签名；用户须保留整个解压文件夹。
+Windows 与 macOS 均只发布一个完整包，不提供不含 ffmpeg 的精简包。Windows 稳定包与 macOS 未签名测试包在同一 Release 并列提供，各自标注平台状态（当前版本 v0.1.9）。macOS 在仓库根目录执行 `go run ./build/macos`，产物为 `dist/wx-mini-video-macos-universal-unsigned.zip`；通用 `.app` 同时包含 amd64 与 arm64，包内包含应用、外部配置和说明、`.app` 外的 `ffmpeg/ffmpeg-amd64`、`ffmpeg/ffmpeg-arm64`、`ffmpeg/LICENSE.txt` 与 `THIRD-PARTY-NOTICES.md`，保留执行权限，不包含下载数据。签名与公证只覆盖 `.app`，包外 ffmpeg 未签名；用户须保留整个解压文件夹。
 
 共用 Release 入口不改变 Mac 的测试状态；正式 Mac 支持仍须完成 `build/sign-macos.sh` 的 Developer ID 签名、公证及双架构真机验收。后补附件不移动既有发布标签，也不替换已发布的 Windows 附件；发布说明须按平台记录各自的实际构建提交与 SHA-256，不能将 Mac 构建来源写成原 Windows 标签提交。上传前确认两种薄 Mach-O 的 `vcs.revision` 均等于发布说明中的 Mac 构建提交、`vcs.modified=false`；上传后下载核对 SHA-256，确认最新版本标记正确、两平台附件均存在且既有 Windows 附件未变化。当前基础版本号见 `main.go`，版本历史见 CHANGELOG。
 
@@ -133,9 +133,9 @@ Windows 与 macOS 均只发布一个完整包，不提供不含 ffmpeg 的精简
 cmd /c build\build.bat windows
 ```
 
-`windows` 构建唯一 Windows 包（联网下载并校验 gyan ffmpeg，缓存在 `dist/ffmpeg-cache/`），产物为 `dist\wx-mini-video-windows-amd64\` 和同名 zip，包内精确包含 `README.md`、`wx-mini-video.exe`、`wx-mini-video.yaml`、`ffmpeg\ffmpeg.exe`、`ffmpeg\LICENSE.txt`、`THIRD-PARTY-NOTICES.md`。脚本执行 `build\verify-package.ps1`。README 的图片和扩展文档使用在线链接；离线时仍可按文字步骤操作。`dist/`、下载数据和临时产物不提交。
+`windows` 构建唯一 Windows 包（默认联网下载并校验 gyan ffmpeg，缓存于 `dist/ffmpeg-cache/`；设置 `WXMV_FFMPEG_DIR` 可改用自建 ffmpeg 目录），产物为 `dist\wx-mini-video-windows-amd64\` 和同名 zip，包内精确包含 `README.md`、`wx-mini-video.exe`、`wx-mini-video.yaml`、`ffmpeg\ffmpeg.exe`、`ffmpeg\LICENSE.txt`、`THIRD-PARTY-NOTICES.md`。脚本执行 `build\verify-package.ps1`。README 的图片和扩展文档使用在线链接；离线时仍可按文字步骤操作。`dist/`、下载数据和临时产物不提交。
 
-随包 ffmpeg 为 GPLv3 独立程序：发布前确认 `THIRD-PARTY-NOTICES.md` 与 `build/licenses/GPLv3.txt` 已提交并随包；网络分发按 GPLv3 §6(d) 落实完整对应源码获取入口，不能用实物分发的书面要约代替。当前材料未齐，完整包禁止公开发布；源码及依赖/构建材料人工核对后填写 `build/ffmpeg-corresponding-sources.json`，公开上传任何平台附件前必须运行 `python3 build/verify-release-sources.py`，实际下载验证源码归档摘要。开发构建可以继续，产物不自动具备公开分发条件。项目代码仍为 MIT + Commons Clause，两者分别标识，不能把 Commons Clause 施加到 ffmpeg。
+随包 ffmpeg 为 LGPLv3 独立程序（自建，静态 OpenSSL）：发布前确认 `THIRD-PARTY-NOTICES.md` 与包内 `ffmpeg/LICENSE.txt` 已提交并随包；网络分发按 GPLv3 §6(d) 在同一 Release 提供对应源码归档，不能用实物分发的书面要约代替。三架构源码索引已填写并人工核对，公开上传任何平台附件前必须运行 `python3 build/verify-release-sources.py`，实际下载验证源码归档摘要。项目代码仍为 MIT + Commons Clause，两者分别标识，不能把 Commons Clause 施加到 ffmpeg。
 
 发布前完成检查并提交，再构建，核对 exe 的 `vcs.revision` 与目标提交一致、`vcs.modified=false`。推送、创建 Release 和上传附件须有明确授权；上传后核对 zip 的 SHA-256 与最新版本标记。合并发布先备份旧说明和附件，新包验证后再删除被替代的 Release，保留 Git 标签；具体版本历史只记在 CHANGELOG。
 

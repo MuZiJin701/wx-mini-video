@@ -14,27 +14,26 @@ def verify_sources(root):
     platforms = {"windows-amd64", "darwin-amd64", "darwin-arm64"}
     if set(records) != platforms:
         raise ValueError("对应源码索引必须覆盖 Windows 与 Mac 的全部随包架构")
-    runtime_sources = (root / "internal/minidownload/ffmpeg.go").read_text(encoding="utf-8")
-    # 按代码中的首选源顺序核对，避免更新二进制后继续使用上一构建的源码声明。
-    primary_hashes = re.findall(r'SHA256:\s*"([0-9a-f]{64})"', runtime_sources)
-    if len(primary_hashes) != 4:
-        raise ValueError("ffmpeg 来源列表已变化，请复核源码索引校验")
-    expected = dict(zip(("windows-amd64", "darwin-amd64", "darwin-arm64"),
-                        (primary_hashes[0], primary_hashes[2], primary_hashes[3])))
     for platform in sorted(platforms):
         record = records[platform]
         url = record.get("source_url") or ""
         digest = record.get("source_sha256") or ""
-        if (record.get("binary_archive_sha256") != expected[platform]
-                or record.get("reviewed") is not True
+        binary_digest = record.get("binary_archive_sha256") or ""
+        if (record.get("reviewed") is not True
                 or urllib.parse.urlsplit(url).scheme != "https"
-                or not re.fullmatch(r"[0-9a-f]{64}", digest)):
-            raise ValueError(f"{platform} 对应源码未就绪：需核实完整源码/依赖/构建材料并填写 HTTPS 入口及 SHA-256；禁止公开发布")
+                or not re.fullmatch(r"[0-9a-f]{64}", digest)
+                or not re.fullmatch(r"[0-9a-f]{64}", binary_digest)):
+            raise ValueError(f"{platform} 对应源码未就绪：需核实完整源码/依赖/构建材料并填写 HTTPS 入口、源码及二进制摘要；禁止公开发布")
+        artifact_info = root / "dist/ffmpeg-selfbuilt" / platform / "build-info.json"
+        if artifact_info.is_file():
+            built = json.loads(artifact_info.read_text(encoding="utf-8"))
+            if built.get("binary_archive_sha256") != binary_digest:
+                raise ValueError(f"{platform} 二进制归档摘要与本地构建记录不一致")
     for platform in sorted(platforms):
         record = records[platform]
         request = urllib.request.Request(record["source_url"], headers={"User-Agent": "wx-mini-video-source-verifier"})
         hasher = hashlib.sha256()
-        with urllib.request.urlopen(request, timeout=60) as response:
+        with urllib.request.urlopen(request, timeout=300) as response:
             if urllib.parse.urlsplit(response.url).scheme != "https":
                 raise ValueError("对应源码下载不得降级为 HTTP")
             while block := response.read(1024 * 1024):

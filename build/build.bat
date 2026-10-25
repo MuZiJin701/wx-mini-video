@@ -20,9 +20,27 @@ call :prepare
 if errorlevel 1 exit /b 1
 call :compile
 if errorlevel 1 exit /b 1
+if defined WXMV_FFMPEG_DIR goto bundled_local
 echo Preparing bundled ffmpeg 9.0.2...
 powershell -NoProfile -ExecutionPolicy Bypass -File "%ROOT_DIR%\build\fetch-ffmpeg.ps1" -CacheDir "%FFMPEG_CACHE%" -OutputDir "%DIST_DIR%\ffmpeg"
 if errorlevel 1 exit /b 1
+goto ffmpeg_ready
+:bundled_local
+echo Using prebuilt ffmpeg from %WXMV_FFMPEG_DIR%...
+if not exist "%WXMV_FFMPEG_DIR%\ffmpeg.exe" (
+    echo Missing %WXMV_FFMPEG_DIR%\ffmpeg.exe
+    exit /b 1
+)
+if not exist "%WXMV_FFMPEG_DIR%\LICENSE.txt" (
+    echo Missing %WXMV_FFMPEG_DIR%\LICENSE.txt
+    exit /b 1
+)
+mkdir "%DIST_DIR%\ffmpeg" 2>nul
+copy /Y "%WXMV_FFMPEG_DIR%\ffmpeg.exe" "%DIST_DIR%\ffmpeg\ffmpeg.exe" >nul
+if errorlevel 1 exit /b 1
+copy /Y "%WXMV_FFMPEG_DIR%\LICENSE.txt" "%DIST_DIR%\ffmpeg\LICENSE.txt" >nul
+if errorlevel 1 exit /b 1
+:ffmpeg_ready
 copy /Y "%ROOT_DIR%\THIRD-PARTY-NOTICES.md" "%DIST_DIR%\THIRD-PARTY-NOTICES.md" >nul
 if errorlevel 1 exit /b 1
 call :package

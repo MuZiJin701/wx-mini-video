@@ -19,8 +19,6 @@ class SourceVerificationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = pathlib.Path(directory)
             (root / "build").mkdir()
-            (root / "internal/minidownload").mkdir(parents=True)
-            (root / "internal/minidownload/ffmpeg.go").write_bytes((ROOT / "internal/minidownload/ffmpeg.go").read_bytes())
             records = json.loads((ROOT / "build/ffmpeg-corresponding-sources.json").read_text(encoding="utf-8"))
             for record in records.values():
                 record["reviewed"] = False
@@ -34,12 +32,11 @@ class SourceVerificationTests(unittest.TestCase):
         records = json.loads((ROOT / "build/ffmpeg-corresponding-sources.json").read_text(encoding="utf-8"))
         for record in records.values():
             record.update(reviewed=True, source_url="https://example.com/source.tar.xz",
-                          source_sha256=hashlib.sha256(b"source archive").hexdigest())
+                          source_sha256=hashlib.sha256(b"source archive").hexdigest(),
+                          binary_archive_sha256="a" * 64)
         with tempfile.TemporaryDirectory() as directory:
             root = pathlib.Path(directory)
             (root / "build").mkdir()
-            (root / "internal/minidownload").mkdir(parents=True)
-            (root / "internal/minidownload/ffmpeg.go").write_bytes((ROOT / "internal/minidownload/ffmpeg.go").read_bytes())
             (root / "build/ffmpeg-corresponding-sources.json").write_text(json.dumps(records), encoding="utf-8")
             def response(*args, **kwargs):
                 body = io.BytesIO(b"source archive")

@@ -4,18 +4,14 @@ Save images, direct videos, direct audio, and m3u8 media loaded by desktop WeCha
 
 [Download latest](https://github.com/MuZiJin701/wx-mini-video/releases/latest) · [简体中文](https://github.com/MuZiJin701/wx-mini-video/blob/main/README.md)
 
-Windows and macOS packages are available together in the [v0.1.8 Release](https://github.com/MuZiJin701/wx-mini-video/releases/tag/v0.1.8):
+Windows and macOS packages are available together in the [v0.1.9 Release](https://github.com/MuZiJin701/wx-mini-video/releases/tag/v0.1.9):
 
 | Platform | Download | Status |
 | --- | --- | --- |
-| Windows amd64 | [Windows ZIP](https://github.com/MuZiJin701/wx-mini-video/releases/download/v0.1.8/wx-mini-video-windows-amd64.zip) | Stable |
-| macOS 13+ · Apple Silicon / Intel | [Universal Mac ZIP](https://github.com/MuZiJin701/wx-mini-video/releases/download/v0.1.8/wx-mini-video-macos-universal-unsigned.zip) | Unsigned test build |
+| Windows amd64 | [Windows ZIP](https://github.com/MuZiJin701/wx-mini-video/releases/download/v0.1.9/wx-mini-video-windows-amd64.zip) | Stable |
+| macOS 13+ · Apple Silicon / Intel | [Universal Mac ZIP](https://github.com/MuZiJin701/wx-mini-video/releases/download/v0.1.9/wx-mini-video-macos-universal-unsigned.zip) | Unsigned test build |
 
-> Note: the v0.1.8 assets linked above still use the old layout (no bundled ffmpeg, and the Windows auto-download URL is no longer valid). Bundled ffmpeg, merged unconfirmed-media display, and related changes ship in the next version.
-
-> Complete packages are currently development builds. Corresponding FFmpeg source materials are incomplete, so public distribution is blocked. See the [third-party notice (Chinese)](THIRD-PARTY-NOTICES.md#对应源码与公开发布状态).
-
-Migration to FFmpeg built from official source is in progress; see the [build and verification guide (Chinese)](build/ffmpeg/README.md). Existing package sources and release restrictions remain in place until all three architectures pass validation.
+> Bundled ffmpeg in this release is built from pinned official source. Corresponding source archives are provided in the same Release as `corresponding-source-windows-amd64.tar.gz`, `corresponding-source-darwin-amd64.tar.gz`, and `corresponding-source-darwin-arm64.tar.gz`; see the [third-party notice (Chinese)](THIRD-PARTY-NOTICES.md#对应源码). Build and verification steps are described in the [source-build guide (Chinese)](build/ffmpeg/README.md).
 
 Extract the whole Mac archive and open the `.app`; media is saved to `downloads/` beside it. Developer ID signing, notarization, and real Mac WeChat acceptance remain pending. First launch may require per-app system approval or the documented app move step. See the [macOS instructions (Chinese)](https://github.com/MuZiJin701/wx-mini-video/blob/main/docs/macos-usage.md). The steps below apply to Windows.
 

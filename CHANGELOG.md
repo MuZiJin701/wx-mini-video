@@ -2,7 +2,7 @@
 
 使用说明见 [README.md](README.md)，英文说明见 [README.en.md](README.en.md)，构建与发布流程见 [wx-mini-video-knowledge.md](wx-mini-video-knowledge.md)。
 
-## 未发布（计划 v0.1.9）
+## v0.1.9 · 2026-10-25
 
 - 新增从固定 FFmpeg 9.0.2 / OpenSSL 3.5.9 源码构建三架构 ffmpeg 的独立流程，归档源码、配置及日志，并增加本地/HTTP/TLS 1.2/TLS 1.3 下的十二项合成媒体实际合并验证；Windows amd64 已本地构建通过，三架构验收及稳定下载入口就绪前，不切换现用打包/受管来源，也不解除公开发布阻断。
 - 修复 Windows 证书提权子进程失败后仍等待两分钟的问题：跟踪进程结束与退出码，具体失败原因以系统弹窗显示；保留最终证书状态校验，成功退出但未安装/清理到位也会及时报错。

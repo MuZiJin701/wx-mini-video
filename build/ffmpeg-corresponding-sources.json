@@ -1,20 +1,20 @@
 {
   "windows-amd64": {
-    "binary_archive_sha256": "60f467265b1e312373dbcd92200c2618a74850f98d3d078e94296bb3fa2047ba",
-    "source_url": null,
-    "source_sha256": null,
-    "reviewed": false
+    "binary_archive_sha256": "adedb99f4055a0bcca5a8aa1f1a3a34d6fa38afc0f3c985cabe2a5c625d0cb34",
+    "source_url": "https://github.com/MuZiJin701/wx-mini-video/releases/download/v0.1.9/corresponding-source-windows-amd64.tar.gz",
+    "source_sha256": "c79b14b0464280bea45a6ed5a33b990f870942aaa65a44f269cc332dafbf6b9f",
+    "reviewed": true
   },
   "darwin-amd64": {
-    "binary_archive_sha256": "7c6b4125b191cbf773832dc51f424cf2b6bb7da43007d1e066f95909e47cacd4",
-    "source_url": null,
-    "source_sha256": null,
-    "reviewed": false
+    "binary_archive_sha256": "257470953bfb356c82d63a00893e82518974e50d6d87bb50d33a566b6aaef840",
+    "source_url": "https://github.com/MuZiJin701/wx-mini-video/releases/download/v0.1.9/corresponding-source-darwin-amd64.tar.gz",
+    "source_sha256": "c42c6b99446554bedd4e1d7853004efec91c81787845c9b823a7a0da2f97eb90",
+    "reviewed": true
   },
   "darwin-arm64": {
-    "binary_archive_sha256": "c8ed4c4e6978a03c485edbfe4e0a5dc2380f8a30bba5150531b31b094492d924",
-    "source_url": null,
-    "source_sha256": null,
-    "reviewed": false
+    "binary_archive_sha256": "b16a15368142d61680acf900226ada6da2e2f4dd19cb80fadd20f938a961f087",
+    "source_url": "https://github.com/MuZiJin701/wx-mini-video/releases/download/v0.1.9/corresponding-source-darwin-arm64.tar.gz",
+    "source_sha256": "554551cb0162cdbc17515f9605d08f33cec159f0f8f07e3b3f0b3331dfa5075e",
+    "reviewed": true
   }
 }

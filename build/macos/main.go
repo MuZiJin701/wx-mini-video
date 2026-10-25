@@ -26,6 +26,8 @@ const (
 	ffmpegDownloadAgent = "wx-mini-video-macos-builder"
 	// ffmpegDownloadTimeout 限制整份 ffmpeg ZIP 的下载时间，避免 CI 卡住。
 	ffmpegDownloadTimeout = 30 * time.Minute
+	// bundledFFmpegEnv 指向自建 ffmpeg 目录（ffmpeg-amd64、ffmpeg-arm64、LICENSE.txt）。
+	bundledFFmpegEnv = "WXMV_FFMPEG_DIR"
 )
 
 func main() {
@@ -121,26 +123,39 @@ func prepareBundledFFmpeg(root, dist string) error {
 	if err := os.MkdirAll(outputDir, 0o755); err != nil {
 		return err
 	}
-	cacheDir := filepath.Join(root, "dist", ffmpegCacheDirName)
-	for _, arch := range []string{"amd64", "arm64"} {
-		sources := minidownload.FFmpegSourcesForPlatform("darwin", arch)
-		if len(sources) == 0 {
-			return fmt.Errorf("缺少 darwin/%s 的 ffmpeg 下载源", arch)
+	licenseSource := filepath.Join(root, "build", "licenses", "GPLv3.txt")
+	if sourceDir := strings.TrimSpace(os.Getenv(bundledFFmpegEnv)); sourceDir != "" {
+		for _, arch := range []string{"amd64", "arm64"} {
+			source := filepath.Join(sourceDir, "ffmpeg-"+arch)
+			destination := filepath.Join(outputDir, "ffmpeg-"+arch)
+			if err := copyFile(source, destination, 0o755); err != nil {
+				return fmt.Errorf("复制预构建 darwin/%s ffmpeg: %w", arch, err)
+			}
+			fmt.Printf("已准备预构建随包 ffmpeg: %s\n", destination)
 		}
-		source := sources[0]
-		archivePath := filepath.Join(cacheDir, "martin-riedl-9.0.2-"+arch+".zip")
-		if err := ensureFFmpegArchive(source, archivePath); err != nil {
-			return fmt.Errorf("准备 darwin/%s ffmpeg: %w", arch, err)
+		licenseSource = filepath.Join(sourceDir, "LICENSE.txt")
+	} else {
+		cacheDir := filepath.Join(root, "dist", ffmpegCacheDirName)
+		for _, arch := range []string{"amd64", "arm64"} {
+			sources := minidownload.FFmpegSourcesForPlatform("darwin", arch)
+			if len(sources) == 0 {
+				return fmt.Errorf("缺少 darwin/%s 的 ffmpeg 下载源", arch)
+			}
+			source := sources[0]
+			archivePath := filepath.Join(cacheDir, "martin-riedl-9.0.2-"+arch+".zip")
+			if err := ensureFFmpegArchive(source, archivePath); err != nil {
+				return fmt.Errorf("准备 darwin/%s ffmpeg: %w", arch, err)
+			}
+			binaryPath := filepath.Join(outputDir, "ffmpeg-"+arch)
+			if err := extractFFmpegBinary(archivePath, binaryPath, arch); err != nil {
+				return fmt.Errorf("解出 darwin/%s ffmpeg: %w", arch, err)
+			}
+			fmt.Printf("已准备随包 ffmpeg: %s\n", binaryPath)
 		}
-		binaryPath := filepath.Join(outputDir, "ffmpeg-"+arch)
-		if err := extractFFmpegBinary(archivePath, binaryPath, arch); err != nil {
-			return fmt.Errorf("解出 darwin/%s ffmpeg: %w", arch, err)
-		}
-		fmt.Printf("已准备随包 ffmpeg: %s\n", binaryPath)
 	}
-	license, err := os.ReadFile(filepath.Join(root, "build", "licenses", "GPLv3.txt"))
+	license, err := os.ReadFile(licenseSource)
 	if err != nil {
-		return fmt.Errorf("读取 GPLv3 全文失败: %w", err)
+		return fmt.Errorf("读取随包 ffmpeg 许可失败: %w", err)
 	}
 	if err := os.WriteFile(filepath.Join(outputDir, "LICENSE.txt"), license, 0o644); err != nil {
 		return err
@@ -150,6 +165,24 @@ func prepareBundledFFmpeg(root, dist string) error {
 		return fmt.Errorf("读取第三方声明失败: %w", err)
 	}
 	return os.WriteFile(filepath.Join(dist, "THIRD-PARTY-NOTICES.md"), notices, 0o644)
+}
+
+func copyFile(source, destination string, mode os.FileMode) error {
+	input, err := os.Open(source)
+	if err != nil {
+		return err
+	}
+	defer input.Close()
+	output, err := os.OpenFile(destination, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, mode)
+	if err != nil {
+		return err
+	}
+	_, copyErr := io.Copy(output, input)
+	closeErr := output.Close()
+	if copyErr != nil || closeErr != nil {
+		return errors.Join(copyErr, closeErr)
+	}
+	return os.Chmod(destination, mode)
 }
 
 // ensureFFmpegArchive 复用已校验的缓存压缩包，否则下载并按固定 SHA-256 校验。

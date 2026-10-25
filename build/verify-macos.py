@@ -62,6 +62,11 @@ def main():
     prefix = "wx-mini-video-macos/"
     executable_name = "wx-mini-video.app/Contents/MacOS/wx-mini-video"
     ffmpeg_arches = (("amd64", 0x01000007), ("arm64", 0x0100000C))
+    selfbuilt = os.environ.get("WXMV_FFMPEG_DIR")
+    expected_license = (
+        (pathlib.Path(selfbuilt) / "LICENSE.txt").read_bytes() if selfbuilt
+        else (root / "build/licenses/GPLv3.txt").read_bytes()
+    )
     expected = {prefix + name for name in (
         "README.md", "wx-mini-video.yaml", "THIRD-PARTY-NOTICES.md",
         "wx-mini-video.app/Contents/Info.plist", executable_name,
@@ -72,7 +77,7 @@ def main():
         assert set(package.namelist()) == expected, package.namelist()
         assert package.read(prefix + "README.md") == (root / "docs/macos-usage.md").read_bytes()
         assert package.read(prefix + "wx-mini-video.yaml") == (root / "internal/config/config.template.yaml").read_bytes()
-        assert package.read(prefix + "ffmpeg/LICENSE.txt") == (root / "build/licenses/GPLv3.txt").read_bytes()
+        assert package.read(prefix + "ffmpeg/LICENSE.txt") == expected_license
         assert package.read(prefix + "THIRD-PARTY-NOTICES.md") == (root / "THIRD-PARTY-NOTICES.md").read_bytes()
         assert (package.getinfo(prefix + executable_name).external_attr >> 16) & 0o777 == 0o755
         plist = plistlib.loads(package.read(prefix + "wx-mini-video.app/Contents/Info.plist"))
@@ -93,9 +98,12 @@ def main():
             ffmpeg_binary = package.read(name)
             assert (package.getinfo(name).external_attr >> 16) & 0o777 == 0o755, name
             assert_thin_mach_o(ffmpeg_binary, cpu, name)
-            cached = root / f"dist/ffmpeg-cache/martin-riedl-9.0.2-{arch}.zip"
-            with zipfile.ZipFile(cached) as source:
-                assert ffmpeg_binary == source.read("ffmpeg"), f"{name} 与固定构建不一致（不得 lipo）"
+            if selfbuilt:
+                assert ffmpeg_binary == (pathlib.Path(selfbuilt) / ("ffmpeg-" + arch)).read_bytes(), f"{name} 与预构建文件不一致"
+            else:
+                cached = root / f"dist/ffmpeg-cache/martin-riedl-9.0.2-{arch}.zip"
+                with zipfile.ZipFile(cached) as source:
+                    assert ffmpeg_binary == source.read("ffmpeg"), f"{name} 与固定构建不一致（不得 lipo）"
             assert len(ffmpeg_binary) > 10 * 1024 * 1024, name
         assert package.read(prefix + "ffmpeg/ffmpeg-amd64") != package.read(prefix + "ffmpeg/ffmpeg-arm64")
     if "--package-only" in sys.argv[1:]:
@@ -112,7 +120,7 @@ def main():
             ffmpeg_path = portable / f"ffmpeg/ffmpeg-{arch}"
             assert ffmpeg_path.stat().st_mode & 0o777 == 0o755, ffmpeg_path
             subprocess.run(["/usr/bin/lipo", str(ffmpeg_path), "-verify_arch", lipo_arch], check=True)
-        assert (portable / "ffmpeg/LICENSE.txt").read_bytes() == (root / "build/licenses/GPLv3.txt").read_bytes()
+        assert (portable / "ffmpeg/LICENSE.txt").read_bytes() == expected_license
         check_tui(executable, directory)
         moved = portable.with_name("移动后的便携目录")
         portable.rename(moved)

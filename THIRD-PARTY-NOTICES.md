@@ -2,65 +2,58 @@
 
 本文件说明 `wx-mini-video` 发布包内第三方组件的来源、许可与获取对应源码的方式。项目自身代码的许可（MIT + Commons Clause，见 `LICENSE`）与本文件所列第三方许可分别标识；把第三方程序放进同一个压缩包不改变任何一方的许可，也不表示第三方授权适用于项目代码。
 
-## 随包 ffmpeg（Windows 完整包）
+## 随包 ffmpeg（Windows 与 macOS 完整包）
 
-- 组件：FFmpeg 9.0.2（essentials 构建，仅含 `ffmpeg.exe`）
-- 来源：gyan.dev 官方发布 `ffmpeg-9.0.2-essentials_build.zip`
-  - 下载地址：<https://www.gyan.dev/ffmpeg/builds/packages/ffmpeg-9.0.2-essentials_build.zip>
-  - 压缩包 SHA-256：`60f467265b1e312373dbcd92200c2618a74850f98d3d078e94296bb3fa2047ba`
-  - 包内文件：`ffmpeg\ffmpeg.exe`（105423872 字节，SHA-256 由构建脚本从上述压缩包解出后固定）
-- 对应上游源码版本：FFmpeg commit [`946fcce07b`](https://github.com/FFmpeg/FFmpeg/commit/946fcce07b)
-- 构建信息：gcc 16.2.0（MSYS2 构建），64 位静态链接；configure 含 `--enable-gpl --enable-version3 --enable-static`
-- 许可：GPLv3（gyan 构建自身声明 `License: GPL v3`）。包内 `ffmpeg\LICENSE.txt` 为 GPLv3 全文，内容与 GNU 发布的 `gpl-3.0.txt` 一致（SHA-256 `8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903`）。
+本发布包内的 ffmpeg 由本项目从固定官方源码构建，不再使用第三方预编译二进制。
 
-## 随包 ffmpeg（macOS 通用完整包）
+- 组件：FFmpeg 9.0.2（自建，LGPLv3，静态链接 OpenSSL 3.5.9）
+- FFmpeg 官方源码：<https://ffmpeg.org/releases/ffmpeg-9.0.2.tar.xz>
+  - SHA-256：`8c3850283eb25fa026482078a04051e0be17347b09ef81a0849bec15a96e002e`
+- OpenSSL 官方源码：<https://github.com/openssl/openssl/releases/download/openssl-3.5.9/openssl-3.5.9.tar.gz>
+  - SHA-256：`603f5602e2eef00d77fbd429d34dcd5822bb301757a1bc9cdb24c670f1eb859a`
+- Windows 构建工具链：固定 w64devkit 2.10.1，以及固定 MSYS2、Perl 与 Make；实际下载地址、SHA-256 和完整构建参数记录在对应源码归档的 `recipe/sources.json` 与 `records/` 中。
+- 构建配置：`--disable-autodetect --disable-gpl --disable-nonfree --enable-version3 --enable-openssl --disable-x86asm`，不链接 x264/x265 等外部编码库；使用 `-c copy` 完成 m3u8 合并。
+- 随包文件：
+  - Windows：`ffmpeg/ffmpeg.exe`，SHA-256 `28ac632a227f7797197c44d0a3a2d43b8b97972594d5b77ec26d541cc1a17bdd`
+  - macOS Intel：`ffmpeg/ffmpeg-amd64`，SHA-256 `a5be5105d84494c7e0a369a03dd5734ad940318d809f9b0a456b990daec3180a`
+  - macOS Apple Silicon：`ffmpeg/ffmpeg-arm64`，SHA-256 `73190b699607d053d009492efeba7926a2280c7802549b08618599516488224e`
+- 许可：FFmpeg 为 LGPLv3（同时保留 GPLv3/LGPLv3 补充条款文本），OpenSSL 为 Apache-2.0，Windows 构建还包含 MinGW 运行时声明，另附 IJG 致谢。完整文本见包内 `ffmpeg/LICENSE.txt`。FFmpeg 官方许可说明见 <https://ffmpeg.org/legal.html>。
 
-- 组件：FFmpeg 9.0.2，Martin Riedl 提供的 macOS 原始构建，amd64 与 arm64 各一份，未用 `lipo` 合并，以便逐字节核对发布者原始构建。
-- Intel（`ffmpeg/ffmpeg-amd64`）：
-  - 下载地址：<https://ffmpeg.martin-riedl.de/download/macos/amd64/1789931006_9.0.2/ffmpeg.zip>
-  - ZIP SHA-256：`7c6b4125b191cbf773832dc51f424cf2b6bb7da43007d1e066f95909e47cacd4`
-- Apple Silicon（`ffmpeg/ffmpeg-arm64`）：
-  - 下载地址：<https://ffmpeg.martin-riedl.de/download/macos/arm64/1789931890_9.0.2/ffmpeg.zip>
-  - ZIP SHA-256：`c8ed4c4e6978a03c485edbfe4e0a5dc2380f8a30bba5150531b31b094492d924`
-- 构建信息：两份构建均声明 `--enable-gpl --enable-version3`（发布者 `versions.txt` 记录）。
-- 许可：GPLv3。包内 `ffmpeg/LICENSE.txt` 为 GPLv3 全文。
-- 两个二进制放在 `.app` 之外，签名/公证只覆盖 `wx-mini-video.app`；用户升级时须保留整个文件夹。
+## 对应源码（Corresponding Source）
+
+本项目是上述自建 ffmpeg 二进制的再分发者，依据 GPLv3 §6(d) 在同一 Release 中提供与各二进制精确对应的完整源码归档：
+
+| 平台 | 源码归档 | SHA-256 |
+| --- | --- | --- |
+| Windows amd64 | `corresponding-source-windows-amd64.tar.gz` | `c79b14b0464280bea45a6ed5a33b990f870942aaa65a44f269cc332dafbf6b9f` |
+| macOS Intel | `corresponding-source-darwin-amd64.tar.gz` | `c42c6b99446554bedd4e1d7853004efec91c81787845c9b823a7a0da2f97eb90` |
+| macOS Apple Silicon | `corresponding-source-darwin-arm64.tar.gz` | `554551cb0162cdbc17515f9605d08f33cec159f0f8f07e3b3f0b3331dfa5075e` |
+
+每个源码归档包含：固定 FFmpeg/OpenSSL 原始源码归档（Windows 还包含 w64devkit 工具链源码）、实际 configure 参数、构建与验证脚本、合成样片、构建日志、验证记录、`build-info.json` 及摘要。源码入口与二进制下载位于同一 Release，获取方式相同且不额外收费。
+
+历史版本使用的 Gyan/Martin 第三方构建已不再随包；其源码声明与旧索引仅保留在历史记录中。
 
 ## 即时下载的受管 ffmpeg（随包缺失或损坏时）
 
-随包 ffmpeg 缺失、损坏或被隔离时，程序按固定候选源下载并校验 ffmpeg：
+随包 ffmpeg 缺失、损坏或被隔离时，程序会从固定候选源下载受管 ffmpeg，作为运行兜底。这些二进制不在本发布包内，由客户端直接从上游获取：
 
-- Windows：首选 gyan.dev 9.0.2 essentials（同上），备用 [BtbN/FFmpeg-Builds 月末构建 `autobuild-2026-09-30-13-08`](https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-09-30-13-08/ffmpeg-n8.1.3-9-g29e619e767-win64-lgpl-8.1.zip)（8.1，LGPL，ZIP SHA-256 `4a7642b2264c03e8a0ce8a3825b933ee5580656f45695a086fe7e294045ffc0a`）。
-- macOS：沿用上表 Martin Riedl 9.0.2 的 amd64 / arm64 ZIP。
+- Windows：首选 gyan.dev 9.0.2 essentials，备用 BtbN 2026-09-30 月末 8.1 LGPL。
+- macOS：Martin Riedl 9.0.2 的 amd64 / arm64 原始构建。
 
-这些下载的二进制不在发布包内，由客户端在用户机器上按 URL 与 SHA-256 固定校验后保存；对应的 GPLv3/LGPL 许可与本节、`LICENSE` 及包内许可文本一致。LGPL 来源的 BtbN 构建按 LGPL 条款提供，GPLv3 全文随包提供不影响其独立许可标识。
+对应下载地址、SHA-256 与来源说明仍记录在代码和 `build/fetch-ffmpeg.ps1` 等处；其许可证由上游提供，本项目不再分发这些二进制，也不把本项目的 GPLv3/LGPLv3 文本误称为其许可证。
 
-## 对应源码与公开发布状态
+## GPLv3 对应源码说明
 
-已决定迁移到从固定官方源码构建的 FFmpeg + OpenSSL；新构建流程、材料归档和实际媒体验证见 [源码构建说明](build/ffmpeg/README.md)。三架构均完成原生验证并核实源码下载入口后再替换以下现用构建，迁移决定本身不解除发布阻断。
-
-**当前随包构建的完整对应源码材料尚未落实，完整包不得公开发布。** 本文件中的 FFmpeg commit、构建参数、发布者主页与许可证全文只是已核实的来源信息，不是已提供完整 Corresponding Source 的声明。
-
-GitHub Release 属于网络分发，应落实 [GPLv3 §6(d)](https://www.gnu.org/licenses/gpl-3.0.html#section6) 要求的等效对应源码获取途径，源码可以另行下载，但须在二进制下载入口旁清楚标明并持续保证可获取。§6(b) 的实物分发书面要约不作为本项目网络分发的替代方案；“提交 Issue 后再向上游索取”不表示已经满足该要求。
-
-公开发布前须取得并核实每份二进制精确对应的 FFmpeg 源码、修改/补丁、所需外部库源码及构建/安装脚本，不能只提供 FFmpeg 主仓库快照或构建脚本仓库。人工核对完整性与对应关系后，在 `build/ffmpeg-corresponding-sources.json` 填写每个构建的源码归档 HTTPS 地址、SHA-256 和核对状态；运行 `python3 build/verify-release-sources.py`，校验二进制来源摘要、源码入口与实际下载摘要。该工具不能自动证明源码完整或代替人工核对，未经核实不得把 `reviewed` 改为 `true`。
-
-完成后，应将源码索引与对应归档和发布说明一起提供下载。源码材料未就绪时，开发构建和自动化测试可以继续，但不能将生成的完整包当作可公开发布的产物。
-
-BtbN 的 LGPL 备用构建由客户端直接从上游下载；这是与随包二进制分发不同的路径，其许可证由上游提供，不把本项目的 GPLv3 全文误称为该 LGPL 构建的许可证，也不承诺持有尚未归档的对应源码。
-
-本项目不声称这些 ffmpeg 二进制由本项目编译，也不把第三方构建脚本仓库的许可当作产物许可。
+FFmpeg 以 LGPLv3/GPLv3 授权发布。本项目按聚合方式分发项目程序（MIT + Commons Clause）与自建 ffmpeg（LGPLv3）；ffmpeg 由项目以独立进程、命令行参数调用。接收者可以通过上述同一 Release 的源码归档获取精确对应的 FFmpeg、OpenSSL 及构建材料，也可按 GPLv3 对 ffmpeg 二进制行使相应权利。该源码入口长期随该 Release 保留；不使用实物分发的书面要约替代网络分发要求。
 
 ## 项目自身许可（独立标识）
 
-项目 `wx_channel` 自身代码采用 **MIT License + Commons Clause**，完整文本见仓库根目录 `LICENSE`。Commons Clause 仅限制“出售”本项目软件，不改变 MIT 授予的其他权利，也不影响随包 ffmpeg 的 GPLv3 授权。
+项目 `wx_channel` 自身代码采用 **MIT License + Commons Clause**，完整文本见仓库根目录 `LICENSE`。Commons Clause 仅限制“出售”本项目软件，不改变 MIT 授予的其他权利，也不影响随包 ffmpeg 的 LGPLv3/GPLv3 授权。
 
 ## 聚合分发说明
 
-发布包由两部分组成：(1) 项目程序 `wx-mini-video`（MIT + Commons Clause）；(2) 第三方独立程序 ffmpeg（GPLv3）。ffmpeg 由项目在运行时以独立进程、命令行参数调用，两部分不链接为单一作品，本包按**聚合（aggregation）**分发。因此：
+发布包由两部分组成：(1) 项目程序 `wx-mini-video`（MIT + Commons Clause）；(2) 自建 ffmpeg（LGPLv3）。两部分不链接为单一作品，本包按**聚合（aggregation）**分发。因此：
 
-- 项目代码继续按 MIT + Commons Clause 授权，不因包含 ffmpeg 而整体变为 GPLv3。
-- ffmpeg 二进制继续按 GPLv3 授权，接收者对其享有 GPLv3 权利，包括获取对应源码。
+- 项目代码继续按 MIT + Commons Clause 授权，不因包含 ffmpeg 而整体变为 LGPLv3/GPLv3。
+- ffmpeg 二进制继续按 LGPLv3/GPLv3 授权，接收者对其享有相应权利，包括获取对应源码。
 - 整体压缩包不改变任何组件的许可；再分发时必须同时保留本文件与 `ffmpeg/LICENSE.txt`，不得删除或替换其中的许可与来源信息。
-
-FFmpeg 官方许可说明见 <https://ffmpeg.org/legal.html>。

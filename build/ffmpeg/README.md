@@ -2,7 +2,7 @@
 
 本目录的构建、验证脚本和合成样本独立采用 [MIT](LICENSE) 授权，不附加项目主程序的 Commons Clause。FFmpeg 和 OpenSSL 源码保持各自许可，不适用本目录 MIT 许可。
 
-当前是替换第三方预编译包之前的构建与验收入口。默认随包版本和受管下载地址尚未切换；三架构原生验证、源码归档核对及稳定下载地址就绪后再更新它们。Windows amd64 已在本地完成构建并通过十二项实际合并验证，Mac 两架构与 Actions 原生验收待执行。决策见 [ADR 0010](../../docs/adr/0010-source-built-ffmpeg.md)。
+当前是替换第三方预编译包之后的构建与验收入口。随包版本和受管下载兜底已切换/保留；Windows amd64 本地、macOS amd64/arm64 Actions 均完成构建并通过十二项实际合并验证，对应源码归档随 v0.1.9 Release 提供。决策见 [ADR 0010](../../docs/adr/0010-source-built-ffmpeg.md)。
 
 ## 固定输入
 
