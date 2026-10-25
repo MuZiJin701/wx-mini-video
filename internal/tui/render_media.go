@@ -29,7 +29,7 @@ func (m model) tableColumns(metrics ui.Metrics) []tableColumn {
 		columns = append(columns, tableColumn{"来源", 4})
 	}
 	columns = append(columns, tableColumn{"标题", 0})
-	if width >= 84 {
+	if width >= 72 {
 		columns = append(columns, tableColumn{"状态", 8})
 	}
 	return columns

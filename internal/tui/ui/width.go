@@ -53,8 +53,3 @@ func Fit(value string, width int) string {
 	value = Truncate(value, width)
 	return PadRight(value, width)
 }
-
-// FitStyled 对已带样式的文本按宽度截断/补齐；仅当文本本身无样式时使用。
-func FitStyled(value string, width int) string {
-	return Fit(value, width)
-}
