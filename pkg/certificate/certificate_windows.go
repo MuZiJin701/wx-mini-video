@@ -11,6 +11,7 @@ import (
 	"regexp"
 	"strings"
 	"time"
+	"unsafe"
 
 	"golang.org/x/sys/windows"
 )
@@ -38,7 +39,8 @@ func RunHelper(args []string) (bool, error) {
 			return true, err
 		}
 		if arg == removeLegacyArg {
-			return true, removeLegacyRootDirect(LegacyRootThumbprint)
+			err := removeLegacyRootDirect(LegacyRootThumbprint)
+			return true, verifyCertificateOperation(LegacyRootThumbprint, false, err)
 		}
 	}
 	return false, nil
@@ -183,10 +185,8 @@ func installCertificate(cert_data []byte) error {
 	if err != nil {
 		return fmt.Errorf("读取当前目录失败: %w", err)
 	}
-	if err := launchElevated(executable, []string{installCertArgPrefix + encoded}, directory); err != nil {
-		return fmt.Errorf("请求管理员权限安装根证书失败: %w", err)
-	}
-	if err := waitForCertificate(thumbprint, true); err != nil {
+	helperErr := launchElevated(executable, []string{installCertArgPrefix + encoded}, directory)
+	if err := verifyCertificateOperation(thumbprint, true, helperErr); err != nil {
 		return fmt.Errorf("安装根证书失败: %w", err)
 	}
 	return nil
@@ -210,7 +210,7 @@ func installCertificateDirect(cert_data []byte) error {
 	cmd := exec.Command("certutil", "-addstore", "Root", cert_file.Name())
 	output, err2 := cmd.CombinedOutput()
 	if err2 != nil {
-		return fmt.Errorf("安装证书时发生错误，%v\n", string(output))
+		return fmt.Errorf("安装证书失败: %w, %s", err2, strings.TrimSpace(string(output)))
 	}
 	return nil
 }
@@ -238,10 +238,8 @@ func uninstallCertificate(thumbprint string) error {
 	if err != nil {
 		return fmt.Errorf("读取当前目录失败: %w", err)
 	}
-	if err := launchElevated(executable, []string{removeLegacyArg}, directory); err != nil {
-		return fmt.Errorf("请求管理员权限清理旧共享根证书失败: %w", err)
-	}
-	if err := waitForCertificate(thumbprint, false); err != nil {
+	helperErr := launchElevated(executable, []string{removeLegacyArg}, directory)
+	if err := verifyCertificateOperation(thumbprint, false, helperErr); err != nil {
 		return fmt.Errorf("清理旧共享根证书失败: %w", err)
 	}
 	return nil
@@ -259,27 +257,33 @@ func removeLegacyRootDirect(thumbprint string) error {
 	return cleanupErr
 }
 
-func waitForCertificate(thumbprint string, present bool) error {
-	deadline := time.Now().Add(2 * time.Minute)
-	var lastErr error
-	for {
-		matched, err := CheckHasCertificate(thumbprint)
-		if err == nil {
-			lastErr = nil
-			if matched == present {
-				return nil
-			}
-		} else {
-			lastErr = err
-		}
-		if time.Now().After(deadline) {
-			if lastErr != nil {
-				return fmt.Errorf("等待管理员授权或检查证书超时: %w", lastErr)
-			}
-			return fmt.Errorf("等待管理员授权或证书操作完成超时，可能已取消 UAC")
-		}
-		time.Sleep(300 * time.Millisecond)
+func verifyCertificateOperation(thumbprint string, present bool, helperErr error) error {
+	matched, err := CheckHasCertificate(thumbprint)
+	if err != nil {
+		return errors.Join(helperErr, fmt.Errorf("检查证书操作结果失败: %w", err))
 	}
+	// 清理两个证书库时，某个库已无旧证书可能使子进程非零退出，以实际结果为准。
+	if matched == present {
+		return nil
+	}
+	if helperErr != nil {
+		return helperErr
+	}
+	return fmt.Errorf("证书子进程已成功退出，但证书库未达到预期状态，请核对根证书指纹 %s", thumbprint)
+}
+
+// 布局对应 Windows SDK 的 SHELLEXECUTEINFOW；uintptr 保持原生指针对齐。
+type shellExecuteInfo struct {
+	size, mask                        uint32
+	window                            windows.Handle
+	verb, file, parameters, directory *uint16
+	show                              int32
+	instance, idList                  uintptr
+	class                             *uint16
+	classKey                          windows.Handle
+	hotKey                            uint32
+	icon                              windows.Handle
+	process                           windows.Handle
 }
 
 func launchElevatedHelper(executable string, args []string, directory string) error {
@@ -299,11 +303,46 @@ func launchElevatedHelper(executable string, args []string, directory string) er
 	if err != nil {
 		return err
 	}
-	if err := windows.ShellExecute(0, verb, file, parameters, cwd, 0); err != nil {
+	info := shellExecuteInfo{
+		mask: 0x00000040 | 0x00000100, // SEE_MASK_NOCLOSEPROCESS | SEE_MASK_NOASYNC
+		verb: verb, file: file, parameters: parameters, directory: cwd,
+	}
+	info.size = uint32(unsafe.Sizeof(info))
+	proc := windows.NewLazySystemDLL("shell32.dll").NewProc("ShellExecuteExW")
+	result, _, callErr := proc.Call(uintptr(unsafe.Pointer(&info)))
+	if info.process != 0 {
+		defer windows.CloseHandle(info.process)
+	}
+	if result == 0 {
+		err := callErr
 		if errors.Is(err, windows.ERROR_CANCELLED) {
-			return fmt.Errorf("已取消管理员授权")
+			return fmt.Errorf("已取消管理员授权: %w", err)
 		}
-		return err
+		return fmt.Errorf("启动证书提权子进程失败: %w", err)
+	}
+	if info.process == 0 {
+		return fmt.Errorf("未取得证书提权子进程句柄")
+	}
+	return waitForElevatedProcess(info.process, 2*time.Minute)
+}
+
+func waitForElevatedProcess(process windows.Handle, timeout time.Duration) error {
+	state, err := windows.WaitForSingleObject(process, uint32(timeout/time.Millisecond))
+	if err != nil {
+		return fmt.Errorf("等待证书子进程失败: %w", err)
+	}
+	if state == uint32(windows.WAIT_TIMEOUT) {
+		return fmt.Errorf("等待证书子进程超时；子进程可能仍在运行，请检查系统授权或错误提示")
+	}
+	if state != windows.WAIT_OBJECT_0 {
+		return fmt.Errorf("等待证书子进程返回未知状态: %d", state)
+	}
+	var exitCode uint32
+	if err := windows.GetExitCodeProcess(process, &exitCode); err != nil {
+		return fmt.Errorf("读取证书子进程退出码失败: %w", err)
+	}
+	if exitCode != 0 {
+		return fmt.Errorf("证书子进程失败（退出码 %d），具体原因请查看证书操作错误提示", exitCode)
 	}
 	return nil
 }

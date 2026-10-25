@@ -6,10 +6,15 @@ import (
 	"bytes"
 	"encoding/base64"
 	"errors"
-	"golang.org/x/sys/windows"
+	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+	"unsafe"
+
+	"golang.org/x/sys/windows"
 )
 
 func TestLegacyRootRemovalTargetsBothStoresAndVerifiesResult(t *testing.T) {
@@ -52,6 +57,16 @@ func TestRunHelperRejectsInvalidCertificatePayload(t *testing.T) {
 	handled, err := RunHelper([]string{installCertArgPrefix + "not-base64"})
 	if !handled || err == nil {
 		t.Fatalf("RunHelper() = (%v, %v), want handled error", handled, err)
+	}
+}
+
+func TestRunHelperAcceptsRemovedLegacyRootDespiteAbsentStoreError(t *testing.T) {
+	originalDelete, originalFetch := runCertificateDelete, fetchCertificatesForCheck
+	t.Cleanup(func() { runCertificateDelete, fetchCertificatesForCheck = originalDelete, originalFetch })
+	runCertificateDelete = func(args ...string) ([]byte, error) { return nil, errors.New("already absent") }
+	fetchCertificatesForCheck = func() ([]Certificate, error) { return nil, nil }
+	if handled, err := RunHelper([]string{removeLegacyArg}); !handled || err != nil {
+		t.Fatalf("helper should accept confirmed removal: handled=%v, err=%v", handled, err)
 	}
 }
 
@@ -121,6 +136,140 @@ func TestInstallCertificateLaunchesElevatedHelperWithPublicCertificate(t *testin
 	}
 	if !bytes.Equal(payload, cert.Cert) {
 		t.Fatal("helper received a different certificate payload")
+	}
+}
+
+func TestVerifyCertificateOperation(t *testing.T) {
+	originalFetch := fetchCertificatesForCheck
+	t.Cleanup(func() { fetchCertificatesForCheck = originalFetch })
+	helperFailure := errors.New("helper exited with code 7")
+	checkFailure := errors.New("certificate store unavailable")
+	for _, tc := range []struct {
+		name             string
+		present, matched bool
+		helperErr        error
+		checkErr         error
+		wantErr          bool
+	}{
+		{name: "installation failed", present: true, helperErr: helperFailure, wantErr: true},
+		{name: "removal failed", matched: true, helperErr: helperFailure, wantErr: true},
+		{name: "cancelled UAC", present: true, helperErr: windows.ERROR_CANCELLED, wantErr: true},
+		{name: "successful exit without installed root", present: true, wantErr: true},
+		{name: "successful exit with old root remaining", matched: true, wantErr: true},
+		{name: "root removed despite one store error", helperErr: helperFailure},
+		{name: "installed root confirmed", present: true, matched: true},
+		{name: "failed final check", present: true, helperErr: helperFailure, checkErr: checkFailure, wantErr: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			checks := 0
+			fetchCertificatesForCheck = func() ([]Certificate, error) {
+				checks++
+				if tc.matched {
+					return []Certificate{{Thumbprint: LegacyRootThumbprint}}, tc.checkErr
+				}
+				return nil, tc.checkErr
+			}
+			err := verifyCertificateOperation(LegacyRootThumbprint, tc.present, tc.helperErr)
+			if (err != nil) != tc.wantErr || checks != 1 {
+				t.Fatalf("result = %v, checks = %d; want error = %v and one final check", err, checks, tc.wantErr)
+			}
+			if tc.wantErr && tc.helperErr != nil && !errors.Is(err, tc.helperErr) {
+				t.Fatalf("lost helper failure: %v", err)
+			}
+			if tc.checkErr != nil && !errors.Is(err, tc.checkErr) {
+				t.Fatalf("lost certificate store error: %v", err)
+			}
+		})
+	}
+}
+
+func TestInstallCertificateReturnsCancelledUACWithoutPolling(t *testing.T) {
+	originalElevated, originalLaunch, originalFetch := processElevated, launchElevated, fetchCertificatesForCheck
+	t.Cleanup(func() {
+		processElevated, launchElevated, fetchCertificatesForCheck = originalElevated, originalLaunch, originalFetch
+	})
+	processElevated = func() bool { return false }
+	launchElevated = func(string, []string, string) error { return windows.ERROR_CANCELLED }
+	checks := 0
+	fetchCertificatesForCheck = func() ([]Certificate, error) { checks++; return nil, nil }
+	cert, err := LoadOrCreate(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := installCertificate(cert.Cert); !errors.Is(err, windows.ERROR_CANCELLED) || checks != 1 {
+		t.Fatalf("installation lost cancellation or kept polling: err=%v, checks=%d", err, checks)
+	}
+}
+
+func TestWaitForElevatedProcess(t *testing.T) {
+	for _, tc := range []struct {
+		mode    string
+		timeout time.Duration
+		want    string
+	}{
+		{mode: "success", timeout: 10 * time.Second},
+		{mode: "failure", timeout: 10 * time.Second, want: "退出码 7"},
+		{mode: "sleep", timeout: 25 * time.Millisecond, want: "超时"},
+	} {
+		t.Run(tc.mode, func(t *testing.T) {
+			cmd := exec.Command(os.Args[0], "-test.run=^TestCertificateProcessHelper$")
+			cmd.Env = append(os.Environ(), "WX_MINI_VIDEO_CERT_PROCESS_TEST="+tc.mode)
+			if err := cmd.Start(); err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = cmd.Process.Kill(); _ = cmd.Wait() })
+			process, err := windows.OpenProcess(windows.SYNCHRONIZE|windows.PROCESS_QUERY_LIMITED_INFORMATION, false, uint32(cmd.Process.Pid))
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer windows.CloseHandle(process)
+			err = waitForElevatedProcess(process, tc.timeout)
+			if tc.want == "" {
+				if err != nil {
+					t.Fatal(err)
+				}
+			} else if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("wait result = %v, want %q", err, tc.want)
+			}
+		})
+	}
+}
+
+func TestCertificateProcessHelper(t *testing.T) {
+	switch os.Getenv("WX_MINI_VIDEO_CERT_PROCESS_TEST") {
+	case "success":
+		os.Exit(0)
+	case "failure":
+		os.Exit(7)
+	case "sleep":
+		time.Sleep(time.Minute)
+	}
+}
+
+func TestShellExecuteInfoStartsOrdinaryProcess(t *testing.T) {
+	t.Setenv("WX_MINI_VIDEO_CERT_PROCESS_TEST", "success")
+	verb, _ := windows.UTF16PtrFromString("open")
+	file, err := windows.UTF16PtrFromString(os.Args[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	parameters, _ := windows.UTF16PtrFromString("-test.run=^TestCertificateProcessHelper$")
+	info := shellExecuteInfo{
+		mask: 0x00000040 | 0x00000100,
+		verb: verb, file: file, parameters: parameters,
+	}
+	info.size = uint32(unsafe.Sizeof(info))
+	proc := windows.NewLazySystemDLL("shell32.dll").NewProc("ShellExecuteExW")
+	result, _, callErr := proc.Call(uintptr(unsafe.Pointer(&info)))
+	if info.process != 0 {
+		defer windows.CloseHandle(info.process)
+		defer windows.TerminateProcess(info.process, 1)
+	}
+	if result == 0 || info.process == 0 {
+		t.Fatalf("ShellExecuteExW failed with native structure: result=%d, process=%v, err=%v", result, info.process, callErr)
+	}
+	if err := waitForElevatedProcess(info.process, 10*time.Second); err != nil {
+		t.Fatal(err)
 	}
 }
 

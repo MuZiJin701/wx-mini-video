@@ -25,6 +25,8 @@ Extract the whole Mac archive and open the `.app`; media is saved to `downloads/
 4. **Reload the media**: once the proxy is running, reopen the image or replay the video or audio. Select a candidate with `↑/↓`, press `d` or `Enter` to download, and `o` to open the download folder. The list starts on Videos; press `1` for All or `5` for Audio. Confirmed candidates show `✓`; unconfirmed ones show `?` and appear in the same type categories.
 5. Press `q` when finished to restore the previous system proxy. If restoration fails, the error screen stays open: press `r` to retry or `f` to explicitly force exit. On the AppID entry screen, use `Esc` or `Ctrl+C` to quit.
 
+If a certificate operation fails, a dialog shows the specific reason. After closing it, the main interface reports the failure. Cancelling UAC is reported separately; a failed helper process no longer causes a two-minute wait.
+
 Files are saved to `downloads/` beside the app by default. To upgrade, replace the exe and keep `wx-mini-video.yaml`, `ffmpeg/`, and `downloads/`.
 
 ![Media list: select a candidate and download](https://raw.githubusercontent.com/MuZiJin701/wx-mini-video/main/docs/images/使用界面.png)

@@ -19,6 +19,7 @@ func main() {
 	if handled, err := certificate.RunHelper(os.Args[1:]); handled {
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
+			system.ShowStartupError(err)
 			os.Exit(1)
 		}
 		return
