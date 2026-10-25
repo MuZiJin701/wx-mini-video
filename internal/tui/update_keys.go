@@ -168,6 +168,7 @@ func (m model) handleInputKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.appIDInput = string(runes)
 		m.inputCursor = cursor
 		m.inputErr = ""
+		m.programPicked = false
 		return m, nil
 	case "delete":
 		if cursor < len(runes) {
@@ -176,6 +177,7 @@ func (m model) handleInputKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.appIDInput = string(runes)
 		m.inputCursor = cursor
 		m.inputErr = ""
+		m.programPicked = false
 		return m, nil
 	case "left":
 		if cursor > 0 {
@@ -199,6 +201,7 @@ func (m model) handleInputKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.appIDInput = ""
 		m.inputCursor = 0
 		m.inputErr = ""
+		m.programPicked = false
 		return m, nil
 	}
 	if len(msg.Runes) == 0 {
@@ -212,6 +215,7 @@ func (m model) handleInputKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	m.appIDInput = string(updated)
 	m.inputCursor = cursor + len(insert)
 	m.inputErr = ""
+	m.programPicked = false
 	return m, nil
 }
 

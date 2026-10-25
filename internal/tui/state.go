@@ -44,6 +44,9 @@ func (m model) confirmFocusedTarget() (tea.Model, tea.Cmd) {
 		m.openAppearanceDropdown()
 		return m, nil
 	}
+	if m.programPicked && m.selectedProgram != "" {
+		return m.confirmSelectedProgram()
+	}
 	if trimSpaceText(m.appIDInput) != "" {
 		return m.confirmTargetInput()
 	}
@@ -84,6 +87,7 @@ func (m model) confirmTarget(appID string) (tea.Model, tea.Cmd) {
 	m.inputCursor = len([]rune(appID))
 	m.inputErr = ""
 	m.selectedProgram = appID
+	m.programPicked = false
 	m.targetReady = true
 	m.targetExpanded = false
 	m.focus = focusNone
@@ -115,6 +119,7 @@ func (m *model) openTargetEditor() {
 	m.showLogs = false
 	m.appearanceOpen = false
 	m.inputErr = ""
+	m.programPicked = false
 	if m.selectedProgram == "" && len(m.programs) > 0 {
 		m.selectedProgram = m.programs[0].AppID
 	}
@@ -132,6 +137,7 @@ func (m *model) cancelTargetSwitch() {
 	m.focus = focusNone
 	m.appearanceOpen = false
 	m.inputErr = ""
+	m.programPicked = false
 }
 
 func (m *model) currentProgramIndex() int {
@@ -168,6 +174,7 @@ func (m *model) selectProgram(step int) {
 		index = len(m.programs) - 1
 	}
 	m.selectedProgram = m.programs[index].AppID
+	m.programPicked = true
 }
 
 func (m model) confirmSelectedProgram() (tea.Model, tea.Cmd) {

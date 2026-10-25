@@ -84,6 +84,9 @@ type model struct {
 	focus           focusArea
 	programs        []miniprogram.Program
 	selectedProgram string // 按 AppID 保持选中身份，避免列表重排改选
+	// programPicked 表示用户主动在发现列表里选过 AppID：确认按钮应优先确认该
+	// 选择，而不是仍带着旧值的输入框；编辑输入框会清除该标记。
+	programPicked bool
 
 	// 外观下拉
 	appearanceOpen bool
@@ -462,6 +465,7 @@ func (m model) activateHit(region hitRegion) (tea.Model, tea.Cmd) {
 	case hitTargetProgram:
 		if region.index >= 0 && region.index < len(m.programs) {
 			m.selectedProgram = m.programs[region.index].AppID
+			m.programPicked = true
 			m.focus = focusPrograms
 			return m.confirmSelectedProgram()
 		}

@@ -323,7 +323,7 @@ func (d *Downloader) Download(ctx context.Context, candidate miniprogram.Candida
 	// 按实际响应把成品归入最终类型目录：直播录音进 直播/，确认是有限文件的 FLV 回到 视频/。
 	// .part 仍留在初始目录以保持续传语义，这里只处理已提交的成品。
 	finalKind := resolvedKind(initialKind, isM3U8, live)
-	targetPath, name = d.finalizeOutputPath(candidate, preferredName, targetAppID, targetPath, name, initialKind, finalKind)
+	targetPath, name, archiveErr := d.finalizeOutputPath(candidate, preferredName, targetAppID, targetPath, name, initialKind, finalKind)
 	// 只有下载真正拿到响应并完成（含直播停止/断流保存）时才回写修正；
 	// 请求失败或用户提前取消时无法确认实际类型，保留候选原有标记。
 	resolved := err == nil || errors.Is(err, ErrRecordingStopped) || errors.Is(err, ErrRecordingInterrupted)
@@ -335,6 +335,11 @@ func (d *Downloader) Download(ctx context.Context, candidate miniprogram.Candida
 	if err != nil && ctx.Err() != nil && isContextCancellation(err) &&
 		!errors.Is(err, ErrRecordingStopped) && !errors.Is(err, ErrDownloadStopped) && !errors.Is(err, ErrRecordingInterrupted) {
 		err = ErrDownloadStopped
+	}
+	if archiveErr != nil {
+		// 内容已保存但未能归档到最终分类目录：保留实际文件并明确报错，
+		// 不能把留在初始目录的成品当成正常完成。
+		err = fmt.Errorf("已下载内容保留在 %s，但归档到最终分类目录失败: %w", targetPath, archiveErr)
 	}
 	if err == nil || errors.Is(err, ErrRecordingStopped) || errors.Is(err, ErrRecordingInterrupted) {
 		_ = d.appendHistory(candidate, targetPath, targetAppID, finalKind)
@@ -1138,9 +1143,10 @@ func availableOutputPath(bucket, name string, candidate miniprogram.Candidate, a
 // 并按默认命名规则修正类型前缀与直播所需的 .flv 后缀。
 // 只处理已存在的成品：普通下载被停止或失败时成品尚未提交，.part 仍留在初始目录以保持续传语义。
 // 跨目录调整先选一个不冲突的名称，绝不覆盖目标目录里已有的成品或同候选未保存录制。
-func (d *Downloader) finalizeOutputPath(candidate miniprogram.Candidate, preferredName, targetAppID, targetPath, currentName, initialKind, finalKind string) (string, string) {
+// 归档失败时返回原始路径与错误，由调用方保留成品并向用户报告失败。
+func (d *Downloader) finalizeOutputPath(candidate miniprogram.Candidate, preferredName, targetAppID, targetPath, currentName, initialKind, finalKind string) (string, string, error) {
 	if !fileExists(targetPath) {
-		return targetPath, currentName
+		return targetPath, currentName, nil
 	}
 	initialBucket := filepath.Dir(targetPath)
 	base := filepath.Base(targetPath)
@@ -1158,22 +1164,21 @@ func (d *Downloader) finalizeOutputPath(candidate miniprogram.Candidate, preferr
 		name = strings.TrimSuffix(name, filepath.Ext(name)) + ".flv"
 	}
 	if finalBucket == initialBucket && name == base {
-		return targetPath, currentName
+		return targetPath, currentName, nil
 	}
 	if finalBucket != initialBucket {
 		if err := os.MkdirAll(finalBucket, 0o755); err != nil {
-			return targetPath, currentName
+			return targetPath, currentName, fmt.Errorf("创建 %s 失败: %w", finalBucket, err)
 		}
 	}
 	finalName, finalPath := availableOutputPath(finalBucket, name, candidate, true)
 	if finalPath == targetPath {
-		return targetPath, currentName
+		return targetPath, currentName, nil
 	}
 	if err := os.Rename(targetPath, finalPath); err != nil {
-		// 移动失败时保留已下载内容在初始目录，避免因分类整理丢失成品。
-		return targetPath, currentName
+		return targetPath, currentName, fmt.Errorf("移动到 %s 失败: %w", finalPath, err)
 	}
-	return finalPath, finalName
+	return finalPath, finalName, nil
 }
 
 // renameTypePrefix 把默认文件名开头的类型前缀从初始类型改为最终类型（直播_ ↔ 视频_）。

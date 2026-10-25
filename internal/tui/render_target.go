@@ -60,7 +60,6 @@ func (m model) renderTargetArea(startY, height int, metrics ui.Metrics) []string
 	if showHint {
 		rows = append(rows, m.padLine(m.spaces(left), hint))
 	}
-	labelY := len(rows)
 	rows = append(rows, m.padLine(m.spaces(left), label))
 	inputY := len(rows)
 	for _, line := range inputLines {
@@ -89,14 +88,14 @@ func (m model) renderTargetArea(startY, height int, metrics ui.Metrics) []string
 		rows = rows[:height]
 	}
 
-	// 命中区域：输入框、发现列表、按钮。
-	m.hits.add(left, inputY, inputWidth, len(inputLines), hitTargetInput, 0)
-	_ = labelY
+	// 命中区域：输入框、发现列表、按钮。行号相对主区起点，必须加上 startY
+	// 才能与画布上实际显示的行对齐。
+	m.hits.add(left, startY+inputY, inputWidth, len(inputLines), hitTargetInput, 0)
 	for _, hit := range listHits {
-		m.hits.add(left+hit.x, listTop+hit.y, hit.w, hit.h, hit.action, hit.index)
+		m.hits.add(left+hit.x, startY+listTop+hit.y, hit.w, hit.h, hit.action, hit.index)
 	}
 	for _, hit := range buttonHits {
-		m.hits.add(hit.x, buttonTop+hit.y, hit.w, hit.h, hit.action, hit.index)
+		m.hits.add(hit.x, startY+buttonTop+hit.y, hit.w, hit.h, hit.action, hit.index)
 	}
 	return rows
 }

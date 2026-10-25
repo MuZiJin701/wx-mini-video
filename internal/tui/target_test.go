@@ -102,6 +102,149 @@ func typeText(m model, text string) (model, tea.Cmd) {
 	return next.(model), cmd
 }
 
+// TestTargetAreaHitsAlignWithRenderedRows 防止命中坐标漏加主区起始行：每个控件的
+// 点击区域必须覆盖它在画布上实际显示的行。
+func TestTargetAreaHitsAlignWithRenderedRows(t *testing.T) {
+	for _, size := range []struct{ width, height int }{{110, 40}, {80, 24}, {60, 20}} {
+		m := testModel(t)
+		m.width, m.height = size.width, size.height
+		m.started = true
+		now := time.Now()
+		m.programs = []miniprogram.Program{
+			{AppID: "wx111", LastSeen: now},
+			{AppID: "wx222", LastSeen: now.Add(-time.Second)},
+		}
+		m.selectedProgram = m.programs[0].AppID
+		m.focus = focusPrograms
+		lines := strings.Split(m.View(), "\n")
+		if len(lines) != size.height {
+			t.Fatalf("%dx%d: lines = %d", size.width, size.height, len(lines))
+		}
+
+		input, ok := findHit(m, hitTargetInput)
+		if !ok {
+			t.Fatalf("%dx%d: input hit missing", size.width, size.height)
+		}
+		labelRow := findExactLine(t, lines, "AppID")
+		if input.y != labelRow+1 {
+			t.Fatalf("%dx%d: input hit y = %d, want label row+1 = %d", size.width, size.height, input.y, labelRow+1)
+		}
+		if input.y+input.h > len(lines) || lines[input.y] == "" {
+			t.Fatalf("%dx%d: input hit does not cover the rendered input box", size.width, size.height)
+		}
+
+		for index, program := range m.programs {
+			row := findLineContaining(t, lines, program.AppID)
+			region, ok := findHitIndex(m, hitTargetProgram, index)
+			if !ok {
+				t.Fatalf("%dx%d: program %d hit missing", size.width, size.height, index)
+			}
+			if region.y != row {
+				t.Fatalf("%dx%d: program %q hit y = %d, row = %d", size.width, size.height, program.AppID, region.y, row)
+			}
+		}
+
+		confirm, ok := findHit(m, hitTargetConfirm)
+		if !ok {
+			t.Fatalf("%dx%d: confirm hit missing", size.width, size.height)
+		}
+		confirmRow := findLineContaining(t, lines, "确认目标")
+		if confirmRow < confirm.y || confirmRow >= confirm.y+confirm.h {
+			t.Fatalf("%dx%d: confirm hit rows [%d,%d) do not cover rendered button row %d", size.width, size.height, confirm.y, confirm.y+confirm.h, confirmRow)
+		}
+
+		// 在输入框实际显示的位置点击必须命中输入框并聚焦，而不是空白或品牌区。
+		next, _ := m.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: input.x + 2, Y: input.y})
+		if clicked := next.(model); clicked.focus != focusInput {
+			t.Fatalf("%dx%d: clicking the rendered input row did not focus the input: %v", size.width, size.height, clicked.focus)
+		}
+	}
+}
+
+func findLineContaining(t *testing.T, lines []string, text string) int {
+	t.Helper()
+	for index, line := range lines {
+		if strings.Contains(line, text) {
+			return index
+		}
+	}
+	t.Fatalf("rendered lines do not contain %q", text)
+	return -1
+}
+
+// findExactLine 查找去除两侧空白后恰好等于 text 的行，用于区分提示语中的同名单词。
+func findExactLine(t *testing.T, lines []string, text string) int {
+	t.Helper()
+	for index, line := range lines {
+		if strings.TrimSpace(line) == text {
+			return index
+		}
+	}
+	t.Fatalf("rendered lines have no exact line %q", text)
+	return -1
+}
+
+func TestConfirmButtonUsesPickedDiscoveryProgram(t *testing.T) {
+	m := testModel(t)
+	m.started = true
+	now := time.Now()
+	m.targetReady = true
+	m.appIDInput = "wx111"
+	m.inputCursor = len([]rune("wx111"))
+	m.programs = []miniprogram.Program{
+		{AppID: "wx111", LastSeen: now},
+		{AppID: "wx222", LastSeen: now.Add(-time.Second)},
+	}
+	m.selectedProgram = "wx111"
+	m.focus = focusPrograms
+	m, _ = targetKey(m, tea.KeyDown, "")
+	if m.selectedProgram != "wx222" || !m.programPicked {
+		t.Fatalf("down should pick wx222 from the list: program=%q picked=%v", m.selectedProgram, m.programPicked)
+	}
+	m, _ = targetKey(m, tea.KeyTab, "")
+	if m.focus != focusConfirm {
+		t.Fatalf("tab should focus confirm, got %v", m.focus)
+	}
+	m, _ = targetKey(m, tea.KeyEnter, "")
+	if m.runtime.Settings.Target.AppID != "wx222" || m.targetExpanded {
+		t.Fatalf("confirm button used the stale input instead of the picked program: target=%q expanded=%v",
+			m.runtime.Settings.Target.AppID, m.targetExpanded)
+	}
+}
+
+func TestEditingInputClearsDiscoveryPick(t *testing.T) {
+	m := testModel(t)
+	m.started = true
+	now := time.Now()
+	m.targetReady = true
+	m.appIDInput = "wx111"
+	m.inputCursor = len([]rune("wx111"))
+	m.programs = []miniprogram.Program{
+		{AppID: "wx111", LastSeen: now},
+		{AppID: "wx222", LastSeen: now.Add(-time.Second)},
+	}
+	m.selectedProgram = "wx111"
+	m.focus = focusPrograms
+	m, _ = targetKey(m, tea.KeyDown, "")
+	m, _ = targetKey(m, tea.KeyShiftTab, "")
+	if m.focus != focusInput {
+		t.Fatalf("shift+tab should return to input, got %v", m.focus)
+	}
+	m, _ = typeText(m, "9")
+	if m.programPicked {
+		t.Fatal("editing the input should clear the discovery pick")
+	}
+	m, _ = targetKey(m, tea.KeyTab, "")
+	m, _ = targetKey(m, tea.KeyTab, "")
+	if m.focus != focusConfirm {
+		t.Fatalf("focus should reach confirm, got %v", m.focus)
+	}
+	m, _ = targetKey(m, tea.KeyEnter, "")
+	if m.runtime.Settings.Target.AppID != "wx1119" {
+		t.Fatalf("confirm after editing should use the input, target=%q", m.runtime.Settings.Target.AppID)
+	}
+}
+
 func TestStartupDiscoveryDoesNotConfirmPrefilledTarget(t *testing.T) {
 	runtime := targetRuntime(t)
 	runtime.Settings.Target = miniprogram.Target{AppID: "wx123"}

@@ -976,6 +976,58 @@ func TestDownloadFiniteFLVIgnoresLiveHint(t *testing.T) {
 	}
 }
 
+// TestDownloadArchiveFailureReportsError 覆盖晚确认直播后无法归档到 直播/ 的情况：
+// 已下载内容必须保留在原目录，但下载必须返回明确错误、不能按成功上报或写入历史。
+func TestDownloadArchiveFailureReportsError(t *testing.T) {
+	body := append([]byte("FLV\x01\x05\x00\x00\x00\x09"), bytes.Repeat([]byte("X"), 64)...)
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "video/x-flv")
+		flusher := w.(http.Flusher)
+		_, _ = w.Write(body)
+		flusher.Flush()
+	}))
+	defer ts.Close()
+
+	d := New(t.TempDir())
+	stubDownloadClock(t, time.Date(2026, 10, 25, 13, 0, 0, 0, time.Local))
+	candidate := miniprogram.Candidate{ID: "archive-fail", URL: ts.URL + "/media/live-stream", Kind: "video", Suffix: ".mp4"}
+	// 用普通文件占住 直播 目录，使归档目录无法创建。
+	blocked := filepath.Join(d.Dir, "_unknown", miniprogram.DirLive)
+	if err := os.MkdirAll(filepath.Dir(blocked), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(blocked, []byte("blocked"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var progress []Progress
+	d.OnProgress = func(p Progress) { progress = append(progress, p) }
+	output, err := d.Download(context.Background(), candidate, "", "")
+	if err == nil {
+		t.Fatal("归档失败必须返回错误，不能按下载成功上报")
+	}
+	if !strings.Contains(err.Error(), "归档到最终分类目录失败") || !strings.Contains(err.Error(), output) {
+		t.Fatalf("error = %v, want archive failure containing retained path %q", err, output)
+	}
+	if got, want := filepath.Dir(output), filepath.Join(d.Dir, "_unknown", miniprogram.DirVideos); got != want {
+		t.Fatalf("retained output dir = %q, want initial video dir %q", got, want)
+	}
+	if filepath.Ext(output) != ".mp4" {
+		t.Fatalf("retained output = %q, want the original .mp4 name until archiving succeeds", output)
+	}
+	data, readErr := os.ReadFile(output)
+	if readErr != nil || !bytes.HasPrefix(data, []byte("FLV")) {
+		t.Fatalf("downloaded content was not retained: err=%v data=%q", readErr, data)
+	}
+	if _, readErr := os.ReadFile(filepath.Join(d.Dir, "history.jsonl")); !os.IsNotExist(readErr) {
+		t.Fatalf("archive failure must not be recorded as a successful history entry: %v", readErr)
+	}
+	last := progress[len(progress)-1]
+	if last.Status != "error" || last.Path != output {
+		t.Fatalf("last progress = %#v, want error at retained path %q", last, output)
+	}
+}
+
 func TestOutputNameKeepsSingleFLVSuffix(t *testing.T) {
 	candidate := miniprogram.Candidate{ID: "a187d7aeff6f", Kind: "video", Suffix: ".flv", Live: true}
 	if got := OutputName(candidate, "7559184446249188_esd.flv"); got != "7559184446249188_esd.flv" {
