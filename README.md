@@ -79,6 +79,7 @@ Mac 包完整解压后双击 `.app`，媒体保存在解压目录的 `downloads/
 | 没有发现小程序 | 确认代理运行，重新打开小程序；按 `r` 刷新或重试，或 `Ctrl+D` 手动输入 AppID。 |
 | 列表没有目标媒体 | 查看视频分类中标记 `?` 的来源未确认媒体（H5/web-view 视频通常在这里）；确认 AppID 后重新加载媒体。来源缺失的请求不会进入目标候选。 |
 | 异常退出后网络不通 | 重开程序，按 `Ctrl+D`，等到显示“代理运行中”后按 `q`。仅停在输入界面再退出不会恢复代理。 |
+| 启动时提示“读取原系统代理失败” | 旧版在中文 Windows 或从未配置系统代理的机器上会误判；请更新到本版。若提权使用的是另一个管理员账号，代理可能不作用于运行微信的用户，见[排障](https://github.com/MuZiJin701/wx-mini-video/blob/main/wx-mini-video-knowledge.md#排障)。 |
 | 证书安装失败 | 确认同意 UAC；仍失败时见[证书排障](https://github.com/MuZiJin701/wx-mini-video/blob/main/wx-mini-video-knowledge.md#排障)。 |
 | m3u8 下载或合并失败 | 请确认 `ffmpeg/` 未被隔离或删除；程序会在随包 ffmpeg 缺失或损坏时自动下载受管 ffmpeg，也可在配置中指定 `download.ffmpeg`。错误会给出 ffmpeg 日志路径，更多处理见[排障](https://github.com/MuZiJin701/wx-mini-video/blob/main/wx-mini-video-knowledge.md#排障)。 |
 | 需要排查嗅探问题 | 用 `wx-mini-video.exe --debug` 启动，诊断日志写入下载目录的 `wx-mini-video-debug.log`；分享前检查其中是否包含敏感信息。 |
