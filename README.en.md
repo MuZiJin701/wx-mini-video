@@ -62,11 +62,16 @@ When finished, click “退出” (Quit) at the bottom right or press `Ctrl+Q` t
 
 Choose a resource under “直播” (Live) and click “下载” (Download) to start recording. Click “停止” (Stop) or press `x` to finish and save a `.flv` file.
 
-Stop ends a download or recording running in this app. **A live stream appearing in the list does not mean it is being recorded.** Click Download first and wait for “录制直播中” (recording) before using Stop. It does not stop playback in WeChat or resource discovery; click Quit when finished.
-
-You can also stop image, video, audio, and segmented media (m3u8) downloads. Ordinary downloads keep unfinished files. Files left by interrupted m3u8 merging may not play and should not be treated as completed downloads. Small files may finish quickly, disabling Stop again.
+**A live stream appearing in the list does not mean it is being recorded.** Once started, its row shows “录制中” (recording), with the recorded size below.
 
 Live streams do not finish downloading like ordinary videos. **Continuous recording supports HTTP-FLV only; HLS/m3u8 live recording is not supported.** m3u8 resources appear under “分段媒体” (Segmented media) and are downloaded and merged from the current playlist.
+
+<details>
+<summary>See a screenshot of live recording</summary>
+
+![Windows app screenshot: the resource is marked as recording, with the recorded size and Stop hint below](https://raw.githubusercontent.com/MuZiJin701/wx-mini-video/main/docs/images/直播录制.png)
+
+</details>
 
 ## Common actions
 
@@ -81,6 +86,10 @@ You can use the buttons or these shortcuts.
 | Change Mini Program | `s` (unavailable during a download or recording) |
 | View details / logs | `i` / `l` |
 | Quit | `Ctrl+Q` |
+
+**“停止 · x” (Stop) is enabled only while a download or recording is running. Being disabled before starting or after completion is normal.** It applies to images, videos, audio, segmented media, and live recordings. Small files may finish before you can click it. Stop does not stop playback in WeChat or resource discovery.
+
+Stopping an ordinary download keeps unfinished files. Files left by interrupted m3u8 merging may not play and should not be treated as complete. Stopping a live recording saves the recorded content.
 
 The mouse wheel scrolls the resource list without changing your selection. “清空” (Clear) clears the list and **keeps downloaded files**. While typing an AppID, letters are text; use `Ctrl+Q` to quit.
 
