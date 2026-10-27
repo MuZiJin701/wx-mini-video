@@ -32,11 +32,11 @@ Windows 双击解压后的 `wx-mini-video.exe`；Mac 双击 `wx-mini-video.app`�
 - 已经知道 AppID，可以直接输入，再按 `Enter` 确认。
 
 <details>
-<summary>查看选择小程序示意图</summary>
+<summary>查看选择小程序的运行截图</summary>
 
-下图使用演示数据，实际列表取决于你打开的小程序。
+下图为 Windows 版实际运行截图，列表取决于你打开的小程序。
 
-![选择小程序：点击已发现列表中的对应项](https://raw.githubusercontent.com/MuZiJin701/wx-mini-video/main/docs/images/已探测到.png)
+![选择小程序：点击已发现列表中的对应项](https://raw.githubusercontent.com/MuZiJin701/wx-mini-video/main/docs/images/首页.png)
 
 </details>
 
@@ -48,7 +48,7 @@ Windows 双击解压后的 `wx-mini-video.exe`；Mac 双击 `wx-mini-video.app`�
 
 `✓` 表示来源与所选小程序匹配；`?` 表示来源还未确认，下载前请核对内容。
 
-![下载完成示意：选择资源后点击下载，完成时显示保存位置（演示数据）](https://raw.githubusercontent.com/MuZiJin701/wx-mini-video/main/docs/images/下载完成.png)
+![Windows 版下载完成截图：所选资源显示“已下载”，下方显示保存位置](https://raw.githubusercontent.com/MuZiJin701/wx-mini-video/main/docs/images/下载完成.png)
 
 ### 4. 打开文件夹，正常退出
 
@@ -59,6 +59,10 @@ Windows 双击解压后的 `wx-mini-video.exe`；Mac 双击 `wx-mini-video.app`�
 ## 录制直播
 
 在“直播”标签中选择资源，点“下载”开始录制；想结束时点“停止”或按 `x`，已录内容会保存为 `.flv` 文件。
+
+“停止”只用于结束本程序正在进行的下载或录制。**列表里出现直播资源，并不代表已经开始录制**；先点“下载”，等界面显示“录制直播中”后，停止按钮才会启用。它不会停止微信中的播放，也不会关闭资源发现；用完请点“退出”。
+
+图片、视频、音频和分段媒体（m3u8）下载中也可以停止。普通下载会保留未完成文件；m3u8 合并被中止后，已产生的文件不一定能播放，不能当作下载完成。小文件可能很快就下载完，此后停止按钮会重新禁用。
 
 直播不会像普通视频一样自动下载完。**目前仅支持 HTTP-FLV 直播录制；m3u8/HLS 直播不能持续录制。** m3u8 资源在“分段媒体”中，按当前播放列表下载并合并。
 

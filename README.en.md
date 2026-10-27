@@ -34,11 +34,11 @@ Open the Mini Program in **desktop WeChat**, then click its entry under “已�
 - If you already know the AppID, type it and press `Enter`.
 
 <details>
-<summary>See an example of choosing a Mini Program</summary>
+<summary>See a screenshot of choosing a Mini Program</summary>
 
-This image uses sample data. Your list depends on the Mini Programs you open.
+This screenshot shows the Windows app running. Your list depends on the Mini Programs you open.
 
-![Choose a Mini Program by clicking its discovered entry](https://raw.githubusercontent.com/MuZiJin701/wx-mini-video/main/docs/images/已探测到.png)
+![Choose a Mini Program by clicking its discovered entry](https://raw.githubusercontent.com/MuZiJin701/wx-mini-video/main/docs/images/首页.png)
 
 </details>
 
@@ -50,7 +50,7 @@ Click a resource, then “下载” (Download). Use the image, video, or audio t
 
 `✓` means the source matches the selected Mini Program. `?` means the source is unconfirmed, so check the content before downloading.
 
-![Download example: select a resource and click Download; the saved location appears when done (sample data)](https://raw.githubusercontent.com/MuZiJin701/wx-mini-video/main/docs/images/下载完成.png)
+![Windows app screenshot: the selected resource is marked as downloaded, with its saved location below](https://raw.githubusercontent.com/MuZiJin701/wx-mini-video/main/docs/images/下载完成.png)
 
 ### 4. Find your files and quit
 
@@ -61,6 +61,10 @@ When finished, click “退出” (Quit) at the bottom right or press `Ctrl+Q` t
 ## Record a live stream
 
 Choose a resource under “直播” (Live) and click “下载” (Download) to start recording. Click “停止” (Stop) or press `x` to finish and save a `.flv` file.
+
+Stop ends a download or recording running in this app. **A live stream appearing in the list does not mean it is being recorded.** Click Download first and wait for “录制直播中” (recording) before using Stop. It does not stop playback in WeChat or resource discovery; click Quit when finished.
+
+You can also stop image, video, audio, and segmented media (m3u8) downloads. Ordinary downloads keep unfinished files. Files left by interrupted m3u8 merging may not play and should not be treated as completed downloads. Small files may finish quickly, disabling Stop again.
 
 Live streams do not finish downloading like ordinary videos. **Continuous recording supports HTTP-FLV only; HLS/m3u8 live recording is not supported.** m3u8 resources appear under “分段媒体” (Segmented media) and are downloaded and merged from the current playlist.
 
